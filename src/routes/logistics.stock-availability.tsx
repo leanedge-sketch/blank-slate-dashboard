@@ -35,8 +35,7 @@ import {
   type StockLocation,
 } from "@/lib/enums";
 import {
-  aggregateByLocation,
-  fetchAllMovementsForAggregation,
+  fetchStockBalances,
   type LocationBalance,
 } from "@/lib/stock";
 
