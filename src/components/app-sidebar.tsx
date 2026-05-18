@@ -1,5 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ArrowRightLeft, LayoutDashboard, Settings, User } from "lucide-react";
+import {
+  ArrowRightLeft,
+  LayoutDashboard,
+  ListOrdered,
+  PackageSearch,
+  Settings,
+  User,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -19,6 +26,16 @@ const mainItems = [
 ];
 
 const logisticsItems = [
+  {
+    title: "Stock Availability",
+    url: "/logistics/stock-availability",
+    icon: PackageSearch,
+  },
+  {
+    title: "Stock Movements",
+    url: "/logistics/stock-movements",
+    icon: ListOrdered,
+  },
   {
     title: "Inter-Company Transfers",
     url: "/logistics/intercompany-transfer",

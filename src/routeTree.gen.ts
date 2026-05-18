@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LogisticsStockMovementsRouteImport } from './routes/logistics.stock-movements'
+import { Route as LogisticsStockAvailabilityRouteImport } from './routes/logistics.stock-availability'
 import { Route as LogisticsIntercompanyTransferRouteImport } from './routes/logistics.intercompany-transfer'
 
 const IndexRoute = IndexRouteImport.update({
@@ -17,6 +19,17 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogisticsStockMovementsRoute = LogisticsStockMovementsRouteImport.update({
+  id: '/logistics/stock-movements',
+  path: '/logistics/stock-movements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogisticsStockAvailabilityRoute =
+  LogisticsStockAvailabilityRouteImport.update({
+    id: '/logistics/stock-availability',
+    path: '/logistics/stock-availability',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const LogisticsIntercompanyTransferRoute =
   LogisticsIntercompanyTransferRouteImport.update({
     id: '/logistics/intercompany-transfer',
@@ -27,27 +40,48 @@ const LogisticsIntercompanyTransferRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
+  '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
+  '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
+  '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
+  '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
+  '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
+  '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/logistics/intercompany-transfer'
+  fullPaths:
+    | '/'
+    | '/logistics/intercompany-transfer'
+    | '/logistics/stock-availability'
+    | '/logistics/stock-movements'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/logistics/intercompany-transfer'
-  id: '__root__' | '/' | '/logistics/intercompany-transfer'
+  to:
+    | '/'
+    | '/logistics/intercompany-transfer'
+    | '/logistics/stock-availability'
+    | '/logistics/stock-movements'
+  id:
+    | '__root__'
+    | '/'
+    | '/logistics/intercompany-transfer'
+    | '/logistics/stock-availability'
+    | '/logistics/stock-movements'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogisticsIntercompanyTransferRoute: typeof LogisticsIntercompanyTransferRoute
+  LogisticsStockAvailabilityRoute: typeof LogisticsStockAvailabilityRoute
+  LogisticsStockMovementsRoute: typeof LogisticsStockMovementsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -57,6 +91,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logistics/stock-movements': {
+      id: '/logistics/stock-movements'
+      path: '/logistics/stock-movements'
+      fullPath: '/logistics/stock-movements'
+      preLoaderRoute: typeof LogisticsStockMovementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logistics/stock-availability': {
+      id: '/logistics/stock-availability'
+      path: '/logistics/stock-availability'
+      fullPath: '/logistics/stock-availability'
+      preLoaderRoute: typeof LogisticsStockAvailabilityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logistics/intercompany-transfer': {
@@ -72,6 +120,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogisticsIntercompanyTransferRoute: LogisticsIntercompanyTransferRoute,
+  LogisticsStockAvailabilityRoute: LogisticsStockAvailabilityRoute,
+  LogisticsStockMovementsRoute: LogisticsStockMovementsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

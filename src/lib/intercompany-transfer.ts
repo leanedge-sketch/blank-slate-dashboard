@@ -6,20 +6,15 @@
 
 import { z } from "zod";
 import { supabase } from "./supabase";
+import {
+  STOCK_LOCATIONS,
+  UNITS,
+  type StockLocation,
+  type Unit,
+} from "./enums";
 
-// Mirrors backend/app/models/enums.py::StockLocation
-export const STOCK_LOCATIONS = [
-  "Adwa",
-  "Wholesaler",
-  "Bahir Dar",
-  "Mekele",
-  "Hawassa",
-] as const;
-export type StockLocation = (typeof STOCK_LOCATIONS)[number];
-
-// Mirrors enums.Unit
-export const UNITS = ["kg", "g", "L", "mL", "pcs"] as const;
-export type Unit = (typeof UNITS)[number];
+export { STOCK_LOCATIONS, UNITS };
+export type { StockLocation, Unit };
 
 // -----------------------------------------------------------------------------
 // Zod schema — single source of truth for the form
