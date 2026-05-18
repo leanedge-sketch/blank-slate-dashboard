@@ -10,33 +10,44 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LogisticsIntercompanyTransferRouteImport } from './routes/logistics.intercompany-transfer'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogisticsIntercompanyTransferRoute =
+  LogisticsIntercompanyTransferRouteImport.update({
+    id: '/logistics/intercompany-transfer',
+    path: '/logistics/intercompany-transfer',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/logistics/intercompany-transfer'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/logistics/intercompany-transfer'
+  id: '__root__' | '/' | '/logistics/intercompany-transfer'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LogisticsIntercompanyTransferRoute: typeof LogisticsIntercompanyTransferRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +59,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/logistics/intercompany-transfer': {
+      id: '/logistics/intercompany-transfer'
+      path: '/logistics/intercompany-transfer'
+      fullPath: '/logistics/intercompany-transfer'
+      preLoaderRoute: typeof LogisticsIntercompanyTransferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LogisticsIntercompanyTransferRoute: LogisticsIntercompanyTransferRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
