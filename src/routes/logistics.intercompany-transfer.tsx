@@ -43,6 +43,7 @@ import {
   type ProductOption,
   type TransferInput,
 } from "@/lib/intercompany-transfer";
+import { STOCK_LOCATION_LABELS } from "@/lib/enums";
 
 export const Route = createFileRoute("/logistics/intercompany-transfer")({
   head: () => ({
