@@ -147,23 +147,47 @@ export function aggregateByLocation(rows: StockMovementRow[]): LocationBalance[]
   return Object.values(acc);
 }
 
+// -----------------------------------------------------------------------------
+// Pre-aggregated balances from the `stock_balance_by_location` SQL view
+// (see docs/0003_stock_balance_view.sql). Pushes the signed-quantity math
+// into Postgres so the client no longer pulls raw ledger rows.
+// -----------------------------------------------------------------------------
+
+export interface StockBalanceRow {
+  location: StockLocation;
+  net_kg: number;
+  inflow_kg: number;
+  outflow_kg: number;
+  movement_count: number;
+}
+
 /**
- * Pull every movement row (capped) for client-side aggregation. For very
- * large ledgers, replace this with a server-side SQL view or RPC.
+ * Fetch pre-computed per-location stock balances from the database view.
+ * Replaces the legacy `fetchAllMovementsForAggregation` + client-side
+ * `aggregateByLocation` pipeline (and its 5,000-row defensive cap).
  */
-export async function fetchAllMovementsForAggregation(
-  cap = 5000,
-): Promise<StockMovementRow[]> {
+export async function fetchStockBalances(): Promise<LocationBalance[]> {
   const { data, error } = await supabase
-    .from("stock_movements")
-    .select(
-      `id, date, product_id, location, transfer_to_location, transaction_type, unit,
-       sales_kg, purchase_kg, inter_company_transfer_kg, sample_kg, damage_kg,
-       stock_availability_kg, balance_kg, reference, remark, created_at,
-       product:products!stock_movements_product_id_fkey ( id, chemical, brand, packaging )`,
-    )
-    .order("date", { ascending: false })
-    .limit(cap);
+    .from("stock_balance_by_location")
+    .select("location, net_kg, inflow_kg, outflow_kg, movement_count");
+
   if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as StockMovementRow[];
+
+  const byLocation: Record<StockLocation, LocationBalance> = Object.fromEntries(
+    STOCK_LOCATIONS.map((loc) => [
+      loc,
+      { location: loc, netKg: 0, inflowKg: 0, outflowKg: 0, movementCount: 0 },
+    ]),
+  ) as Record<StockLocation, LocationBalance>;
+
+  for (const row of (data ?? []) as StockBalanceRow[]) {
+    const bucket = byLocation[row.location];
+    if (!bucket) continue;
+    bucket.netKg = Number(row.net_kg) || 0;
+    bucket.inflowKg = Number(row.inflow_kg) || 0;
+    bucket.outflowKg = Number(row.outflow_kg) || 0;
+    bucket.movementCount = Number(row.movement_count) || 0;
+  }
+
+  return Object.values(byLocation);
 }
