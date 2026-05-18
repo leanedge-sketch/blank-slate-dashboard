@@ -1,0 +1,171 @@
+%% docs/schema_er_diagram.mmd
+%% Intended ER architecture AFTER remediation.
+%% Render with: any Mermaid-compatible viewer (GitHub, mermaid.live, VS Code).
+%%
+%% KEY DECISIONS REFLECTED:
+%%  1. chemical_types is normalized to a single UUID primary key.
+%%     The legacy integer `id` on chemical_full_data is retained ONLY as a
+%%     non-FK surrogate; every cross-table reference uses chemical_type_id UUID.
+%%  2. Inventory truth lives exclusively in stock_movements (the ledger).
+%%     leanchem_products.stock_* JSON blobs are dropped.
+%%  3. sales_pipeline owns stage. customers.sales_stage shown but marked
+%%     LEGACY — slated for removal once Streamlit views read pipeline.stage.
+%%  4. Inter-company transfers pair via paired_movement_id (new column).
+%%  5. user_id columns reference Supabase's auth.users (shown as external).
+
+erDiagram
+
+    AUTH_USERS ||--o{ INTERACTIONS              : authors
+    AUTH_USERS ||--o{ CUSTOMER_PROFILE_FEEDBACK : submits
+
+    CUSTOMERS ||--o{ INTERACTIONS              : has
+    CUSTOMERS ||--o{ SALES_PIPELINE            : owns
+    CUSTOMERS ||--o{ CUSTOMER_PROFILE_FEEDBACK : receives
+    CUSTOMERS ||--o{ STOCK_MOVEMENTS           : "buys via (Sales)"
+
+    CHEMICAL_TYPES ||--o{ TDS_DATA           : "specifies"
+    CHEMICAL_TYPES ||--o{ SALES_PIPELINE     : "categorizes"
+    CHEMICAL_TYPES ||--o{ CHEMICAL_FULL_DATA : "extends"
+
+    TDS_DATA ||--o{ LEANCHEM_PRODUCTS  : "branded as"
+    TDS_DATA ||--o{ PARTNER_CHEMICALS  : "matched by"
+    TDS_DATA ||--o{ COSTING_PRICING    : "priced as"
+    TDS_DATA ||--o{ SALES_PIPELINE     : "quoted"
+    TDS_DATA ||--o{ PRODUCTS           : "is master for"
+    TDS_DATA ||--o{ STOCK_MOVEMENTS    : "moved as"
+    TDS_DATA ||--o{ INTERACTIONS       : "discussed in"
+
+    PARTNER_DATA ||--o{ PARTNER_CHEMICALS  : supplies
+    PARTNER_DATA ||--o{ COSTING_PRICING    : "supplies (cost)"
+    PARTNER_DATA ||--o{ CHEMICAL_FULL_DATA : "sourced from"
+    PARTNER_DATA ||--o{ STOCK_MOVEMENTS    : "supplier of"
+
+    PRODUCTS ||--o{ STOCK_MOVEMENTS : "movement of"
+
+    SALES_PIPELINE ||--o{ SALES_PIPELINE : "is prior version of"
+    SALES_PIPELINE ||--o{ INTERACTIONS   : "logged against"
+
+    STOCK_MOVEMENTS ||--o| STOCK_MOVEMENTS : "transfer pair"
+
+    AUTH_USERS {
+        uuid id PK "Supabase auth.users"
+    }
+
+    CUSTOMERS {
+        uuid customer_id PK
+        text customer_name
+        text sales_stage "LEGACY — drop after pipeline cutover"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    INTERACTIONS {
+        uuid id PK
+        uuid customer_id FK
+        uuid user_id FK "NOT NULL after fix"
+        uuid tds_id FK
+        uuid pipeline_id FK
+        text input_text
+        text ai_response
+    }
+
+    CUSTOMER_PROFILE_FEEDBACK {
+        uuid id PK
+        uuid customer_id FK
+        uuid user_id FK
+        int  rating
+        text comment
+    }
+
+    CHEMICAL_TYPES {
+        uuid id PK "UNIFIED uuid (was int)"
+        text name
+        text category
+        text hs_code
+        jsonb spec_template
+    }
+
+    CHEMICAL_FULL_DATA {
+        int  id PK "surrogate, non-FK"
+        uuid chemical_type_id FK
+        uuid partner_id FK
+        text product_name
+        numeric price
+    }
+
+    TDS_DATA {
+        uuid id PK
+        uuid chemical_type_id FK
+        text brand
+        text grade
+        jsonb specs
+    }
+
+    PARTNER_DATA {
+        uuid id PK
+        text partner
+        text partner_country
+    }
+
+    PARTNER_CHEMICALS {
+        uuid id PK
+        uuid partner_id FK
+        uuid tds_id FK
+        text vendor
+        jsonb metadata "legacy columns folded in"
+    }
+
+    LEANCHEM_PRODUCTS {
+        uuid id PK
+        uuid tds_id FK
+        text category
+        text product_type
+        jsonb prices "stock_* JSON REMOVED — see stock_movements"
+    }
+
+    COSTING_PRICING {
+        uuid partner_id FK
+        uuid tds_id FK
+        jsonb rows
+    }
+
+    SALES_PIPELINE {
+        uuid id PK
+        uuid customer_id FK
+        uuid tds_id FK
+        uuid chemical_type_id FK "UUID — matches chemical_types.id"
+        uuid parent_pipeline_id FK "self-ref for SCD2"
+        text stage "CHECK enum"
+        numeric amount
+        text currency "CHECK enum"
+        text forex "CHECK enum"
+        text business_unit "CHECK enum"
+        text incoterm "CHECK enum"
+        text business_model "CHECK enum"
+        int  version_number
+        bool is_current_version "UNIQUE per chain"
+    }
+
+    PRODUCTS {
+        uuid id PK
+        uuid tds_id FK
+        text chemical
+        text brand
+        numeric kg_per_unit
+    }
+
+    STOCK_MOVEMENTS {
+        uuid id PK
+        uuid product_id FK
+        uuid tds_id FK "snapshot — denormalized intentionally"
+        uuid supplier_id FK "-> partner_data"
+        uuid customer_id FK "-> customers"
+        uuid paired_movement_id FK "NEW — pairs inter-company transfers"
+        date date
+        text location "CHECK enum"
+        text transfer_to_location "CHECK enum, NULL unless transfer"
+        text transaction_type "CHECK enum"
+        text unit "CHECK enum"
+        text business_model "CHECK enum"
+        numeric balance_kg
+    }
