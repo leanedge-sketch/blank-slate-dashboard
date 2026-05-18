@@ -58,13 +58,13 @@ const fmtKg = (n: number) =>
 function StockAvailabilityPage() {
   const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } =
     useQuery({
-      queryKey: ["stock_movements", "all-for-aggregation"],
-      queryFn: () => fetchAllMovementsForAggregation(5000),
+      queryKey: ["stock_balance_by_location"],
+      queryFn: () => fetchStockBalances(),
       enabled: isSupabaseConfigured,
       staleTime: 30_000,
     });
 
-  const balances: LocationBalance[] = data ? aggregateByLocation(data) : [];
+  const balances: LocationBalance[] = data ?? [];
   const totalNet = balances.reduce((s, b) => s + b.netKg, 0);
   const totalIn = balances.reduce((s, b) => s + b.inflowKg, 0);
   const totalOut = balances.reduce((s, b) => s + b.outflowKg, 0);
