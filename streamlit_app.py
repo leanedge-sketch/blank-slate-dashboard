@@ -39,6 +39,17 @@ After ``_ensure_session()`` returns, every view can safely read:
 
 from __future__ import annotations
 
+# --- Path resolution -------------------------------------------------------
+# Ensure `backend/` is importable regardless of the CWD Streamlit is launched
+# from. MUST run before any `from backend.app...` import below.
+import os
+import sys
+sys.path.insert(
+    0,
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "backend")),
+)
+# ---------------------------------------------------------------------------
+
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
