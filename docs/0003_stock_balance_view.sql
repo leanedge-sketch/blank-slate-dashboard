@@ -5,12 +5,18 @@
 -- Computes real-time net stock (kg) per (product_id, location) by replaying
 -- the entire `stock_movements` ledger with strict per-transaction-type signs.
 --
--- Sign convention (mirrors src/lib/enums.ts TRANSACTION_SIGN):
+-- Authoritative column contract (from backend/app/models/stock.py):
+--   purchase_kg
+--   sold_kg
+--   sample_or_damage_kg
+--   inter_company_transfer_kg
+--
+-- Sign convention:
 --   Purchase             -> +purchase_kg
 --   Sales                -> -sold_kg
 --   Sample               -> -sample_or_damage_kg
---   Damage               -> -damage_kg
---   Stock Availability   -> +stock_availability_kg   (opening-balance marker)
+--   Damage               -> -sample_or_damage_kg
+--   Stock Availability   -> +purchase_kg              (opening-balance marker)
 --   Inter-company transfer:
 --       SOURCE leg      (transfer_to_location IS NOT NULL) -> -inter_company_transfer_kg
 --       DESTINATION leg (transfer_to_location IS NULL)     -> +inter_company_transfer_kg
@@ -34,8 +40,8 @@ WITH signed AS (
             WHEN 'Purchase'           THEN  COALESCE(sm.purchase_kg, 0)
             WHEN 'Sales'              THEN -COALESCE(sm.sold_kg, 0)
             WHEN 'Sample'             THEN -COALESCE(sm.sample_or_damage_kg, 0)
-            WHEN 'Damage'             THEN -COALESCE(sm.damage_kg, 0)
-            WHEN 'Stock Availability' THEN  COALESCE(sm.stock_availability_kg, 0)
+            WHEN 'Damage'             THEN -COALESCE(sm.sample_or_damage_kg, 0)
+            WHEN 'Stock Availability' THEN  COALESCE(sm.purchase_kg, 0)
             WHEN 'Inter-company transfer' THEN
                 CASE
                     WHEN sm.transfer_to_location IS NOT NULL
