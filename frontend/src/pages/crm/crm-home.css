@@ -1,0 +1,139 @@
+/* Premium CRM Page Styling */
+
+@import "tailwindcss";
+
+/* Enhanced grid pattern background */
+@layer utilities {
+  .bg-grid-pattern {
+    background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Smooth gradient animation */
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+}
+
+@layer components {
+  /* Premium feature card with enhanced effects */
+  .crm-feature-card-enhanced {
+    @apply relative overflow-hidden rounded-2xl transition-all duration-500;
+  }
+
+  .crm-feature-card-enhanced::before {
+    content: "";
+    @apply absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none;
+  }
+
+  /* Enhanced shadow effects */
+  .crm-shadow-glow {
+    @apply shadow-xl transition-shadow duration-300;
+  }
+
+  /* Premium button styling */
+  .crm-btn-premium {
+    @apply relative inline-flex items-center justify-center px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 active:translate-y-0;
+  }
+
+  .crm-btn-premium::before {
+    content: "";
+    @apply absolute inset-0 rounded-xl opacity-0 blur-lg transition-opacity duration-300 group-hover:opacity-100 -z-10;
+  }
+
+  /* Text animations */
+  .crm-text-shimmer {
+    background: linear-gradient(90deg, #fff 0%, #fff 25%, rgba(255, 255, 255, 0.5) 50%, #fff 75%, #fff 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% center;
+    }
+    100% {
+      background-position: -200% center;
+    }
+  }
+
+  /* Hover effects */
+  .crm-hover-scale {
+    @apply transition-transform duration-300 hover:scale-105;
+  }
+
+  .crm-hover-lift {
+    @apply transition-transform duration-300 hover:-translate-y-1;
+  }
+
+  /* Responsive typography */
+  .crm-heading-lg {
+    @apply text-white font-black tracking-tight;
+  }
+
+  .crm-heading-md {
+    @apply text-white font-bold tracking-tight;
+  }
+
+  .crm-text-muted {
+    @apply text-slate-400 font-light;
+  }
+
+  /* Glass morphism effect */
+  .crm-glass {
+    @apply backdrop-blur-md bg-white/5 border border-white/10;
+  }
+
+  /* Accent line animations */
+  .crm-accent-line-animated {
+    @apply absolute top-0 left-0 right-0 h-1 rounded-t-2xl opacity-0 transition-opacity duration-300;
+  }
+
+  /* Card overlays */
+  .crm-card-overlay {
+    @apply absolute inset-0 rounded-2xl bg-gradient-to-br opacity-0 transition-opacity duration-500 blur-xl -z-10;
+  }
+}
+
+/* Smooth transitions */
+* {
+  @apply transition-colors duration-200;
+}
+
+body {
+  @apply bg-gradient-to-br from-slate-950 via-slate-900 to-black;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full hover:bg-slate-600;
+}
+
+/* Selection styling */
+::selection {
+  @apply bg-blue-500/30 text-white;
+}
