@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Settings, User } from "lucide-react";
+import { ArrowRightLeft, LayoutDashboard, Settings, User } from "lucide-react";
 
 import {
   Sidebar,
@@ -12,10 +12,18 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-const items = [
+const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Profile", url: "/profile", icon: User },
   { title: "Settings", url: "/settings", icon: Settings },
+];
+
+const logisticsItems = [
+  {
+    title: "Inter-Company Transfers",
+    url: "/logistics/intercompany-transfer",
+    icon: ArrowRightLeft,
+  },
 ];
 
 export function AppSidebar() {
@@ -30,7 +38,25 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {mainItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={currentPath === item.url}>
+                    <Link to={item.url} className="flex items-center gap-2">
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Logistics &amp; Stock</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {logisticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={currentPath === item.url}>
                     <Link to={item.url} className="flex items-center gap-2">
@@ -47,3 +73,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
