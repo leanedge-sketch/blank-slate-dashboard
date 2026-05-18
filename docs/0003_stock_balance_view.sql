@@ -8,7 +8,7 @@
 -- Sign convention (mirrors src/lib/enums.ts TRANSACTION_SIGN):
 --   Purchase             -> +purchase_kg
 --   Sales                -> -sold_kg
---   Sample               -> -sample_kg
+--   Sample               -> -sample_or_damage_kg
 --   Damage               -> -damage_kg
 --   Stock Availability   -> +stock_availability_kg   (opening-balance marker)
 --   Inter-company transfer:
@@ -33,7 +33,7 @@ WITH signed AS (
         CASE sm.transaction_type
             WHEN 'Purchase'           THEN  COALESCE(sm.purchase_kg, 0)
             WHEN 'Sales'              THEN -COALESCE(sm.sold_kg, 0)
-            WHEN 'Sample'             THEN -COALESCE(sm.sample_kg, 0)
+            WHEN 'Sample'             THEN -COALESCE(sm.sample_or_damage_kg, 0)
             WHEN 'Damage'             THEN -COALESCE(sm.damage_kg, 0)
             WHEN 'Stock Availability' THEN  COALESCE(sm.stock_availability_kg, 0)
             WHEN 'Inter-company transfer' THEN
