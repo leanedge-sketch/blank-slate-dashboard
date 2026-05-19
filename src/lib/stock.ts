@@ -92,12 +92,10 @@ export interface LocationBalance {
 }
 
 function movementKg(row: StockMovementRow): number {
-  // Sum whatever quantity column is populated for this transaction type.
   return (
-    (row.sales_kg ?? 0) +
+    (row.sold_kg ?? 0) +
     (row.purchase_kg ?? 0) +
-    (row.sample_kg ?? 0) +
-    (row.damage_kg ?? 0) +
+    (row.sample_or_damage_kg ?? 0) +
     (row.stock_availability_kg ?? 0) +
     (row.inter_company_transfer_kg ?? 0)
   );
