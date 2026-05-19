@@ -109,19 +109,54 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SidebarProvider>
-        <div className="min-h-screen flex w-full">
-          <AppSidebar />
-          <div className="flex-1 flex flex-col bg-slate-50">
-            <header className="h-12 flex items-center border-b px-2 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-              <SidebarTrigger />
-            </header>
-            <main className="flex-1">
-              <Outlet />
-            </main>
-          </div>
-        </div>
-      </SidebarProvider>
+      <AuthProvider>
+        <AuthGate>
+          <SidebarProvider>
+            <div className="min-h-screen flex w-full">
+              <AppSidebar />
+              <div className="flex-1 flex flex-col bg-slate-50">
+                <header className="h-12 flex items-center border-b px-2 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                  <SidebarTrigger />
+                </header>
+                <main className="flex-1">
+                  <Outlet />
+                </main>
+              </div>
+            </div>
+          </SidebarProvider>
+        </AuthGate>
+      </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+const PUBLIC_ROUTES = new Set(["/login"]);
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const isPublic = PUBLIC_ROUTES.has(pathname);
+
+  useEffect(() => {
+    if (!loading && !user && !isPublic) {
+      navigate({
+        to: "/login",
+        search: { redirect: pathname } as never,
+        replace: true,
+      });
+    }
+  }, [loading, user, isPublic, pathname, navigate]);
+
+  if (isPublic) return <Outlet />;
+
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
