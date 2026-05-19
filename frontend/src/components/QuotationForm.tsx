@@ -369,7 +369,8 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
       console.log("Exporting quotation with data:", quotationData);
 
       // Call backend API
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+      const { getApiBaseUrl } = await import("../lib/api-base");
+      const apiBaseUrl = getApiBaseUrl();
       const response = await fetch(`${apiBaseUrl}/pms/generate-quotation`, {
         method: "POST",
         headers: {
