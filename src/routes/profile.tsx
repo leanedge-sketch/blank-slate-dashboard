@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Building2, Mail, Shield, User } from "lucide-react";
+import { Building2, LogOut, Mail, Shield, User } from "lucide-react";
 
 import {
   Card,
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -28,15 +29,30 @@ export const Route = createFileRoute("/profile")({
   component: ProfilePage,
 });
 
+function getInitials(value: string) {
+  const base = value.split("@")[0] ?? value;
+  const parts = base.split(/[._-\s]+/).filter(Boolean);
+  const letters = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
+  return (letters || base.slice(0, 2)).toUpperCase();
+}
+
 function ProfilePage() {
-  // Placeholder until AuthContext is wired into the new TanStack shell.
-  const user = {
-    name: "LeanChem User",
-    email: "user@leanchem.com",
-    role: "Operations",
-    entity: "LeanChem Industrial PLC",
-    initials: "LU",
-  };
+  const { user, signOut } = useAuth();
+
+  const email = user?.email ?? "";
+  const metaName =
+    (user?.user_metadata?.full_name as string | undefined) ??
+    (user?.user_metadata?.name as string | undefined) ??
+    email.split("@")[0] ??
+    "Account";
+  const role =
+    (user?.app_metadata?.role as string | undefined) ??
+    (user?.user_metadata?.role as string | undefined) ??
+    "Member";
+  const entity =
+    (user?.user_metadata?.entity as string | undefined) ??
+    "LeanChem Industrial PLC";
+  const initials = getInitials(metaName || email || "U");
 
   return (
     <div className="min-h-full bg-slate-50">
