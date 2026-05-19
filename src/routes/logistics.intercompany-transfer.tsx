@@ -205,6 +205,17 @@ function IntercompanyTransferPage() {
         </Alert>
       )}
 
+      {!canEdit && (
+        <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-900">
+          <Lock className="h-4 w-4" />
+          <AlertTitle>Read-only access</AlertTitle>
+          <AlertDescription>
+            {readOnlyTooltip} You can review the form below, but the Submit
+            action is disabled.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Transfer details</CardTitle>
@@ -215,7 +226,10 @@ function IntercompanyTransferPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
-            {/* Product + Date */}
+            <fieldset
+              disabled={!canEdit}
+              className="space-y-4 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="product">Product</Label>
