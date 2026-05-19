@@ -295,7 +295,7 @@ function StockMovementsPage() {
                 {isLoading
                   ? Array.from({ length: 6 }).map((_, i) => (
                       <TableRow key={i}>
-                        {Array.from({ length: 8 }).map((__, j) => (
+                        {Array.from({ length: 7 }).map((__, j) => (
                           <TableCell key={j}>
                             <Skeleton className="h-4 w-full" />
                           </TableCell>
@@ -306,7 +306,7 @@ function StockMovementsPage() {
                     ? (
                       <TableRow>
                         <TableCell
-                          colSpan={8}
+                          colSpan={7}
                           className="text-center text-sm text-muted-foreground py-12"
                         >
                           No movements match these filters.
