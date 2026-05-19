@@ -19,11 +19,10 @@ export interface StockMovementRow {
   transaction_type: TransactionType;
   unit: Unit;
   // Quantity columns — different transaction types populate different fields.
-  sales_kg: number | null;
+  sold_kg: number | null;
   purchase_kg: number | null;
   inter_company_transfer_kg: number | null;
-  sample_kg: number | null;
-  damage_kg: number | null;
+  sample_or_damage_kg: number | null;
   stock_availability_kg: number | null;
   balance_kg: number | null;
   reference: string | null;
@@ -60,7 +59,7 @@ export async function fetchStockMovements(
     .from("stock_movements")
     .select(
       `id, date, product_id, location, transfer_to_location, transaction_type, unit,
-       sales_kg, purchase_kg, inter_company_transfer_kg, sample_kg, damage_kg,
+       sold_kg, purchase_kg, inter_company_transfer_kg, sample_or_damage_kg,
        stock_availability_kg, balance_kg, reference, remark, created_at,
        product:products!stock_movements_product_id_fkey ( id, chemical, brand, packaging )`,
       { count: "exact" },
@@ -93,12 +92,10 @@ export interface LocationBalance {
 }
 
 function movementKg(row: StockMovementRow): number {
-  // Sum whatever quantity column is populated for this transaction type.
   return (
-    (row.sales_kg ?? 0) +
+    (row.sold_kg ?? 0) +
     (row.purchase_kg ?? 0) +
-    (row.sample_kg ?? 0) +
-    (row.damage_kg ?? 0) +
+    (row.sample_or_damage_kg ?? 0) +
     (row.stock_availability_kg ?? 0) +
     (row.inter_company_transfer_kg ?? 0)
   );

@@ -384,10 +384,9 @@ function SortableTh({
 
 function MovementRow({ row }: { row: StockMovementRow }) {
   const qty =
-    (row.sales_kg ?? 0) +
+    (row.sold_kg ?? 0) +
     (row.purchase_kg ?? 0) +
-    (row.sample_kg ?? 0) +
-    (row.damage_kg ?? 0) +
+    (row.sample_or_damage_kg ?? 0) +
     (row.stock_availability_kg ?? 0) +
     (row.inter_company_transfer_kg ?? 0);
 
