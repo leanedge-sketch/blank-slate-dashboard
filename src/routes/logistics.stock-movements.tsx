@@ -427,13 +427,27 @@ function MovementRow({ row }: { row: StockMovementRow }) {
 }
 
 function TransactionBadge({ type }: { type: TransactionType }) {
-  const variant: "default" | "secondary" | "destructive" | "outline" =
-    type === "Purchase"
-      ? "default"
-      : type === "Sales"
-        ? "secondary"
-        : type === "Damage"
-          ? "destructive"
-          : "outline";
-  return <Badge variant={variant}>{type}</Badge>;
+  const styles: Record<string, string> = {
+    Purchase:
+      "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50",
+    Sales:
+      "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 hover:bg-rose-50",
+    Sample:
+      "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 hover:bg-amber-50",
+    Damage:
+      "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 hover:bg-red-50",
+    "Stock Availability":
+      "bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50",
+    "Inter-company transfer":
+      "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 hover:bg-sky-50",
+  };
+  const cls = styles[type] ?? "bg-muted text-muted-foreground";
+  return (
+    <Badge
+      variant="outline"
+      className={`border-transparent font-medium ${cls}`}
+    >
+      {type}
+    </Badge>
+  );
 }
