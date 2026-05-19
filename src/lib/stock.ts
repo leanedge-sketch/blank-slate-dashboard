@@ -23,8 +23,6 @@ export interface StockMovementRow {
   purchase_kg: number | null;
   inter_company_transfer_kg: number | null;
   sample_or_damage_kg: number | null;
-  stock_availability_kg: number | null;
-  balance_kg: number | null;
   reference: string | null;
   remark: string | null;
   created_at: string | null;
