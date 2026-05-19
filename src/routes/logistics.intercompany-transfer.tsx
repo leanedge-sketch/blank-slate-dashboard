@@ -400,6 +400,7 @@ function IntercompanyTransferPage() {
                 onChange={(e) => update("remark", e.target.value)}
               />
             </div>
+            </fieldset>
 
             {formError && (
               <Alert variant="destructive">
@@ -411,15 +412,37 @@ function IntercompanyTransferPage() {
             )}
 
             <div className="flex justify-end pt-2">
-              <Button
-                type="submit"
-                size="lg"
-                disabled={submitting}
-                className="shadow-sm hover:shadow-md transition-shadow"
-              >
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Submit transfer
-              </Button>
+              {canEdit ? (
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={submitting}
+                  className="shadow-sm hover:shadow-md transition-shadow"
+                >
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Submit transfer
+                </Button>
+              ) : (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper so the tooltip still triggers on a disabled button */}
+                      <span tabIndex={0}>
+                        <Button
+                          type="button"
+                          size="lg"
+                          disabled
+                          className="shadow-sm pointer-events-none"
+                        >
+                          <Lock className="mr-2 h-4 w-4" />
+                          Submit transfer
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{readOnlyTooltip}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
           </form>
         </CardContent>
