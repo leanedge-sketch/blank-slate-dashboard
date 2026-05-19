@@ -178,24 +178,44 @@ function KpiCard({
   label,
   value,
   icon,
+  tone = "neutral",
+  emphasize = false,
 }: {
   label: string;
   value: string | null;
   icon: React.ReactNode;
+  tone?: "primary" | "success" | "danger" | "neutral";
+  emphasize?: boolean;
 }) {
+  const toneClasses: Record<string, string> = {
+    primary: "bg-primary/10 text-primary",
+    success: "bg-emerald-100 text-emerald-700",
+    danger: "bg-rose-100 text-rose-700",
+    neutral: "bg-muted text-muted-foreground",
+  };
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
         <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {label}
         </CardTitle>
-        {icon}
+        <span
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${toneClasses[tone]}`}
+        >
+          {icon}
+        </span>
       </CardHeader>
       <CardContent>
         {value === null ? (
-          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-9 w-28" />
         ) : (
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
+          <p
+            className={`tabular-nums font-semibold tracking-tight ${
+              emphasize ? "text-4xl" : "text-2xl"
+            }`}
+          >
+            {value}
+          </p>
         )}
       </CardContent>
     </Card>
