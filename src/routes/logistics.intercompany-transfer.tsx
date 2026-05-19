@@ -72,6 +72,12 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 type FieldErrors = Partial<Record<keyof TransferInput, string>>;
 
 function IntercompanyTransferPage() {
+  const { permissions, employeeRole } = useAuth();
+  const canEdit = permissions.canEditStock;
+  const readOnlyTooltip = `You need Logistics edit permission to record transfers${
+    employeeRole ? ` (current role: ${employeeRole})` : ""
+  }.`;
+
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
