@@ -19,11 +19,10 @@ export interface StockMovementRow {
   transaction_type: TransactionType;
   unit: Unit;
   // Quantity columns — different transaction types populate different fields.
-  sales_kg: number | null;
+  sold_kg: number | null;
   purchase_kg: number | null;
   inter_company_transfer_kg: number | null;
-  sample_kg: number | null;
-  damage_kg: number | null;
+  sample_or_damage_kg: number | null;
   stock_availability_kg: number | null;
   balance_kg: number | null;
   reference: string | null;
