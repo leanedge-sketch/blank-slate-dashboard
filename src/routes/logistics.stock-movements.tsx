@@ -282,7 +282,6 @@ function StockMovementsPage() {
                   <TableHead>Location</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Qty (kg)</TableHead>
-                  <TableHead className="text-right">Balance (kg)</TableHead>
                   <TableHead>Reference</TableHead>
                   <SortableTh
                     label="Logged"
@@ -296,7 +295,7 @@ function StockMovementsPage() {
                 {isLoading
                   ? Array.from({ length: 6 }).map((_, i) => (
                       <TableRow key={i}>
-                        {Array.from({ length: 8 }).map((__, j) => (
+                        {Array.from({ length: 7 }).map((__, j) => (
                           <TableCell key={j}>
                             <Skeleton className="h-4 w-full" />
                           </TableCell>
@@ -307,7 +306,7 @@ function StockMovementsPage() {
                     ? (
                       <TableRow>
                         <TableCell
-                          colSpan={8}
+                          colSpan={7}
                           className="text-center text-sm text-muted-foreground py-12"
                         >
                           No movements match these filters.
@@ -387,7 +386,6 @@ function MovementRow({ row }: { row: StockMovementRow }) {
     (row.sold_kg ?? 0) +
     (row.purchase_kg ?? 0) +
     (row.sample_or_damage_kg ?? 0) +
-    (row.stock_availability_kg ?? 0) +
     (row.inter_company_transfer_kg ?? 0);
 
   const productLabel = row.product
@@ -417,11 +415,6 @@ function MovementRow({ row }: { row: StockMovementRow }) {
       </TableCell>
       <TableCell className="text-right font-mono">
         {qty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
-      </TableCell>
-      <TableCell className="text-right font-mono text-muted-foreground">
-        {row.balance_kg != null
-          ? row.balance_kg.toLocaleString(undefined, { maximumFractionDigits: 3 })
-          : "—"}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate" title={row.reference ?? ""}>
         {row.reference ?? "—"}
