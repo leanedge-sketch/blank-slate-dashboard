@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LogisticsStockMovementsRouteImport } from './routes/logistics.stock-movements'
 import { Route as LogisticsStockAvailabilityRouteImport } from './routes/logistics.stock-availability'
@@ -18,6 +19,11 @@ import { Route as LogisticsIntercompanyTransferRouteImport } from './routes/logi
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -45,6 +51,7 @@ const LogisticsIntercompanyTransferRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
@@ -60,6 +68,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
@@ -69,6 +78,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
     | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
@@ -76,6 +86,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login'
     | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
@@ -83,6 +94,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/login'
     | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
@@ -91,6 +103,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   LogisticsIntercompanyTransferRoute: typeof LogisticsIntercompanyTransferRoute
   LogisticsStockAvailabilityRoute: typeof LogisticsStockAvailabilityRoute
@@ -104,6 +117,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -139,6 +159,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   LogisticsIntercompanyTransferRoute: LogisticsIntercompanyTransferRoute,
   LogisticsStockAvailabilityRoute: LogisticsStockAvailabilityRoute,

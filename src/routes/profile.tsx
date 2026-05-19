@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Building2, Mail, Shield, User } from "lucide-react";
+import { Building2, LogOut, Mail, Shield, User } from "lucide-react";
 
 import {
   Card,
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -28,15 +29,30 @@ export const Route = createFileRoute("/profile")({
   component: ProfilePage,
 });
 
+function getInitials(value: string) {
+  const base = value.split("@")[0] ?? value;
+  const parts = base.split(/[._-\s]+/).filter(Boolean);
+  const letters = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
+  return (letters || base.slice(0, 2)).toUpperCase();
+}
+
 function ProfilePage() {
-  // Placeholder until AuthContext is wired into the new TanStack shell.
-  const user = {
-    name: "LeanChem User",
-    email: "user@leanchem.com",
-    role: "Operations",
-    entity: "LeanChem Industrial PLC",
-    initials: "LU",
-  };
+  const { user, signOut } = useAuth();
+
+  const email = user?.email ?? "";
+  const metaName =
+    (user?.user_metadata?.full_name as string | undefined) ??
+    (user?.user_metadata?.name as string | undefined) ??
+    email.split("@")[0] ??
+    "Account";
+  const role =
+    (user?.app_metadata?.role as string | undefined) ??
+    (user?.user_metadata?.role as string | undefined) ??
+    "Member";
+  const entity =
+    (user?.user_metadata?.entity as string | undefined) ??
+    "LeanChem Industrial PLC";
+  const initials = getInitials(metaName || email || "U");
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -61,16 +77,16 @@ function ProfilePage() {
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16 ring-2 ring-slate-200">
                   <AvatarFallback className="bg-gradient-to-br from-sky-500 to-indigo-600 text-lg font-semibold text-white">
-                    {user.initials}
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="space-y-1">
                   <CardTitle className="text-xl text-slate-900">
-                    {user.name}
+                    {metaName}
                   </CardTitle>
                   <CardDescription className="flex items-center gap-1.5 text-slate-600">
                     <Mail className="h-3.5 w-3.5" />
-                    {user.email}
+                    {email}
                   </CardDescription>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <Badge
@@ -78,20 +94,30 @@ function ProfilePage() {
                       className="border-transparent bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"
                     >
                       <Shield className="mr-1 h-3 w-3" />
-                      {user.role}
+                      {role}
                     </Badge>
                     <Badge
                       variant="secondary"
                       className="border-transparent bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200"
                     >
                       <Building2 className="mr-1 h-3 w-3" />
-                      {user.entity}
+                      {entity}
                     </Badge>
                   </div>
+                  {user?.id && (
+                    <p className="pt-1 text-xs text-slate-400 font-mono">
+                      ID: {user.id}
+                    </p>
+                  )}
                 </div>
               </div>
-              <Button variant="outline" className="shadow-sm">
-                Edit profile
+              <Button
+                variant="outline"
+                className="shadow-sm"
+                onClick={() => signOut()}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
               </Button>
             </div>
           </CardHeader>
@@ -114,7 +140,7 @@ function ProfilePage() {
                 <Label htmlFor="fullName">Full name</Label>
                 <Input
                   id="fullName"
-                  defaultValue={user.name}
+                  defaultValue={metaName}
                   className="focus-visible:ring-2 focus-visible:ring-primary/40"
                 />
               </div>
@@ -123,20 +149,20 @@ function ProfilePage() {
                 <Input
                   id="email"
                   type="email"
-                  defaultValue={user.email}
+                  defaultValue={email}
                   disabled
                   className="bg-slate-50"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Input id="role" defaultValue={user.role} disabled className="bg-slate-50" />
+                <Input id="role" defaultValue={role} disabled className="bg-slate-50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="entity">Entity</Label>
                 <Input
                   id="entity"
-                  defaultValue={user.entity}
+                  defaultValue={entity}
                   disabled
                   className="bg-slate-50"
                 />
