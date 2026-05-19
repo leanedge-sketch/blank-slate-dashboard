@@ -126,22 +126,27 @@ function StockAvailabilityPage() {
         <KpiCard
           label="Total net (kg)"
           value={isLoading ? null : fmtKg(totalNet)}
-          icon={<Boxes className="h-4 w-4 text-muted-foreground" />}
+          icon={<Boxes className="h-4 w-4" />}
+          tone="primary"
+          emphasize
         />
         <KpiCard
           label="Total inflow"
           value={isLoading ? null : fmtKg(totalIn)}
-          icon={<ArrowUpRight className="h-4 w-4 text-emerald-500" />}
+          icon={<ArrowUpRight className="h-4 w-4" />}
+          tone="success"
         />
         <KpiCard
           label="Total outflow"
           value={isLoading ? null : fmtKg(totalOut)}
-          icon={<ArrowDownRight className="h-4 w-4 text-rose-500" />}
+          icon={<ArrowDownRight className="h-4 w-4" />}
+          tone="danger"
         />
         <KpiCard
           label="Movements"
           value={isLoading ? null : totalMovements.toLocaleString()}
-          icon={<Layers className="h-4 w-4 text-muted-foreground" />}
+          icon={<Layers className="h-4 w-4" />}
+          tone="neutral"
         />
       </div>
 
