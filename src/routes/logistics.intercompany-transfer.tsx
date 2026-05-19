@@ -10,7 +10,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowRightLeft, Loader2 } from "lucide-react";
+import { ArrowRightLeft, Loader2, Lock } from "lucide-react";
+
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +72,12 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 type FieldErrors = Partial<Record<keyof TransferInput, string>>;
 
 function IntercompanyTransferPage() {
+  const { permissions, employeeRole } = useAuth();
+  const canEdit = permissions.canEditStock;
+  const readOnlyTooltip = `You need Logistics edit permission to record transfers${
+    employeeRole ? ` (current role: ${employeeRole})` : ""
+  }.`;
+
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
@@ -117,6 +131,11 @@ function IntercompanyTransferPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    if (!canEdit) {
+      setFormError(readOnlyTooltip);
+      return;
+    }
 
     const parsed = transferSchema.safeParse(form);
     if (!parsed.success) {
@@ -186,6 +205,17 @@ function IntercompanyTransferPage() {
         </Alert>
       )}
 
+      {!canEdit && (
+        <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-900">
+          <Lock className="h-4 w-4" />
+          <AlertTitle>Read-only access</AlertTitle>
+          <AlertDescription>
+            {readOnlyTooltip} You can review the form below, but the Submit
+            action is disabled.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Transfer details</CardTitle>
@@ -196,7 +226,10 @@ function IntercompanyTransferPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
-            {/* Product + Date */}
+            <fieldset
+              disabled={!canEdit}
+              className="space-y-4 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="product">Product</Label>
@@ -367,6 +400,7 @@ function IntercompanyTransferPage() {
                 onChange={(e) => update("remark", e.target.value)}
               />
             </div>
+            </fieldset>
 
             {formError && (
               <Alert variant="destructive">
@@ -378,15 +412,37 @@ function IntercompanyTransferPage() {
             )}
 
             <div className="flex justify-end pt-2">
-              <Button
-                type="submit"
-                size="lg"
-                disabled={submitting}
-                className="shadow-sm hover:shadow-md transition-shadow"
-              >
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Submit transfer
-              </Button>
+              {canEdit ? (
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={submitting}
+                  className="shadow-sm hover:shadow-md transition-shadow"
+                >
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Submit transfer
+                </Button>
+              ) : (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper so the tooltip still triggers on a disabled button */}
+                      <span tabIndex={0}>
+                        <Button
+                          type="button"
+                          size="lg"
+                          disabled
+                          className="shadow-sm pointer-events-none"
+                        >
+                          <Lock className="mr-2 h-4 w-4" />
+                          Submit transfer
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{readOnlyTooltip}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
           </form>
         </CardContent>
