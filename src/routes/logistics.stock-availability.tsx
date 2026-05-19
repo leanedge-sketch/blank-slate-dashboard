@@ -251,7 +251,7 @@ function LocationCard({
       <CardContent className="space-y-3">
         <div>
           <p
-            className={`text-3xl font-semibold tabular-nums ${
+            className={`text-4xl font-bold tracking-tight tabular-nums ${
               isNegative ? "text-destructive" : "text-foreground"
             }`}
           >
