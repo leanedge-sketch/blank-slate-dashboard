@@ -107,7 +107,7 @@ function RootComponent() {
       <SidebarProvider>
         <div className="min-h-screen flex w-full">
           <AppSidebar />
-          <div className="flex-1 flex flex-col bg-muted/40">
+          <div className="flex-1 flex flex-col bg-slate-50">
             <header className="h-12 flex items-center border-b px-2 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
               <SidebarTrigger />
             </header>

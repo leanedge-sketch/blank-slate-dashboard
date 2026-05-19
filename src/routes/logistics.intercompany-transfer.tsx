@@ -378,7 +378,12 @@ function IntercompanyTransferPage() {
             )}
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" disabled={submitting}>
+              <Button
+                type="submit"
+                size="lg"
+                disabled={submitting}
+                className="shadow-sm hover:shadow-md transition-shadow"
+              >
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Submit transfer
               </Button>
