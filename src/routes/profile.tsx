@@ -77,16 +77,16 @@ function ProfilePage() {
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16 ring-2 ring-slate-200">
                   <AvatarFallback className="bg-gradient-to-br from-sky-500 to-indigo-600 text-lg font-semibold text-white">
-                    {user.initials}
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="space-y-1">
                   <CardTitle className="text-xl text-slate-900">
-                    {user.name}
+                    {metaName}
                   </CardTitle>
                   <CardDescription className="flex items-center gap-1.5 text-slate-600">
                     <Mail className="h-3.5 w-3.5" />
-                    {user.email}
+                    {email}
                   </CardDescription>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <Badge
@@ -94,20 +94,30 @@ function ProfilePage() {
                       className="border-transparent bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"
                     >
                       <Shield className="mr-1 h-3 w-3" />
-                      {user.role}
+                      {role}
                     </Badge>
                     <Badge
                       variant="secondary"
                       className="border-transparent bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200"
                     >
                       <Building2 className="mr-1 h-3 w-3" />
-                      {user.entity}
+                      {entity}
                     </Badge>
                   </div>
+                  {user?.id && (
+                    <p className="pt-1 text-xs text-slate-400 font-mono">
+                      ID: {user.id}
+                    </p>
+                  )}
                 </div>
               </div>
-              <Button variant="outline" className="shadow-sm">
-                Edit profile
+              <Button
+                variant="outline"
+                className="shadow-sm"
+                onClick={() => signOut()}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
               </Button>
             </div>
           </CardHeader>
