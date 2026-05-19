@@ -416,11 +416,6 @@ function MovementRow({ row }: { row: StockMovementRow }) {
       <TableCell className="text-right font-mono">
         {qty.toLocaleString(undefined, { maximumFractionDigits: 3 })}
       </TableCell>
-      <TableCell className="text-right font-mono text-muted-foreground">
-        {row.balance_kg != null
-          ? row.balance_kg.toLocaleString(undefined, { maximumFractionDigits: 3 })
-          : "—"}
-      </TableCell>
       <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate" title={row.reference ?? ""}>
         {row.reference ?? "—"}
       </TableCell>
