@@ -1,6 +1,7 @@
 import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { isSupabaseConfigured } from "../../lib/supabase";
 import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
 
 export function LoginPage() {
@@ -42,6 +43,22 @@ export function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-900/80 border border-amber-500/40 rounded-2xl p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-amber-400 mx-auto mb-4" />
+          <h1 className="text-xl font-semibold text-white mb-2">Supabase not configured</h1>
+          <p className="text-slate-400 text-sm">
+            Add <code className="text-amber-300">VITE_SUPABASE_URL</code> and{" "}
+            <code className="text-amber-300">VITE_SUPABASE_PUBLISHABLE_KEY</code> in Vercel
+            → Settings → Environment Variables, then redeploy.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center p-4">

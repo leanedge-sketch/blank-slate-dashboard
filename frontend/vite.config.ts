@@ -1,14 +1,52 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+
+function pickEnv(
+  key: string,
+  fromFrontend: Record<string, string>,
+  fromRoot: Record<string, string>,
+): string {
+  return process.env[key] ?? fromFrontend[key] ?? fromRoot[key] ?? "";
+}
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    host: true, // Listen on all network interfaces (0.0.0.0)
-    strictPort: false, // Try next available port if 5173 is busy
-  },
+export default defineConfig(({ mode }) => {
+  const fromFrontend = loadEnv(mode, __dirname, "");
+  const fromRoot = loadEnv(mode, repoRoot, "");
+
+  const supabaseUrl = pickEnv("VITE_SUPABASE_URL", fromFrontend, fromRoot);
+  const supabaseAnonKey =
+    pickEnv("VITE_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
+    pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot);
+  const supabasePublishableKey =
+    pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot) ||
+    supabaseAnonKey;
+
+  console.log(
+    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}`,
+  );
+
+  return {
+    plugins: [react()],
+    envDir: __dirname,
+    define: {
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+      "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(
+        pickEnv("VITE_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
+          supabaseAnonKey,
+      ),
+      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY":
+        JSON.stringify(supabasePublishableKey),
+    },
+    server: {
+      port: 5173,
+      host: true,
+      strictPort: false,
+    },
+  };
 });
-
-

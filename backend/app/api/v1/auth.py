@@ -11,8 +11,24 @@ from typing import Optional
 from supabase import Client
 from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.dependencies import get_current_user
+from app.config import settings
 
 router = APIRouter()
+
+
+@router.get("/auth/public-config")
+async def public_supabase_config():
+    """
+    Public Supabase URL + anon key for the browser client.
+    The anon key is intended for client-side use; this avoids relying on
+    VITE_* vars being present at frontend build time on Vercel.
+    """
+    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Server Supabase env missing: set SUPABASE_URL and SUPABASE_KEY on Vercel.",
+        )
+    return {"url": settings.SUPABASE_URL, "anon_key": settings.SUPABASE_KEY}
 
 
 @router.get("/auth/check-employee")

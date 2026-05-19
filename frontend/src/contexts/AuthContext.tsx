@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
 import { checkEmployeeStatus as checkEmployeeStatusAPI } from "../services/api";
 
@@ -82,6 +82,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
@@ -142,6 +147,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: new Error(
+          "Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY (or VITE_SUPABASE_*) on Vercel, then redeploy.",
+        ),
+      };
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -176,6 +189,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithMagicLink = async (email: string) => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: new Error(
+          "Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY (or VITE_SUPABASE_*) on Vercel, then redeploy.",
+        ),
+      };
+    }
+
     try {
       // First check if email is an employee
       const employeeInfo = await checkEmployeeStatus(email);
@@ -207,6 +228,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: new Error(
+          "Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY (or VITE_SUPABASE_*) on Vercel, then redeploy.",
+        ),
+      };
+    }
+
     try {
       // First check if email is an employee
       const employeeInfo = await checkEmployeeStatus(email);
@@ -237,6 +266,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePassword = async (newPassword: string) => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: new Error(
+          "Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY (or VITE_SUPABASE_*) on Vercel, then redeploy.",
+        ),
+      };
+    }
+
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -263,6 +300,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (!isSupabaseConfigured()) {
+      return;
+    }
     await supabase.auth.signOut();
     setIsEmployee(false);
     setEmployeeRole(null);
