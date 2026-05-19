@@ -4,6 +4,9 @@ Vercel serverless entry for the FastAPI app.
 The real ASGI application is built in backend/app/main.py (variable `app`).
 This file only adjusts sys.path so that package imports match local `uvicorn` runs
 from the `backend/` directory.
+
+Requires Vercel **Root Directory** = repository root (not `frontend`).
+Routes: /api/v1/*, /api/docs, etc.
 """
 from __future__ import annotations
 
