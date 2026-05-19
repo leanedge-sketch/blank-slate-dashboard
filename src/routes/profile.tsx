@@ -37,22 +37,30 @@ function getInitials(value: string) {
 }
 
 function ProfilePage() {
-  const { user, signOut } = useAuth();
+  const { user, employee, employeeRole, permissions, signOut } = useAuth();
 
   const email = user?.email ?? "";
   const metaName =
+    employee?.name ??
     (user?.user_metadata?.full_name as string | undefined) ??
     (user?.user_metadata?.name as string | undefined) ??
     email.split("@")[0] ??
     "Account";
-  const role =
-    (user?.app_metadata?.role as string | undefined) ??
-    (user?.user_metadata?.role as string | undefined) ??
-    "Member";
+  const role = employeeRole ?? "Member";
   const entity =
     (user?.user_metadata?.entity as string | undefined) ??
     "LeanChem Industrial PLC";
   const initials = getInitials(metaName || email || "U");
+  const grantedSections = (
+    [
+      ["CRM", permissions.canViewCRM],
+      ["PMS", permissions.canViewPMS],
+      ["Sales Pipeline", permissions.canViewSalesPipeline],
+      ["Stock", permissions.canViewStock],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([label]) => label);
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -104,6 +112,19 @@ function ProfilePage() {
                       {entity}
                     </Badge>
                   </div>
+                  {grantedSections.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {grantedSections.map((label) => (
+                        <Badge
+                          key={label}
+                          variant="outline"
+                          className="border-slate-200 bg-slate-50 text-[10px] font-medium uppercase tracking-wide text-slate-600"
+                        >
+                          {label}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                   {user?.id && (
                     <p className="pt-1 text-xs text-slate-400 font-mono">
                       ID: {user.id}
