@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LogisticsStockMovementsRouteImport } from './routes/logistics.stock-movements'
 import { Route as LogisticsStockAvailabilityRouteImport } from './routes/logistics.stock-availability'
 import { Route as LogisticsIntercompanyTransferRouteImport } from './routes/logistics.intercompany-transfer'
 
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -39,12 +45,14 @@ const LogisticsIntercompanyTransferRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
   '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
   '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
@@ -52,6 +60,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/logistics/intercompany-transfer': typeof LogisticsIntercompanyTransferRoute
   '/logistics/stock-availability': typeof LogisticsStockAvailabilityRoute
   '/logistics/stock-movements': typeof LogisticsStockMovementsRoute
@@ -60,18 +69,21 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
     | '/logistics/stock-movements'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
     | '/logistics/stock-movements'
   id:
     | '__root__'
     | '/'
+    | '/profile'
     | '/logistics/intercompany-transfer'
     | '/logistics/stock-availability'
     | '/logistics/stock-movements'
@@ -79,6 +91,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ProfileRoute: typeof ProfileRoute
   LogisticsIntercompanyTransferRoute: typeof LogisticsIntercompanyTransferRoute
   LogisticsStockAvailabilityRoute: typeof LogisticsStockAvailabilityRoute
   LogisticsStockMovementsRoute: typeof LogisticsStockMovementsRoute
@@ -86,6 +99,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -119,6 +139,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProfileRoute: ProfileRoute,
   LogisticsIntercompanyTransferRoute: LogisticsIntercompanyTransferRoute,
   LogisticsStockAvailabilityRoute: LogisticsStockAvailabilityRoute,
   LogisticsStockMovementsRoute: LogisticsStockMovementsRoute,
