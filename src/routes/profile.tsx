@@ -37,22 +37,30 @@ function getInitials(value: string) {
 }
 
 function ProfilePage() {
-  const { user, signOut } = useAuth();
+  const { user, employee, employeeRole, permissions, signOut } = useAuth();
 
   const email = user?.email ?? "";
   const metaName =
+    employee?.name ??
     (user?.user_metadata?.full_name as string | undefined) ??
     (user?.user_metadata?.name as string | undefined) ??
     email.split("@")[0] ??
     "Account";
-  const role =
-    (user?.app_metadata?.role as string | undefined) ??
-    (user?.user_metadata?.role as string | undefined) ??
-    "Member";
+  const role = employeeRole ?? "Member";
   const entity =
     (user?.user_metadata?.entity as string | undefined) ??
     "LeanChem Industrial PLC";
   const initials = getInitials(metaName || email || "U");
+  const grantedSections = (
+    [
+      ["CRM", permissions.canViewCRM],
+      ["PMS", permissions.canViewPMS],
+      ["Sales Pipeline", permissions.canViewSalesPipeline],
+      ["Stock", permissions.canViewStock],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([label]) => label);
 
   return (
     <div className="min-h-full bg-slate-50">
