@@ -140,7 +140,7 @@ function ProfilePage() {
                 <Label htmlFor="fullName">Full name</Label>
                 <Input
                   id="fullName"
-                  defaultValue={user.name}
+                  defaultValue={metaName}
                   className="focus-visible:ring-2 focus-visible:ring-primary/40"
                 />
               </div>
@@ -149,20 +149,20 @@ function ProfilePage() {
                 <Input
                   id="email"
                   type="email"
-                  defaultValue={user.email}
+                  defaultValue={email}
                   disabled
                   className="bg-slate-50"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Input id="role" defaultValue={user.role} disabled className="bg-slate-50" />
+                <Input id="role" defaultValue={role} disabled className="bg-slate-50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="entity">Entity</Label>
                 <Input
                   id="entity"
-                  defaultValue={user.entity}
+                  defaultValue={entity}
                   disabled
                   className="bg-slate-50"
                 />
