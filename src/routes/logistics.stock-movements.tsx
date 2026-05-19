@@ -282,7 +282,6 @@ function StockMovementsPage() {
                   <TableHead>Location</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Qty (kg)</TableHead>
-                  <TableHead className="text-right">Balance (kg)</TableHead>
                   <TableHead>Reference</TableHead>
                   <SortableTh
                     label="Logged"
