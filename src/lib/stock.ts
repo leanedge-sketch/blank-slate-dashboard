@@ -59,7 +59,7 @@ export async function fetchStockMovements(
     .from("stock_movements")
     .select(
       `id, date, product_id, location, transfer_to_location, transaction_type, unit,
-       sales_kg, purchase_kg, inter_company_transfer_kg, sample_kg, damage_kg,
+       sold_kg, purchase_kg, inter_company_transfer_kg, sample_or_damage_kg,
        stock_availability_kg, balance_kg, reference, remark, created_at,
        product:products!stock_movements_product_id_fkey ( id, chemical, brand, packaging )`,
       { count: "exact" },
