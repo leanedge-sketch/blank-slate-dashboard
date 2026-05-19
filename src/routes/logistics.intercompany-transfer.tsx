@@ -132,6 +132,11 @@ function IntercompanyTransferPage() {
     e.preventDefault();
     setFormError(null);
 
+    if (!canEdit) {
+      setFormError(readOnlyTooltip);
+      return;
+    }
+
     const parsed = transferSchema.safeParse(form);
     if (!parsed.success) {
       const next: FieldErrors = {};
