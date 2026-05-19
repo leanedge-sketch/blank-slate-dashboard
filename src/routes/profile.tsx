@@ -112,6 +112,19 @@ function ProfilePage() {
                       {entity}
                     </Badge>
                   </div>
+                  {grantedSections.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {grantedSections.map((label) => (
+                        <Badge
+                          key={label}
+                          variant="outline"
+                          className="border-slate-200 bg-slate-50 text-[10px] font-medium uppercase tracking-wide text-slate-600"
+                        >
+                          {label}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                   {user?.id && (
                     <p className="pt-1 text-xs text-slate-400 font-mono">
                       ID: {user.id}
