@@ -31,14 +31,22 @@ export default defineConfig(({ mode }) => {
     pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot) ||
     "https://blank-slate-dashboard-plum.vercel.app";
 
+  const rawApiUrl = pickEnv("VITE_API_URL", fromFrontend, fromRoot);
+  // Production builds must not bake a Render backend URL.
+  const productionApiUrl =
+    rawApiUrl && !rawApiUrl.includes("onrender.com") ? rawApiUrl : "";
+
   console.log(
-    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}, frontend URL: ${productionAppUrl}`,
+    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}, frontend: ${productionAppUrl}, API: ${mode === "production" ? "Vercel same-origin" : rawApiUrl || "local"}`,
   );
 
   return {
     plugins: [react()],
     envDir: __dirname,
     define: {
+      "import.meta.env.VITE_API_URL": JSON.stringify(
+        mode === "production" ? productionApiUrl : rawApiUrl,
+      ),
       "import.meta.env.VITE_FRONTEND_URL": JSON.stringify(
         mode === "production" ? productionAppUrl : pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot),
       ),

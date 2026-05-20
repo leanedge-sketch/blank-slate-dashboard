@@ -1,93 +1,78 @@
-# Vercel: Frontend + Backend (same project)
+# Vercel-only deployment (recommended)
 
-This repo deploys **both** the React app (`frontend/`) and the FastAPI backend (`api/index.py` → `backend/`) on one Vercel project.
+Use **one** production stack: React on Vercel + FastAPI at `/api`. Do **not** use Render for this app.
 
-**Production URL:** https://blank-slate-dashboard-plum.vercel.app  
-**API base:** https://blank-slate-dashboard-plum.vercel.app/api/v1
-
-Do **not** point `VITE_API_URL` at Render unless you intentionally use an external backend.
-
-## Architecture
+| | URL |
+|---|-----|
+| **App** | https://blank-slate-dashboard-plum.vercel.app |
+| **API** | https://blank-slate-dashboard-plum.vercel.app/api/v1 |
 
 ```
-Browser  →  https://blank-slate-dashboard-plum.vercel.app/          (Vite SPA)
-         →  https://blank-slate-dashboard-plum.vercel.app/api/v1/*  (Python serverless)
+Browser  →  https://blank-slate-dashboard-plum.vercel.app/
+         →  https://blank-slate-dashboard-plum.vercel.app/api/v1/*
 ```
 
-`frontend/src/lib/api-base.ts` uses same-origin `/api/v1` on `*.vercel.app` when `VITE_API_URL` is unset.
+The frontend ignores `VITE_API_URL` values that point at `*.onrender.com` and uses the Vercel API instead.
 
-## 1. Vercel project settings
+## Vercel project
 
-In [Vercel Dashboard](https://vercel.com) → your project → **Settings**:
+- **Project:** `blank-slate-dashboard`
+- **Repo:** `leanedge-sketch/blank-slate-dashboard`
+- **Root:** repository root (uses root `vercel.json`)
 
-| Setting | Value |
-|--------|--------|
-| **Root Directory** | Leave as **repository root** (not `frontend` alone) |
-| **Framework** | Vite (or auto from `vercel.json`) |
-| **Build Command** | Handled by root `vercel.json` (`experimentalServices.frontend`) |
-| **Output** | `frontend/dist` |
+## Required environment variables
 
-Import/connect the GitHub repo: `leanedge-sketch/blank-slate-dashboard`.
+Set in Vercel → **Settings → Environment Variables** (Production + Preview):
 
-## 2. Environment variables (required)
-
-**Settings → Environment Variables** → add for **Production**, **Preview**, and **Development**:
-
-### Backend (runtime — no `VITE_` prefix)
-
-These are read by FastAPI in `api/index.py` / `backend/app/config.py`:
+### Backend (runtime)
 
 | Name | Description |
 |------|-------------|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Supabase **anon** key |
-| `SUPABASE_SERVICE_KEY` | Supabase **service role** key (employee checks, admin) |
-| `OPENAI_API_KEY` | OpenAI API key (AI features) |
+| `SUPABASE_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `OPENAI_API_KEY` | Valid key from https://platform.openai.com/api-keys |
 
-Optional: `OPENAI_CHAT_MODEL`, `TELEGRAM_BOT_TOKEN`, `GOOGLE_PSE_API_KEY`, etc. (see `backend/app/config.py`).
+Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) for password-change emails.
 
-### Frontend (build-time — optional if backend vars are set)
+### Frontend (build)
 
-If these are set, Supabase works without calling the API at startup:
-
-| Name | Description |
-|------|-------------|
+| Name | Value |
+|------|--------|
 | `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as anon key (or use `VITE_SUPABASE_ANON_KEY`) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as anon key |
 | `VITE_FRONTEND_URL` | `https://blank-slate-dashboard-plum.vercel.app` |
 
-If `VITE_*` are missing at build time, the app loads config from **`GET /api/v1/auth/public-config`** (requires `SUPABASE_URL` + `SUPABASE_KEY` on the server).
+### Do not set
 
-### Do not set (unless you use an external API)
+| Name | Why |
+|------|-----|
+| `VITE_API_URL` → Render | Causes AI/auth to hit an old Render backend. Leave unset. |
 
-| Name | Notes |
-|------|--------|
-| `VITE_API_URL` | **Remove** if it points to Render. Leave unset so production uses `https://<app>.vercel.app/api/v1`. |
+## Supabase Auth
 
-## 3. Deploy
-
-1. Push to `main` (or your production branch).
-2. Vercel redeploys automatically.
-3. After changing env vars, trigger **Redeploy** (env changes need a new build for `VITE_*`; server vars apply on next function cold start).
-
-## 4. Verify backend is connected
-
-1. **API docs:** https://blank-slate-dashboard-plum.vercel.app/api/docs
-2. **Public Supabase config:** https://blank-slate-dashboard-plum.vercel.app/api/v1/auth/public-config  
-   Should return `{"url":"...","anon_key":"..."}` (not 503).
-3. **Frontend:** Open https://blank-slate-dashboard-plum.vercel.app → DevTools → Network. API calls should go to `/api/v1/...` on the same host.
-
-### Supabase Auth redirect URLs
-
-In Supabase Dashboard → Authentication → URL configuration, add:
+**Authentication → URL configuration:**
 
 - **Site URL:** `https://blank-slate-dashboard-plum.vercel.app`
 - **Redirect URLs:** `https://blank-slate-dashboard-plum.vercel.app/**`
 
-## 5. Local development
+## Deploy
+
+Push to `main` → Vercel redeploys automatically.
+
+Manual: `npx vercel deploy --prod` from repo root.
+
+## Verify
+
+1. Open https://blank-slate-dashboard-plum.vercel.app (hard refresh: `Ctrl+Shift+R`).
+2. DevTools → **Network** → trigger “Generate AI profile”.
+3. Request host must be `blank-slate-dashboard-plum.vercel.app`, **not** `onrender.com`.
+4. API smoke test: https://blank-slate-dashboard-plum.vercel.app/api/v1/auth/public-config → `200`.
+
+## Local development
 
 ```bash
-# Terminal 1 — backend
+# Terminal 1 — API
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
@@ -98,26 +83,18 @@ npm install
 npm run dev
 ```
 
-Frontend uses `http://localhost:8000/api/v1` by default.
+Frontend uses `http://localhost:8000/api/v1`.
 
 ## Troubleshooting
 
-### CORS errors
-Backend uses permissive CORS (`ReflectingWildcardCORSMiddleware`). If you still see CORS issues, confirm the request URL is your Vercel domain, not a third-party API.
+### OpenAI 401 `invalid_api_key`
 
-### 503 on `/api/v1/auth/public-config`
-Set `SUPABASE_URL` and `SUPABASE_KEY` on Vercel (server env), then redeploy.
+Update `OPENAI_API_KEY` on **Vercel** (not Render) with a new key from OpenAI, then redeploy.
 
-### API calls go to Render or localhost in production
-Delete `VITE_API_URL` on Vercel or set it to `https://<your-app>.vercel.app/api/v1`.
+### Still calling Render
 
-### Supabase error on load
-Set either:
-- `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` at build time, **or**
-- `SUPABASE_URL` + `SUPABASE_KEY` for runtime bootstrap via `/api/v1/auth/public-config`.
+Remove `VITE_API_URL` on Vercel if it points to `onrender.com`. Redeploy. Use only the plum URL.
 
-### Python function timeout / cold start
-Heavy AI routes may need a longer limit. Adjust `functions` in root `vercel.json` if needed.
+### Profile menu / old UI
 
-### Monorepo build fails
-Ensure root `vercel.json` is used (not only `frontend/vercel.json`). Root file wires `frontend` + `api/index.py`.
+Hard refresh or incognito on the plum URL.
