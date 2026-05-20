@@ -130,54 +130,18 @@ function RootComponent() {
   );
 }
 
-const PUBLIC_ROUTES = new Set(["/login"]);
-
+// TODO: REMOVE MOCK AUTH FOR PRODUCTION
+// Auth gate is disabled for the stakeholder demo — all routes render directly.
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const {
-    user,
-    loading,
-    employeeStatus,
-    employeeError,
-    signOut,
-    recheckEmployee,
-  } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const isPublic = PUBLIC_ROUTES.has(pathname);
 
+  // If someone hits /login during the demo, send them straight to the app.
   useEffect(() => {
-    if (!loading && !user && !isPublic) {
-      navigate({
-        to: "/login",
-        search: { redirect: pathname } as never,
-        replace: true,
-      });
+    if (pathname === "/login") {
+      navigate({ to: "/", replace: true });
     }
-  }, [loading, user, isPublic, pathname, navigate]);
-
-  if (isPublic) return <Outlet />;
-
-  // Still loading session, or running the employee check.
-  if (loading || !user || employeeStatus === "unknown" || employeeStatus === "checking") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
-  // Authenticated but not an active employee — or the gate API failed.
-  if (employeeStatus !== "active") {
-    return (
-      <UnauthorizedScreen
-        status={employeeStatus}
-        email={user.email ?? ""}
-        message={employeeError}
-        onRetry={() => void recheckEmployee()}
-        onSignOut={() => void signOut()}
-      />
-    );
-  }
+  }, [pathname, navigate]);
 
   return <>{children}</>;
 }
