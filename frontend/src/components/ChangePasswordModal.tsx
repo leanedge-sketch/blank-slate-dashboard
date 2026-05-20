@@ -1,27 +1,31 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import {
-  confirmPasswordChange,
-  requestPasswordChangeCode,
-} from "../services/api";
-import { supabase } from "../lib/supabase";
+import { changePassword } from "../services/api";
 
-type Step = "passwords" | "verify" | "done";
+type Step = "form" | "done";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
 }
 
 export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
-  const { user, employeeData } = useAuth();
+  const { user, employeeData, signOut } = useAuth();
   const email = employeeData?.email || user?.email || "";
+  const name =
+    employeeData?.name?.trim() ||
+    (typeof user?.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name.trim()
+      : "") ||
+    (typeof user?.user_metadata?.name === "string"
+      ? user.user_metadata.name.trim()
+      : "") ||
+    "";
 
-  const [step, setStep] = useState<Step>("passwords");
+  const [step, setStep] = useState<Step>("form");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -36,7 +40,7 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
     return null;
   };
 
-  const handleSendVerification = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setMessage(null);
@@ -47,61 +51,24 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
       return;
     }
 
-    if (!email) {
-      setError("No email on your account.");
-      return;
-    }
-
     setLoading(true);
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password: currentPassword,
-      });
-      if (signInError) {
-        setError("Current password is incorrect.");
-        return;
-      }
-
-      await requestPasswordChangeCode();
-      setMessage(
-        "A verification code was sent to your email. Enter it below to confirm the change.",
-      );
-      setStep("verify");
-    } catch (err: unknown) {
-      const detail =
-        err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data
-              ?.detail
-          : null;
-      setError(
-        detail ||
-          (err instanceof Error ? err.message : "Failed to send verification code."),
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirmChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setMessage(null);
-
-    const code = verificationCode.trim();
-    if (!/^\d{6}$/.test(code)) {
-      setError("Enter the 6-digit code from your email.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await confirmPasswordChange({
-        verification_code: code,
+      const result = await changePassword({
+        current_password: currentPassword,
         new_password: newPassword,
       });
+
+      const parts = [result.message];
+      if (result.email_sent) {
+        parts.push(`A confirmation was sent to ${email}.`);
+      } else if (result.notice) {
+        parts.push(result.notice);
+      }
+      parts.push("Sign in again with your new password.");
+
+      setMessage(parts.join(" "));
       setStep("done");
-      setMessage("Password updated. A confirmation email was sent to your inbox.");
+      await signOut();
     } catch (err: unknown) {
       const detail =
         err && typeof err === "object" && "response" in err
@@ -118,7 +85,12 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="change-password-title"
+    >
       <div className="modal-card">
         <div className="modal-header">
           <h2 id="change-password-title">Change password</h2>
@@ -135,15 +107,36 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         {step === "done" ? (
           <div className="modal-body">
             <p className="modal-success">{message}</p>
-            <button type="button" className="btn-primary" onClick={onClose}>
-              Done
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                onClose();
+                window.location.href = "/login";
+              }}
+            >
+              Go to sign in
             </button>
           </div>
-        ) : step === "passwords" ? (
-          <form className="modal-body" onSubmit={handleSendVerification}>
+        ) : (
+          <form className="modal-body" onSubmit={handleSubmit}>
+            <div className="modal-account-readonly" aria-readonly="true">
+              {name ? (
+                <p>
+                  <span className="modal-account-label">Account</span>
+                  <strong>{name}</strong>
+                </p>
+              ) : null}
+              {email ? (
+                <p>
+                  <span className="modal-account-label">Email</span>
+                  <strong>{email}</strong>
+                </p>
+              ) : null}
+            </div>
             <p className="modal-hint">
-              We will email a verification code to <strong>{email}</strong> before
-              updating your password.
+              Enter your current password and choose a new one. We will email a
+              confirmation to your account when email is configured.
             </p>
             <label className="modal-field">
               <span>Current password</span>
@@ -178,46 +171,9 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
               />
             </label>
             {error && <p className="modal-error">{error}</p>}
-            {message && <p className="modal-info">{message}</p>}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={onClose}>
                 Cancel
-              </button>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? "Sending code…" : "Send verification code"}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form className="modal-body" onSubmit={handleConfirmChange}>
-            <p className="modal-hint">{message}</p>
-            <label className="modal-field">
-              <span>Verification code</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={verificationCode}
-                onChange={(e) =>
-                  setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                placeholder="6-digit code"
-                required
-              />
-            </label>
-            {error && <p className="modal-error">{error}</p>}
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setStep("passwords");
-                  setVerificationCode("");
-                  setError(null);
-                }}
-              >
-                Back
               </button>
               <button type="submit" className="btn-primary" disabled={loading}>
                 {loading ? "Updating…" : "Update password"}

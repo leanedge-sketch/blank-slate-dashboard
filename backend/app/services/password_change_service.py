@@ -54,6 +54,102 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(900000) + 100000:06d}"
 
 
+def _send_password_changed_notification(
+    *,
+    email: str,
+    display_name: str | None = None,
+) -> bool:
+    """Send confirmation email after a successful password change. Returns True if sent."""
+    name = display_name or email
+    subject = "LeanChem Connect — your password was changed"
+    html = f"""
+    <p>Hello {name},</p>
+    <p>This confirms that the password for your LeanChem Connect account (<strong>{email}</strong>) was changed successfully.</p>
+    <p>If you did not make this change, contact your administrator immediately.</p>
+    <p>— LeanChem Connect</p>
+    """
+    text = (
+        f"Your LeanChem Connect password for {email} was changed. "
+        "If this wasn't you, contact your administrator."
+    )
+    try:
+        send_email(to=email, subject=subject, html=html, text=text)
+        return True
+    except EmailNotConfiguredError:
+        return False
+    except Exception:
+        return False
+
+
+def _apply_new_password(
+    *,
+    supabase: Client,
+    user_id: str,
+    new_password: str,
+) -> None:
+    meta = _fresh_user_metadata(supabase, user_id)
+    cleaned_meta = {
+        k: v
+        for k, v in meta.items()
+        if k not in (META_CODE_HASH, META_EXPIRES)
+    }
+    cleaned_meta["password_set"] = True
+    cleaned_meta["password_set_at"] = datetime.now(timezone.utc).isoformat()
+
+    supabase.auth.admin.update_user_by_id(
+        user_id,
+        {
+            "password": new_password,
+            "user_metadata": cleaned_meta,
+        },
+    )
+
+
+def change_password_with_current(
+    *,
+    supabase: Client,
+    anon_supabase: Client,
+    user: object,
+    current_password: str,
+    new_password: str,
+    display_name: str | None = None,
+) -> dict:
+    """
+    Verify current password, update to new password, and email a confirmation (if configured).
+    No verification code — current password is sufficient proof.
+    """
+    if len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if current_password == new_password:
+        raise ValueError("New password must be different from your current password.")
+
+    user_id = _user_id(user)
+    email = _user_email(user)
+
+    try:
+        sign_in = anon_supabase.auth.sign_in_with_password(
+            {"email": email, "password": current_password}
+        )
+    except Exception as exc:
+        raise ValueError("Current password is incorrect.") from exc
+
+    if not sign_in or not getattr(sign_in, "user", None):
+        raise ValueError("Current password is incorrect.")
+
+    _apply_new_password(supabase=supabase, user_id=user_id, new_password=new_password)
+    email_sent = _send_password_changed_notification(email=email, display_name=display_name)
+
+    result: dict = {"message": "Password updated successfully."}
+    if email_sent:
+        result["email_sent"] = True
+    else:
+        result["email_sent"] = False
+        result["notice"] = (
+            "Password updated. Confirmation email was not sent (email provider not configured)."
+        )
+    return result
+
+
 def request_password_change_verification(
     *,
     supabase: Client,
@@ -146,37 +242,7 @@ def confirm_password_change(
     if _hash_code(code) != stored_hash:
         raise ValueError("Incorrect verification code.")
 
-    cleaned_meta = {
-        k: v
-        for k, v in meta.items()
-        if k not in (META_CODE_HASH, META_EXPIRES)
-    }
-    cleaned_meta["password_set"] = True
-    cleaned_meta["password_set_at"] = datetime.now(timezone.utc).isoformat()
-
-    supabase.auth.admin.update_user_by_id(
-        user_id,
-        {
-            "password": new_password,
-            "user_metadata": cleaned_meta,
-        },
-    )
-
-    name = display_name or email
-    subject = "LeanChem Connect — your password was changed"
-    html = f"""
-    <p>Hello {name},</p>
-    <p>This confirms that the password for your LeanChem Connect account (<strong>{email}</strong>) was changed successfully.</p>
-    <p>If you did not make this change, contact your administrator immediately.</p>
-    <p>— LeanChem Connect</p>
-    """
-    text = f"Your LeanChem Connect password for {email} was changed. If this wasn't you, contact your administrator."
-
-    try:
-        send_email(to=email, subject=subject, html=html, text=text)
-    except EmailNotConfiguredError:
-        pass
-    except Exception:
-        pass
+    _apply_new_password(supabase=supabase, user_id=user_id, new_password=new_password)
+    _send_password_changed_notification(email=email, display_name=display_name)
 
     return {"message": "Password updated successfully."}

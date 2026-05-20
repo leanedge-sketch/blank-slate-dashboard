@@ -1211,6 +1211,17 @@ export interface PasswordChangeMessageResponse {
   expires_in_minutes?: number;
 }
 
+export async function changePassword(body: {
+  current_password: string;
+  new_password: string;
+}): Promise<PasswordChangeMessageResponse & { email_sent?: boolean; notice?: string }> {
+  const response = await api.post<
+    PasswordChangeMessageResponse & { email_sent?: boolean; notice?: string }
+  >("/auth/change-password", body);
+  return response.data;
+}
+
+/** @deprecated Prefer changePassword — no manual verification code. */
 export async function requestPasswordChangeCode(): Promise<PasswordChangeMessageResponse> {
   const response = await api.post<PasswordChangeMessageResponse>(
     "/auth/change-password/request",
@@ -1218,6 +1229,7 @@ export async function requestPasswordChangeCode(): Promise<PasswordChangeMessage
   return response.data;
 }
 
+/** @deprecated Prefer changePassword — no manual verification code. */
 export async function confirmPasswordChange(body: {
   verification_code: string;
   new_password: string;

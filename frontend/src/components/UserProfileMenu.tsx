@@ -29,8 +29,17 @@ export function UserProfileMenu() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const label = displayLabel(employeeData, user?.email);
   const email = employeeData?.email || user?.email || "";
+  const name =
+    employeeData?.name?.trim() ||
+    (typeof user?.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name.trim()
+      : "") ||
+    (typeof user?.user_metadata?.name === "string"
+      ? user.user_metadata.name.trim()
+      : "") ||
+    "";
+  const label = displayLabel(employeeData, user?.email);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -73,11 +82,29 @@ export function UserProfileMenu() {
           <div className="user-profile-dropdown" role="menu">
             <div className="user-profile-dropdown-header" role="none">
               <User className="user-profile-dropdown-icon" size={16} />
-              <div>
+              <div className="user-profile-dropdown-identity">
                 <span className="user-profile-dropdown-label">Signed in as</span>
-                <span className="user-profile-dropdown-value">{label}</span>
-                {email && (
-                  <span className="user-profile-dropdown-email">{email}</span>
+                {name ? (
+                  <>
+                    <span className="user-profile-dropdown-field-label">Name</span>
+                    <span className="user-profile-dropdown-value">{name}</span>
+                  </>
+                ) : null}
+                {email ? (
+                  <>
+                    <span className="user-profile-dropdown-field-label">Email</span>
+                    <span
+                      className={
+                        name
+                          ? "user-profile-dropdown-email"
+                          : "user-profile-dropdown-value"
+                      }
+                    >
+                      {email}
+                    </span>
+                  </>
+                ) : (
+                  <span className="user-profile-dropdown-value">{label}</span>
                 )}
               </div>
             </div>

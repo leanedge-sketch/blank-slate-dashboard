@@ -571,12 +571,33 @@ a:hover {
   color: #cbd5e1;
 }
 
+.user-profile-dropdown-icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: #94a3b8;
+}
+
+.user-profile-dropdown-identity {
+  min-width: 0;
+  flex: 1;
+}
+
 .user-profile-dropdown-label {
   display: block;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #94a3b8;
+  margin-bottom: 0.35rem;
+}
+
+.user-profile-dropdown-field-label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-top: 0.35rem;
 }
 
 .user-profile-dropdown-value {
@@ -675,6 +696,36 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.modal-account-readonly {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  font-size: 0.875rem;
+}
+
+.modal-account-readonly p {
+  margin: 0.25rem 0;
+}
+
+.modal-account-readonly p:first-child {
+  margin-top: 0;
+}
+
+.modal-account-readonly p:last-child {
+  margin-bottom: 0;
+}
+
+.modal-account-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.1rem;
 }
 
 .modal-hint {

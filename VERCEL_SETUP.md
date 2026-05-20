@@ -33,7 +33,7 @@ Set in Vercel → **Settings → Environment Variables** (Production + Preview):
 | `SUPABASE_SERVICE_KEY` | Supabase service role key |
 | `OPENAI_API_KEY` | Valid key from https://platform.openai.com/api-keys |
 
-Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) for password-change emails.
+Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) — sends a **confirmation** email after password change (not required for the change to work).
 
 ### Frontend (build)
 
@@ -98,3 +98,12 @@ Remove `VITE_API_URL` on Vercel if it points to `onrender.com`. Redeploy. Use on
 ### Profile menu / old UI
 
 Hard refresh or incognito on the plum URL.
+
+### Change password — no confirmation email
+
+**Profile → Change password** works without email config. To also send a confirmation to the user’s inbox, set on Vercel:
+
+- `RESEND_API_KEY` — from [Resend](https://resend.com)
+- `EMAIL_FROM` — verified sender, e.g. `LeanChem Connect <noreply@yourdomain.com>`
+
+(or SMTP_*). Redeploy after adding variables.

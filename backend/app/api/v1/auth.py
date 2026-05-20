@@ -9,11 +9,15 @@ HTTP endpoints for authentication and employee management:
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from supabase import Client
-from app.database.connection import get_supabase_client, get_supabase_service_client
+from app.database.connection import (
+    get_supabase_client,
+    get_supabase_service_client,
+)
 from app.dependencies import get_current_user
 from app.config import settings
 from app.services.email_service import EmailNotConfiguredError
 from app.services.password_change_service import (
+    change_password_with_current,
     confirm_password_change,
     request_password_change_verification,
 )
@@ -21,9 +25,31 @@ from app.services.password_change_service import (
 router = APIRouter()
 
 
+class PasswordChangeBody(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class PasswordChangeConfirmBody(BaseModel):
     verification_code: str = Field(..., min_length=6, max_length=6)
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+def _employee_display_name(supabase: Client, email: str | None) -> str | None:
+    if not email:
+        return None
+    try:
+        row = (
+            supabase.table("employees")
+            .select("name")
+            .eq("email", str(email).lower().strip())
+            .execute()
+        )
+        if row.data:
+            return row.data[0].get("name")
+    except Exception:
+        pass
+    return None
 
 
 @router.get("/health/openai")
@@ -153,28 +179,45 @@ async def get_current_employee_info(
         )
 
 
+@router.post("/auth/change-password")
+async def change_password(
+    body: PasswordChangeBody,
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_service_client),
+    anon_supabase: Client = Depends(get_supabase_client),
+):
+    """
+    Change password in one step: verify current password, apply new password,
+    and send a confirmation email when email is configured.
+    """
+    email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
+    display_name = _employee_display_name(supabase, email)
+
+    try:
+        return change_password_with_current(
+            supabase=supabase,
+            anon_supabase=anon_supabase,
+            user=user,
+            current_password=body.current_password,
+            new_password=body.new_password,
+            display_name=display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/auth/change-password/request")
 async def request_change_password_code(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase_service_client),
 ):
     """
-    Send a 6-digit verification code to the signed-in user's email before a password change.
+    Legacy: send a 6-digit verification code (prefer POST /auth/change-password).
     """
     email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
-    display_name: str | None = None
-    if email:
-        try:
-            row = (
-                supabase.table("employees")
-                .select("name")
-                .eq("email", str(email).lower().strip())
-                .execute()
-            )
-            if row.data:
-                display_name = row.data[0].get("name")
-        except Exception:
-            pass
+    display_name = _employee_display_name(supabase, email)
 
     try:
         return request_password_change_verification(
@@ -198,19 +241,7 @@ async def confirm_change_password(
     Verify the emailed code and set the new password.
     """
     email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
-    display_name: str | None = None
-    if email:
-        try:
-            row = (
-                supabase.table("employees")
-                .select("name")
-                .eq("email", str(email).lower().strip())
-                .execute()
-            )
-            if row.data:
-                display_name = row.data[0].get("name")
-        except Exception:
-            pass
+    display_name = _employee_display_name(supabase, email)
 
     try:
         return confirm_password_change(
