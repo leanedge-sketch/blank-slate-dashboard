@@ -1,14 +1,17 @@
 # Vercel: Frontend + Backend (same project)
 
-This repo deploys **both** the React app (`frontend/`) and the FastAPI backend (`api/index.py` → `backend/`) on one Vercel project. The browser talks to the API at **`https://<your-app>.vercel.app/api/v1`**.
+This repo deploys **both** the React app (`frontend/`) and the FastAPI backend (`api/index.py` → `backend/`) on one Vercel project.
+
+**Production URL:** https://blank-slate-dashboard-plum.vercel.app  
+**API base:** https://blank-slate-dashboard-plum.vercel.app/api/v1
 
 Do **not** point `VITE_API_URL` at Render unless you intentionally use an external backend.
 
 ## Architecture
 
 ```
-Browser  →  https://your-app.vercel.app/          (Vite SPA, frontend/)
-         →  https://your-app.vercel.app/api/v1/*  (Python serverless, api/index.py)
+Browser  →  https://blank-slate-dashboard-plum.vercel.app/          (Vite SPA)
+         →  https://blank-slate-dashboard-plum.vercel.app/api/v1/*  (Python serverless)
 ```
 
 `frontend/src/lib/api-base.ts` uses same-origin `/api/v1` on `*.vercel.app` when `VITE_API_URL` is unset.
@@ -51,6 +54,7 @@ If these are set, Supabase works without calling the API at startup:
 |------|-------------|
 | `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as anon key (or use `VITE_SUPABASE_ANON_KEY`) |
+| `VITE_FRONTEND_URL` | `https://blank-slate-dashboard-plum.vercel.app` |
 
 If `VITE_*` are missing at build time, the app loads config from **`GET /api/v1/auth/public-config`** (requires `SUPABASE_URL` + `SUPABASE_KEY` on the server).
 
@@ -68,15 +72,17 @@ If `VITE_*` are missing at build time, the app loads config from **`GET /api/v1/
 
 ## 4. Verify backend is connected
 
-Replace `<your-app>` with your Vercel hostname:
-
-1. **Health (via API mount):**  
-   `https://<your-app>.vercel.app/api/v1` routes are under FastAPI; try docs:  
-   `https://<your-app>.vercel.app/api/docs`
-2. **Public Supabase config:**  
-   `https://<your-app>.vercel.app/api/v1/auth/public-config`  
+1. **API docs:** https://blank-slate-dashboard-plum.vercel.app/api/docs
+2. **Public Supabase config:** https://blank-slate-dashboard-plum.vercel.app/api/v1/auth/public-config  
    Should return `{"url":"...","anon_key":"..."}` (not 503).
-3. **Frontend:** Open the app → DevTools → Network. API calls should go to `https://<your-app>.vercel.app/api/v1/...`, not `localhost` or `onrender.com`.
+3. **Frontend:** Open https://blank-slate-dashboard-plum.vercel.app → DevTools → Network. API calls should go to `/api/v1/...` on the same host.
+
+### Supabase Auth redirect URLs
+
+In Supabase Dashboard → Authentication → URL configuration, add:
+
+- **Site URL:** `https://blank-slate-dashboard-plum.vercel.app`
+- **Redirect URLs:** `https://blank-slate-dashboard-plum.vercel.app/**`
 
 ## 5. Local development
 

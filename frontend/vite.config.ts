@@ -27,14 +27,21 @@ export default defineConfig(({ mode }) => {
     pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot) ||
     supabaseAnonKey;
 
+  const productionAppUrl =
+    pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot) ||
+    "https://blank-slate-dashboard-plum.vercel.app";
+
   console.log(
-    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}`,
+    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}, frontend URL: ${productionAppUrl}`,
   );
 
   return {
     plugins: [react()],
     envDir: __dirname,
     define: {
+      "import.meta.env.VITE_FRONTEND_URL": JSON.stringify(
+        mode === "production" ? productionAppUrl : pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot),
+      ),
       "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
       "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(
         pickEnv("VITE_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
