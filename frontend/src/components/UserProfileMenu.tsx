@@ -57,12 +57,12 @@ export function UserProfileMenu() {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-haspopup="menu"
-          aria-label="Account menu"
+          aria-label="Profile menu"
         >
           <span className="user-profile-avatar" aria-hidden>
             {initials(label)}
           </span>
-          <span className="user-profile-name">{label}</span>
+          <span className="user-profile-label">Profile</span>
           <ChevronDown
             className={`user-profile-chevron ${open ? "is-open" : ""}`}
             size={16}
@@ -76,7 +76,7 @@ export function UserProfileMenu() {
               <div>
                 <span className="user-profile-dropdown-label">Signed in as</span>
                 <span className="user-profile-dropdown-value">{label}</span>
-                {email && email !== label && (
+                {email && (
                   <span className="user-profile-dropdown-email">{email}</span>
                 )}
               </div>
@@ -101,7 +101,7 @@ export function UserProfileMenu() {
               onClick={handleSignOut}
             >
               <LogOut size={16} />
-              Log out
+              Sign out
             </button>
           </div>
         )}

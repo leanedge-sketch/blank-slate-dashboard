@@ -26,6 +26,32 @@ class PasswordChangeConfirmBody(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+@router.get("/health/openai")
+async def openai_health():
+    """Smoke-test OpenAI key configured on this deployment (Vercel)."""
+    from app.services.ai_service import CHAT_MODEL, _api_key, _get_client, reset_openai_client
+
+    key = _api_key()
+    if not key:
+        return {"ok": False, "detail": "OPENAI_API_KEY is not set on the server."}
+    if len(key) < 20:
+        return {
+            "ok": False,
+            "detail": "OPENAI_API_KEY looks truncated. Paste the full sk-proj-… key on Vercel.",
+        }
+    try:
+        reset_openai_client()
+        client = _get_client()
+        client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[{"role": "user", "content": "ok"}],
+            max_tokens=2,
+        )
+        return {"ok": True, "model": CHAT_MODEL, "key_suffix": key[-4:]}
+    except Exception as exc:
+        return {"ok": False, "detail": str(exc)[:300]}
+
+
 @router.get("/auth/public-config")
 async def public_supabase_config():
     """

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"
     OPENAI_API_KEY: str = ""
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
+    MODEL_CHOICE: str = ""  # Legacy alias; maps to OPENAI_CHAT_MODEL when set
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBED_DIM: int = 768  # Match existing pgvector(768) schema
     # Legacy / fallback keys (unused — kept so older .env files don't break)

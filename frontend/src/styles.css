@@ -537,11 +537,9 @@ a:hover {
   letter-spacing: 0.02em;
 }
 
-.user-profile-name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.user-profile-label {
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .user-profile-chevron {
@@ -791,7 +789,7 @@ a:hover {
     grid-template-columns: 1fr;
   }
 
-  .user-profile-name {
+  .user-profile-label {
     display: none;
   }
 }

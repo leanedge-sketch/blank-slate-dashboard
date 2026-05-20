@@ -28,7 +28,9 @@ from app.database.connection import get_supabase_service_client
 from supabase import Client
 
 
-CHAT_MODEL = settings.OPENAI_CHAT_MODEL or "gpt-4o-mini"
+CHAT_MODEL = (
+    settings.MODEL_CHOICE or settings.OPENAI_CHAT_MODEL or "gpt-4o-mini"
+)
 EMBED_MODEL = settings.OPENAI_EMBED_MODEL or "text-embedding-3-small"
 EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
@@ -44,15 +46,30 @@ GeminiError = AIServiceError
 _client: Optional[OpenAI] = None
 
 
+def _api_key() -> str:
+    return (settings.OPENAI_API_KEY or "").strip()
+
+
 def _get_client() -> OpenAI:
     global _client
+    key = _api_key()
     if _client is None:
-        if not settings.OPENAI_API_KEY:
+        if not key:
             raise AIServiceError(
                 "OPENAI_API_KEY is not configured in environment/settings."
             )
-        _client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        if len(key) < 20:
+            raise AIServiceError(
+                "OPENAI_API_KEY looks truncated. Re-copy the full key on Vercel."
+            )
+        _client = OpenAI(api_key=key)
     return _client
+
+
+def reset_openai_client() -> None:
+    """Clear cached client (e.g. after env key rotation)."""
+    global _client
+    _client = None
 
 
 def ai_chat(messages: List[Dict[str, str]]) -> str:
