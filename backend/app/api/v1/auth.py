@@ -7,13 +7,23 @@ HTTP endpoints for authentication and employee management:
 - GET  /api/v1/auth/me              → Get current user's employee info
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional
+from pydantic import BaseModel, Field
 from supabase import Client
 from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.dependencies import get_current_user
 from app.config import settings
+from app.services.email_service import EmailNotConfiguredError
+from app.services.password_change_service import (
+    confirm_password_change,
+    request_password_change_verification,
+)
 
 router = APIRouter()
+
+
+class PasswordChangeConfirmBody(BaseModel):
+    verification_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, max_length=128)
 
 
 @router.get("/auth/public-config")
@@ -115,4 +125,77 @@ async def get_current_employee_info(
             status_code=500,
             detail=f"Failed to get employee information: {str(e)}"
         )
+
+
+@router.post("/auth/change-password/request")
+async def request_change_password_code(
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_service_client),
+):
+    """
+    Send a 6-digit verification code to the signed-in user's email before a password change.
+    """
+    email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
+    display_name: str | None = None
+    if email:
+        try:
+            row = (
+                supabase.table("employees")
+                .select("name")
+                .eq("email", str(email).lower().strip())
+                .execute()
+            )
+            if row.data:
+                display_name = row.data[0].get("name")
+        except Exception:
+            pass
+
+    try:
+        return request_password_change_verification(
+            supabase=supabase,
+            user=user,
+            display_name=display_name,
+        )
+    except EmailNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/auth/change-password/confirm")
+async def confirm_change_password(
+    body: PasswordChangeConfirmBody,
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_service_client),
+):
+    """
+    Verify the emailed code and set the new password.
+    """
+    email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
+    display_name: str | None = None
+    if email:
+        try:
+            row = (
+                supabase.table("employees")
+                .select("name")
+                .eq("email", str(email).lower().strip())
+                .execute()
+            )
+            if row.data:
+                display_name = row.data[0].get("name")
+        except Exception:
+            pass
+
+    try:
+        return confirm_password_change(
+            supabase=supabase,
+            user=user,
+            verification_code=body.verification_code,
+            new_password=body.new_password,
+            display_name=display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 

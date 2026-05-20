@@ -1,10 +1,21 @@
 import axios from "axios";
 import { getApiBaseUrl } from "../lib/api-base";
+import { supabase } from "../lib/supabase";
 
 const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+});
+
+api.interceptors.request.use(async (config) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
+  }
+  return config;
 });
 
 export interface Customer {
@@ -1192,6 +1203,29 @@ export async function checkEmployeeStatus(email: string): Promise<EmployeeCheckR
   const response = await api.get<EmployeeCheckResponse>("/auth/check-employee", {
     params: { email },
   });
+  return response.data;
+}
+
+export interface PasswordChangeMessageResponse {
+  message: string;
+  expires_in_minutes?: number;
+}
+
+export async function requestPasswordChangeCode(): Promise<PasswordChangeMessageResponse> {
+  const response = await api.post<PasswordChangeMessageResponse>(
+    "/auth/change-password/request",
+  );
+  return response.data;
+}
+
+export async function confirmPasswordChange(body: {
+  verification_code: string;
+  new_password: string;
+}): Promise<PasswordChangeMessageResponse> {
+  const response = await api.post<PasswordChangeMessageResponse>(
+    "/auth/change-password/confirm",
+    body,
+  );
   return response.data;
 }
 

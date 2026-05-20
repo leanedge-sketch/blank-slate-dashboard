@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # Database Connection Pool
     DB_POOL_SIZE: int = 10  # Number of concurrent DB connections
     
+    # Email (password change verification & notifications)
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = ""  # e.g. "LeanChem Connect <noreply@yourdomain.com>"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+
     # Security Settings
     JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"

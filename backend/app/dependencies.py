@@ -22,13 +22,23 @@ async def get_current_user(
     try:
         token = credentials.credentials
         # Verify token with Supabase
-        user = supabase.auth.get_user(token)
-        if not user:
+        response = supabase.auth.get_user(token)
+        if not response or not response.user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials"
             )
-        return user.user
+        auth_user = response.user
+        if hasattr(auth_user, "model_dump"):
+            return auth_user.model_dump()
+        if isinstance(auth_user, dict):
+            return auth_user
+        return {
+            "id": getattr(auth_user, "id", None),
+            "email": getattr(auth_user, "email", None),
+            "user_metadata": getattr(auth_user, "user_metadata", None) or {},
+            "app_metadata": getattr(auth_user, "app_metadata", None) or {},
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

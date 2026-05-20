@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { AuthCallbackPage } from "./pages/auth/AuthCallbackPage";
@@ -27,17 +27,11 @@ import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabi
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
 import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { UserProfileMenu } from "./components/UserProfileMenu";
 import { useAuth } from "./contexts/AuthContext";
-import { LogOut } from "lucide-react";
 
 function AppHeader() {
-  const { user, signOut } = useAuth();
-  const navigate = useNavigate();
-
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/login");
-  };
+  const { user } = useAuth();
 
   return (
     <header className="app-header">
@@ -49,13 +43,7 @@ function AppHeader() {
               <Link to="/">Home</Link>
               <Link to="/crm">CRM</Link>
               <Link to="/pms">PMS</Link>
-              <button
-                onClick={handleSignOut}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors text-slate-300"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </button>
+              <UserProfileMenu />
             </>
           ) : (
             <>
