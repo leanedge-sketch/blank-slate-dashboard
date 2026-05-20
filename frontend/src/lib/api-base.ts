@@ -5,7 +5,9 @@ export function getApiBaseUrl(): string {
     return fromEnv.replace(/\/$/, "");
   }
   if (import.meta.env.PROD && typeof window !== "undefined") {
-    return `${window.location.origin}/api/v1`;
+    if (window.location.hostname.endsWith(".vercel.app")) {
+      return `${window.location.origin}/api/v1`;
+    }
   }
   return "http://localhost:8000/api/v1";
 }
