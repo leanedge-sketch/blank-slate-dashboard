@@ -1,6 +1,0 @@
-[tool.vercel]
-entrypoint = "api.index:app"
-
-[project]
-name = "blank-slate-dashboard"
-requires-python = ">=3.11"

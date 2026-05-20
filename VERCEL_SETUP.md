@@ -1,105 +1,99 @@
-# Full-stack deployment on Vercel (frontend + FastAPI backend)
+# Vercel Frontend Setup with Render Backend
 
-This repo deploys **both** the Vite frontend and the FastAPI backend on a single Vercel project.
+## ✅ Step 1: Update Frontend API Configuration
 
-| Path | What runs |
-|------|-----------|
-| `/` | React app (`frontend/`) |
-| `/api/*` | FastAPI (`api/index.py` → `backend/app/main.py`) |
-| `/api/v1/auth/public-config` | Supabase config for the browser |
-| `/api/docs` | Swagger UI |
+The frontend code has been updated to use `VITE_API_URL` environment variable.
 
-## Critical: Vercel project settings
+## ✅ Step 2: Add Environment Variable in Vercel
 
-1. Open **Vercel → Project → Settings → General**.
-2. Set **Root Directory** to **`.`** (repository root) — **not** `frontend`.
-   - If Root Directory is `frontend`, only the UI deploys; `/api` will 404.
-3. Production branch: **`main`**.
+1. Go to your Vercel project dashboard
+2. Navigate to **Settings** → **Environment Variables**
+3. Add a new variable:
+   - **Name**: `VITE_API_URL`
+   - **Value**: `https://integrated-deal-and-product-system-idps.onrender.com/api/v1`
+   
+   **IMPORTANT**: Make sure this is set for **ALL environments** (Production, Preview, Development) in Vercel.
+   - **Environment**: Select all (Production, Preview, Development)
 
-## Environment variables
+## ✅ Step 3: Update Backend CORS (On Render)
 
-Add these in **Settings → Environment Variables** for **Production, Preview, and Development**:
+Your backend needs to allow requests from your Vercel frontend domain.
 
-### Backend (required for `/api`)
+### Option A: Add via Render Environment Variables (Recommended)
 
-| Name | Description |
-|------|-------------|
-| `SUPABASE_URL` | `https://<project>.supabase.co` |
-| `SUPABASE_KEY` | Supabase anon key |
-| `SUPABASE_SERVICE_KEY` | Supabase service role key |
-| `OPENAI_API_KEY` | If using CRM AI features |
+1. Go to your Render dashboard
+2. Select your backend service
+3. Go to **Environment** tab
+4. Add environment variable:
+   - **Key**: `CORS_ORIGINS`
+   - **Value**: `http://localhost:5173,https://your-app.vercel.app`
+     - Replace `your-app.vercel.app` with your actual Vercel domain
+     - You can add multiple domains separated by commas
+   - Example: `http://localhost:5173,https://my-app.vercel.app,https://my-app-git-main.vercel.app`
 
-### Frontend build (optional — runtime fallback uses backend)
+5. **Redeploy** your backend service on Render
 
-| Name | Description |
-|------|-------------|
-| `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as `SUPABASE_KEY` |
-| `VITE_FRONTEND_URL` | `https://your-app.vercel.app` (auth email redirects) |
+### Option B: Update config.py directly (if you prefer)
 
-### Do **not** set this unless you use an external API host
+If you want to hardcode it, update `backend/app/config.py`:
 
-| Name | Notes |
-|------|--------|
-| `VITE_API_URL` | **Remove** if it points to Render. Leave unset so production uses `https://your-app.vercel.app/api/v1`. |
-
-## Deploy
-
-1. Push to `main` on GitHub.
-2. Vercel redeploys automatically.
-3. In the build log you should see **Python** dependency install (`pip install -r requirements.txt`) and the **Vite** frontend build.
-
-## Verify backend
-
-Replace `YOUR-APP` with your Vercel hostname:
-
-```text
-https://YOUR-APP.vercel.app/api/v1/auth/public-config
+```python
+CORS_ORIGINS: List[str] = [
+    "http://localhost:5173",
+    "https://your-app.vercel.app",  # Add your Vercel domain here
+    "https://your-app-git-main.vercel.app",  # Preview deployments
+]
 ```
 
-Expected: JSON with `url` and `anon_key`.
+Then commit and push to trigger a redeploy.
 
-```text
-https://YOUR-APP.vercel.app/api/docs
-```
+## ✅ Step 4: Configure Vercel Project Settings
 
-Expected: FastAPI Swagger UI.
+1. In Vercel dashboard, go to **Settings** → **General**
+2. Set **Root Directory** to `frontend` (if deploying from monorepo)
+3. Verify **Build Command**: `npm run build`
+4. Verify **Output Directory**: `dist`
+5. Verify **Install Command**: `npm install`
 
-## Local development
+## ✅ Step 5: Deploy
 
-```bash
-# Terminal 1 — backend
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+1. Push your changes to GitHub (the updated `api.ts` file)
+2. Vercel will automatically redeploy
+3. Check the deployment logs to ensure build succeeds
 
-# Terminal 2 — frontend
-cd frontend
-npm install
-npm run dev
-```
+## 🔍 Testing
 
-Frontend uses `http://localhost:8000/api/v1` automatically in dev.
+After deployment:
 
-## Troubleshooting
+1. Visit your Vercel frontend URL
+2. Open browser DevTools → Network tab
+3. Try making an API call (e.g., load customers)
+4. Check if requests go to: `https://integrated-deal-and-product-system-idps.onrender.com/api/v1/...`
+5. If you see CORS errors, double-check the `CORS_ORIGINS` setting on Render
 
-### Frontend works, `/api` returns 404
+## 📝 Quick Checklist
 
-- Root Directory is set to `frontend` → change to repository root and redeploy.
+- [ ] Added `VITE_API_URL` in Vercel environment variables
+- [ ] Added `CORS_ORIGINS` in Render environment variables (with your Vercel domain)
+- [ ] Set Vercel root directory to `frontend` (if monorepo)
+- [ ] Redeployed backend on Render
+- [ ] Redeployed frontend on Vercel
+- [ ] Tested API calls from production frontend
 
-### `VITE_API_URL` points to Render
+## 🐛 Troubleshooting
 
-- Delete `VITE_API_URL` in Vercel env vars so the app uses same-origin `/api/v1`.
+### CORS Errors
+- Make sure your Vercel domain is in `CORS_ORIGINS` on Render
+- Include both `https://your-app.vercel.app` and `https://your-app-git-*.vercel.app` (for preview deployments)
+- Redeploy backend after changing CORS settings
 
-### Backend 503 on `public-config`
+### API Not Found (404)
+- Verify the backend URL is correct: `https://integrated-deal-and-product-system-idps.onrender.com/api/v1`
+- Check that your backend is running on Render
+- Test the backend directly: `https://integrated-deal-and-product-system-idps.onrender.com/api/docs`
 
-- `SUPABASE_URL` or `SUPABASE_KEY` missing on Vercel → add server env vars and redeploy.
+### Environment Variable Not Working
+- Make sure variable name is exactly `VITE_API_URL` (case-sensitive)
+- Vite requires `VITE_` prefix for client-side variables
+- Redeploy after adding environment variables
 
-### Python build fails (size / timeout)
-
-- Check deployment logs for package install errors.
-- Heavy deps (pandas, PDF libs) are required for full CRM; Pro plan may help for memory/time limits.
-
-### CORS errors
-
-- Backend uses wildcard CORS middleware; if issues persist, confirm requests go to your Vercel `/api/v1` URL, not localhost.
