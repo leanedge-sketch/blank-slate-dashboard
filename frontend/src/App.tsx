@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { AuthCallbackPage } from "./pages/auth/AuthCallbackPage";
@@ -31,14 +31,26 @@ import { UserProfileMenu } from "./components/UserProfileMenu";
 import { useAuth } from "./contexts/AuthContext";
 
 function AppHeader() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  const isAuthScreen =
+    location.pathname.startsWith("/login") ||
+    location.pathname.startsWith("/auth/");
+
+  if (isAuthScreen) {
+    return null;
+  }
 
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <h1 className="app-title">LeanChem Connect</h1>
+        <Link to="/" className="app-title-link">
+          <h1 className="app-title">LeanChem Connect</h1>
+        </Link>
         <nav className="app-nav">
-          {user ? (
+          {loading ? (
+            <span className="app-nav-loading">Loading…</span>
+          ) : user ? (
             <>
               <Link to="/">Home</Link>
               <Link to="/crm">CRM</Link>
@@ -46,9 +58,7 @@ function AppHeader() {
               <UserProfileMenu />
             </>
           ) : (
-            <>
-              <Link to="/login">Login</Link>
-            </>
+            <Link to="/login">Login</Link>
           )}
         </nav>
       </div>

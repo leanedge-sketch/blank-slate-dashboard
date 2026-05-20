@@ -9,8 +9,7 @@ export const PRODUCTION_APP_URL = "https://blank-slate-dashboard-plum.vercel.app
 
 // Frontend base URL for auth redirects (magic links, password reset, etc.)
 const FRONTEND_URL =
-  import.meta.env.VITE_FRONTEND_URL?.trim() ||
-  (import.meta.env.PROD ? PRODUCTION_APP_URL : window.location.origin);
+  import.meta.env.VITE_FRONTEND_URL?.trim() || window.location.origin;
 
 // Debug log to verify which URL is being used
 if (typeof window !== 'undefined') {
