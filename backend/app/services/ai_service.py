@@ -74,7 +74,12 @@ def ai_chat(messages: List[Dict[str, str]]) -> str:
     except Exception as e:
         status = getattr(e, "status_code", None) or getattr(e, "code", "")
         message = getattr(e, "message", None) or str(e)
-        raise AIServiceError(f"OpenAI chat error {status}: {message}".strip())
+        hint = ""
+        if status == 401 or "invalid_api_key" in str(message).lower():
+            hint = " Check OPENAI_API_KEY on your host (Vercel or Render) and create a new key at https://platform.openai.com/api-keys if needed."
+        raise AIServiceError(
+            f"OpenAI chat error {status}: {message}".strip() + hint
+        )
 
     choice = resp.choices[0] if resp.choices else None
     if not choice or not choice.message or not choice.message.content:
