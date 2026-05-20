@@ -1,57 +1,97 @@
-// Lazy browser Supabase client for the TanStack frontend.
-// The external Supabase project's URL/anon key are provided via Vite env vars
-// (VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY). If they are missing
-// at module-load time we must NOT throw — that blanks the entire app. Instead
-// we defer createClient() until the first call and surface a clear error.
+// Browser Supabase client for the TanStack app (Lovable / Vercel / local).
+// Set in Lovable Secrets or repo-root `.env`:
+//   VITE_SUPABASE_URL
+//   VITE_SUPABASE_PUBLISHABLE_KEY  (or VITE_SUPABASE_ANON_KEY)
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const url =
-  (import.meta.env.VITE_SUPABASE_URL as string | undefined) ??
-  (import.meta.env.SUPABASE_URL as string | undefined) ??
+import { getApiBaseUrl } from "./api-base";
+
+let supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ??
+  import.meta.env.SUPABASE_URL ??
   "";
 
-const key =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ??
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ??
+let supabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+  import.meta.env.VITE_SUPABASE_ANON_KEY ??
+  import.meta.env.SUPABASE_KEY ??
   "";
 
-export const isSupabaseConfigured = Boolean(url && key);
+let _client: SupabaseClient | null = null;
+let _bootstrapPromise: Promise<boolean> | null = null;
 
-if (!isSupabaseConfigured) {
-  // eslint-disable-next-line no-console
+export function isSupabaseConfigured(): boolean {
+  return Boolean(supabaseUrl && supabaseAnonKey);
+}
+
+if (!isSupabaseConfigured()) {
   console.warn(
-    "[supabase] Missing VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY — " +
-      "auth and DB calls will fail until these are set in .env and the dev server is restarted.",
+    "[supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY. " +
+      "Add them in Lovable → Settings → Secrets (or root .env), then rebuild.",
   );
 }
 
-let _client: SupabaseClient | null = null;
+export async function bootstrapSupabase(): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    return true;
+  }
+  if (_bootstrapPromise) {
+    return _bootstrapPromise;
+  }
 
-function getClient(): SupabaseClient {
-  if (_client) return _client;
-  if (!isSupabaseConfigured) {
+  _bootstrapPromise = (async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/auth/public-config`);
+      if (!res.ok) {
+        return false;
+      }
+      const data = (await res.json()) as { url?: string; anon_key?: string };
+      if (data.url && data.anon_key) {
+        supabaseUrl = data.url;
+        supabaseAnonKey = data.anon_key;
+        _client = null;
+        console.log("[supabase] Loaded config from API");
+        return true;
+      }
+    } catch {
+      // Lovable-only preview — secrets must be set at build time.
+    }
+    return false;
+  })();
+
+  return _bootstrapPromise;
+}
+
+export async function initSupabase(): Promise<boolean> {
+  return isSupabaseConfigured() || (await bootstrapSupabase());
+}
+
+function getSupabase(): SupabaseClient {
+  if (!isSupabaseConfigured()) {
     throw new Error(
-      "Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env, then restart the dev server.",
+      "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in Lovable Secrets.",
     );
   }
-  _client = createClient(url, key, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-    db: { schema: "public" },
-  });
+  if (!_client) {
+    _client = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+      db: { schema: "public" },
+    });
+  }
   return _client;
 }
 
-// Proxy so existing `import { supabase }` call sites keep working without
-// triggering createClient() at module evaluation time.
 export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
-  get(_t, prop) {
-    const c = getClient();
-    const v = Reflect.get(c, prop, c) as unknown;
-    return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(c) : v;
+  get(_target, prop) {
+    const client = getSupabase();
+    const value = Reflect.get(client, prop, client) as unknown;
+    return typeof value === "function"
+      ? (value as (...args: unknown[]) => unknown).bind(client)
+      : value;
   },
 });

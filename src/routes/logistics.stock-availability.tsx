@@ -29,7 +29,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { useSupabaseReady } from "@/hooks/use-supabase-ready";
 import {
   STOCK_LOCATION_LABELS,
   type StockLocation,
@@ -56,11 +56,12 @@ const fmtKg = (n: number) =>
   n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 function StockAvailabilityPage() {
+  const supabaseReady = useSupabaseReady();
   const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } =
     useQuery({
       queryKey: ["stock_balance_by_location"],
       queryFn: () => fetchStockBalances(),
-      enabled: isSupabaseConfigured,
+      enabled: supabaseReady,
       staleTime: 30_000,
     });
 
@@ -104,12 +105,12 @@ function StockAvailabilityPage() {
         </Button>
       </div>
 
-      {!isSupabaseConfigured && (
+      {!supabaseReady && (
         <Alert variant="destructive">
           <AlertTitle>Supabase not configured</AlertTitle>
           <AlertDescription>
-            Set <code>VITE_SUPABASE_URL</code> and{" "}
-            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to load balances.
+            In Lovable → Settings → Secrets, set <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>, then rebuild the preview.
           </AlertDescription>
         </Alert>
       )}

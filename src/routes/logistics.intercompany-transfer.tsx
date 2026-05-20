@@ -41,6 +41,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Toaster } from "@/components/ui/sonner";
 
+import { useSupabaseReady } from "@/hooks/use-supabase-ready";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import {
   STOCK_LOCATIONS,
@@ -72,6 +73,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 type FieldErrors = Partial<Record<keyof TransferInput, string>>;
 
 function IntercompanyTransferPage() {
+  const supabaseReady = useSupabaseReady();
   const { permissions, employeeRole } = useAuth();
   const canEdit = permissions.canEditStock;
   const readOnlyTooltip = `You need Logistics edit permission to record transfers${
@@ -98,7 +100,7 @@ function IntercompanyTransferPage() {
   });
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    if (!supabaseReady) {
       setLoadingProducts(false);
       return;
     }
@@ -116,7 +118,7 @@ function IntercompanyTransferPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supabaseReady]);
 
   const locationsForDest = useMemo(
     () => STOCK_LOCATIONS.filter((l) => l !== form.sourceLocation),
@@ -148,9 +150,9 @@ function IntercompanyTransferPage() {
       return;
     }
 
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured()) {
       setFormError(
-        "Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.",
+        "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in Lovable Secrets.",
       );
       return;
     }
@@ -187,13 +189,12 @@ function IntercompanyTransferPage() {
         </p>
       </div>
 
-      {!isSupabaseConfigured && (
+      {!supabaseReady && (
         <Alert variant="destructive" className="mb-4">
           <AlertTitle>Supabase not configured</AlertTitle>
           <AlertDescription>
-            Set <code>VITE_SUPABASE_URL</code> and{" "}
-            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in the project env to
-            enable RPC calls.
+            In Lovable → Settings → Secrets, set <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>, then rebuild the preview.
           </AlertDescription>
         </Alert>
       )}

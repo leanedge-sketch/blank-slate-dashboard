@@ -46,7 +46,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { useSupabaseReady } from "@/hooks/use-supabase-ready";
 import {
   STOCK_LOCATIONS,
   STOCK_LOCATION_LABELS,
@@ -76,6 +76,7 @@ export const Route = createFileRoute("/logistics/stock-movements")({
 const PAGE_SIZE = 25;
 
 function StockMovementsPage() {
+  const supabaseReady = useSupabaseReady();
   const [page, setPage] = useState(0);
   const [location, setLocation] = useState<StockLocation | "all">("all");
   const [transactionType, setTransactionType] = useState<
@@ -102,7 +103,7 @@ function StockMovementsPage() {
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["stock_movements", query],
     queryFn: () => fetchStockMovements(query),
-    enabled: isSupabaseConfigured,
+    enabled: supabaseReady,
     placeholderData: keepPreviousData,
   });
 
@@ -135,12 +136,12 @@ function StockMovementsPage() {
         </p>
       </div>
 
-      {!isSupabaseConfigured && (
+      {!supabaseReady && (
         <Alert variant="destructive">
           <AlertTitle>Supabase not configured</AlertTitle>
           <AlertDescription>
-            Set <code>VITE_SUPABASE_URL</code> and{" "}
-            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to load movements.
+            In Lovable → Settings → Secrets, set <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>, then rebuild the preview.
           </AlertDescription>
         </Alert>
       )}
