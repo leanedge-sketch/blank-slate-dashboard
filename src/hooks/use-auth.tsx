@@ -132,17 +132,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, next) => {
-      void handleSession(next);
-    });
+    // If Supabase env vars are missing, don't crash the app — just mark loading done.
+    try {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, next) => {
+        void handleSession(next);
+      });
 
-    supabase.auth.getSession().then(({ data }) => {
-      void handleSession(data.session);
-    });
+      supabase.auth.getSession().then(({ data }) => {
+        void handleSession(data.session);
+      }).catch((err) => {
+        console.error("[auth] getSession failed:", err);
+        setLoading(false);
+      });
 
-    return () => subscription.unsubscribe();
+      return () => subscription.unsubscribe();
+    } catch (err) {
+      console.error("[auth] Supabase client unavailable:", err);
+      setLoading(false);
+      return;
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
