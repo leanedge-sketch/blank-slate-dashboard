@@ -1238,15 +1238,14 @@ def create_interaction(
 
     try:
         customer = get_customer_by_id(customer_id)
-        if customer and not (interaction_in.input_text or "").strip().startswith(
-            "[telegram_backfill]"
-        ):
+        if customer:
             notify_interaction_saved(
                 customer_name=customer.customer_name,
                 customer_id=str(customer_id),
                 input_text=interaction_in.input_text or "",
                 ai_response=interaction_in.ai_response or "",
                 created_at=str(interaction_row.get("created_at") or ""),
+                file_url=interaction_in.file_url,
                 source="crm",
             )
     except Exception as e:

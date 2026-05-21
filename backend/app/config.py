@@ -45,10 +45,10 @@ class Settings(BaseSettings):
     GEMINI_EMBED_MODEL: str = "text-embedding-004"
     GROQ_API_KEY: str = ""
     
-    # Telegram Notifications
+    # Telegram — same bot as legacy CRM notifications (see telegram_service.py)
     TELEGRAM_BOT_TOKEN: str = ""
-    TELEGRAM_CHAT_ID: str = ""  # Comma-separated chat IDs
-    NOTIFICATION_ENABLED: bool = False
+    TELEGRAM_CHAT_ID: str = ""  # Comma-separated chat/group ids
+    NOTIFICATION_ENABLED: bool = True  # Set false to disable outbound messages
     
     # Web Search APIs
     GOOGLE_PSE_API_KEY: str = ""  # Google Programmable Search Engine API key

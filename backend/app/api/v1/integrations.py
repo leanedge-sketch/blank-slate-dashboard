@@ -15,7 +15,12 @@ from app.services.telegram_backfill_service import (
     backfill_from_export_file,
     backfill_requirements,
 )
-from app.services.telegram_service import fetch_bot_updates, telegram_status
+from app.services.telegram_service import (
+    fetch_bot_updates,
+    send_telegram_message,
+    telegram_configured,
+    telegram_status,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -24,6 +29,32 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 async def get_telegram_integration_status() -> Dict[str, Any]:
     """Whether Telegram is configured in this app and how backfill works."""
     return {**telegram_status(), "backfill_requirements": backfill_requirements()}
+
+
+@router.post("/telegram/test")
+async def send_test_telegram_notification() -> Dict[str, Any]:
+    """Send a test message using the CRM bot format (verify bot token + chat id)."""
+    if not telegram_configured():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Telegram not active. Set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, and "
+                "NOTIFICATION_ENABLED=true in environment variables."
+            ),
+        )
+    from app.services.telegram_service import format_crm_bot_notification
+
+    text = format_crm_bot_notification(
+        customer_name="Test Customer",
+        customer_id="00000000-0000-0000-0000-000000000000",
+        input_text="Test user note from LeanChem dashboard",
+        ai_response="Test AI response — Telegram integration is connected.",
+        created_at=None,
+    )
+    ok = send_telegram_message(text)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Telegram API rejected the message.")
+    return {"ok": True, "message": "Test notification sent to configured chat(s)."}
 
 
 @router.post("/telegram/backfill")
