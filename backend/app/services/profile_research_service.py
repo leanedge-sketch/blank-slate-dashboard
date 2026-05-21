@@ -15,16 +15,16 @@ from app.services.web_search_service import (
     search_linkedin_profiles_ethiopia,
 )
 
-# Budgets for assembled context sent to the model (~120k chars total).
-PROFILE_CONTEXT_MAX_CHARS = 120_000
+# Budgets for assembled context sent to the model (~200k chars total).
+PROFILE_CONTEXT_MAX_CHARS = 200_000
 PROFILE_SYSTEM_PROMPT_BUFFER_CHARS = 10_000
 
-PROFILE_MAX_RAG_DOCS = 12
-PROFILE_MAX_CHARS_PER_RAG_DOC = 8_000
-PROFILE_MAX_INTERACTIONS = 50
-PROFILE_MAX_CHARS_PER_INTERACTION = 6_000
-PROFILE_MAX_WEB_CHARS = 45_000
-PROFILE_MAX_LINKEDIN_CHARS = 35_000
+PROFILE_MAX_RAG_DOCS = 16
+PROFILE_MAX_CHARS_PER_RAG_DOC = 12_000
+PROFILE_MAX_INTERACTIONS = 60
+PROFILE_MAX_CHARS_PER_INTERACTION = 10_000
+PROFILE_MAX_WEB_CHARS = 60_000
+PROFILE_MAX_LINKEDIN_CHARS = 50_000
 
 SECTION_BUDGET_SHARE = {
     "customer_record": 0.06,
@@ -344,13 +344,55 @@ def build_profile_research_context(
     context = "".join(parts)
 
     if len(context) > PROFILE_CONTEXT_MAX_CHARS:
-        marker = (
-            f"\n\n...[total research context capped at {PROFILE_CONTEXT_MAX_CHARS:,} chars]...\n\n"
+        overflow = len(context) - PROFILE_CONTEXT_MAX_CHARS
+        for name, section_ref in (
+            ("LinkedIn", linkedin_section),
+            ("web", web_section),
+            ("CRM", crm_section),
+            ("RAG", rag_section),
+        ):
+            if overflow <= 0:
+                break
+            if len(section_ref) <= overflow + 400:
+                overflow -= len(section_ref)
+                if name == "LinkedIn":
+                    linkedin_section = "=== LINKEDIN ===\n[section omitted to fit context budget]\n"
+                elif name == "web":
+                    web_section = "=== WEB SEARCH ===\n[section omitted to fit context budget]\n"
+                elif name == "CRM":
+                    crm_section = "=== CRM INTERACTIONS ===\n[section omitted to fit context budget]\n"
+                else:
+                    rag_section = "=== RAG DOCUMENTS ===\n[section omitted to fit context budget]\n"
+            else:
+                new_len = max(500, len(section_ref) - overflow)
+                trimmed = _truncate_text(section_ref, new_len, name)
+                overflow = 0
+                if name == "LinkedIn":
+                    linkedin_section = trimmed
+                elif name == "web":
+                    web_section = trimmed
+                elif name == "CRM":
+                    crm_section = trimmed
+                else:
+                    rag_section = trimmed
+        context = "".join(
+            [
+                "=== CUSTOMER RECORD (CRM) ===\n",
+                customer_section,
+                "\n",
+                rag_section,
+                "\n",
+                crm_section,
+                "\n",
+                web_section,
+                "\n",
+                linkedin_section,
+            ]
         )
-        usable = PROFILE_CONTEXT_MAX_CHARS - len(marker)
-        head = usable // 3
-        tail = usable - head
-        context = context[:head] + marker + context[-tail:]
+        if len(context) > PROFILE_CONTEXT_MAX_CHARS:
+            context = _truncate_text(
+                context, PROFILE_CONTEXT_MAX_CHARS, "total research context"
+            )
         context_capped = True
     else:
         context_capped = False

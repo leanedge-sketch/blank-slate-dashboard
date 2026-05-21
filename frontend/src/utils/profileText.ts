@@ -150,3 +150,53 @@ function tableRowToPlain(line: string): string {
   if (cells.length === 2) return `- ${cells[0]}: ${cells[1]}`;
   return `- ${cells.join(" • ")}`;
 }
+
+export interface ProfileSection {
+  index: number;
+  title: string;
+  body: string;
+}
+
+const PROFILE_SECTION_HEADING_RE = /^(\d+)\.\s+(.+)$/;
+
+/**
+ * Split ICP prose into numbered sections (0–4) preserving full body text.
+ */
+export function parseProfileSections(text: string): ProfileSection[] {
+  const cleaned = stripProfileMarkdown(text || "");
+  if (!cleaned.trim()) return [];
+
+  const lines = cleaned.split("\n");
+  const sections: ProfileSection[] = [];
+  let current: ProfileSection | null = null;
+  const bodyLines: string[] = [];
+
+  const flush = () => {
+    if (current) {
+      current.body = bodyLines.join("\n").trim();
+      sections.push(current);
+    }
+    bodyLines.length = 0;
+  };
+
+  for (const line of lines) {
+    const match = line.match(PROFILE_SECTION_HEADING_RE);
+    if (match) {
+      flush();
+      current = {
+        index: parseInt(match[1], 10),
+        title: match[2].trim(),
+        body: "",
+      };
+      continue;
+    }
+    bodyLines.push(line);
+  }
+  flush();
+
+  if (!sections.length && cleaned.trim()) {
+    return [{ index: -1, title: "", body: cleaned.trim() }];
+  }
+
+  return sections.sort((a, b) => a.index - b.index);
+}

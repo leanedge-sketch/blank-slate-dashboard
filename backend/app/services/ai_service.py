@@ -153,12 +153,20 @@ def _extract_openai_text(resp: Any) -> str:
     return choice.message.content
 
 
-def _chat_openai(messages: List[Dict[str, str]], model: str) -> str:
-    resp = _get_openai_client().chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0.7,
-    )
+def _chat_openai(
+    messages: List[Dict[str, str]],
+    model: str,
+    *,
+    max_tokens: Optional[int] = None,
+) -> str:
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    resp = _get_openai_client().chat.completions.create(**kwargs)
     return _extract_openai_text(resp)
 
 
@@ -209,7 +217,11 @@ def _configure_gemini() -> None:
         _gemini_configured = True
 
 
-def _chat_gemini(messages: List[Dict[str, str]]) -> str:
+def _chat_gemini(
+    messages: List[Dict[str, str]],
+    *,
+    max_tokens: Optional[int] = None,
+) -> str:
     """Tier 2: Google Generative AI (Gemini) via GEMINI_API_KEY."""
     import google.generativeai as genai
 
@@ -224,9 +236,12 @@ def _chat_gemini(messages: List[Dict[str, str]]) -> str:
         model_kwargs["system_instruction"] = system_instruction
 
     model = genai.GenerativeModel(model_name, **model_kwargs)
+    generation_config: Dict[str, Any] = {"temperature": 0.7}
+    if max_tokens is not None:
+        generation_config["max_output_tokens"] = max_tokens
     response = model.generate_content(
         contents,
-        generation_config={"temperature": 0.7},
+        generation_config=generation_config,
     )
 
     text = getattr(response, "text", None)
@@ -255,6 +270,7 @@ def ai_chat(
     messages: List[Dict[str, str]],
     *,
     model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
 ) -> str:
     """
     Chat completion with three-tier fallback (signature unchanged).
@@ -282,7 +298,7 @@ def ai_chat(
     # --- Tier 1: OpenAI gpt-4o ---
     try:
         logger.debug("ai_chat: attempting OpenAI model=%s", PRIMARY_OPENAI_MODEL)
-        return _chat_openai(messages, PRIMARY_OPENAI_MODEL)
+        return _chat_openai(messages, PRIMARY_OPENAI_MODEL, max_tokens=max_tokens)
     except Exception as primary_exc:
         if not _provider_fallback_eligible(primary_exc):
             raise AIServiceError(
@@ -297,7 +313,7 @@ def ai_chat(
 
     # --- Tier 2: OpenAI gpt-4o-mini ---
     try:
-        return _chat_openai(messages, FALLBACK_OPENAI_MODEL)
+        return _chat_openai(messages, FALLBACK_OPENAI_MODEL, max_tokens=max_tokens)
     except Exception as fallback_exc:
         if not _provider_fallback_eligible(fallback_exc):
             raise AIServiceError(
@@ -312,7 +328,7 @@ def ai_chat(
 
     # --- Tier 3: Google Gemini ---
     try:
-        return _chat_gemini(messages)
+        return _chat_gemini(messages, max_tokens=max_tokens)
     except Exception as gemini_exc:
         raise AIServiceError(
             f"All chat providers failed. Last error (Gemini {_gemini_model_name()}): "

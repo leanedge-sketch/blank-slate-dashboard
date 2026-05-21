@@ -9,12 +9,9 @@ import {
   InteractionListResponse,
 } from "../../services/api";
 import { ProfileResearchContext } from "../../components/ProfileResearchContext";
+import { ProfileSections } from "../../components/ProfileSections";
 import { StrategicFitAssessment } from "../../components/StrategicFitAssessment";
-import {
-  mergeStrategicFitItems,
-  stripProfileMarkdown,
-  stripStrategicFitLinesFromProfile,
-} from "../../utils/profileText";
+import { mergeStrategicFitItems } from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
 
 export function CustomerProfilePage() {
@@ -187,197 +184,6 @@ export function CustomerProfilePage() {
     } finally {
       setSubmittingFeedback(false);
     }
-  }
-
-  // Clean and format profile text for beautiful display
-  function formatProfileForDisplay(text: string): JSX.Element {
-    const cleanText = stripStrategicFitLinesFromProfile(stripProfileMarkdown(text));
-
-    // Split into sections: numbered headings (1. Title), markdown headers, or title lines
-    const sectionPattern = /\n(?:#{1,6}\s+|(\d+\.\s+))([^\n]+)/g;
-    const sections: Array<{ title: string; content: string }> = [];
-    let lastIndex = 0;
-    let match;
-    
-    while ((match = sectionPattern.exec(cleanText)) !== null) {
-      if (match.index > lastIndex) {
-        const prevContent = cleanText.substring(lastIndex, match.index).trim();
-        if (prevContent) {
-          if (sections.length === 0) {
-            sections.push({ title: "", content: prevContent });
-          } else {
-            sections[sections.length - 1].content += "\n\n" + prevContent;
-          }
-        }
-      }
-      const title = match[2].trim();
-      lastIndex = match.index + match[0].length;
-      sections.push({ title, content: "" });
-    }
-    
-    // Add remaining content
-    if (lastIndex < cleanText.length) {
-      const remaining = cleanText.substring(lastIndex).trim();
-      if (remaining) {
-        if (sections.length === 0) {
-          sections.push({ title: "", content: remaining });
-        } else {
-          sections[sections.length - 1].content += "\n\n" + remaining;
-        }
-      }
-    }
-    
-    // If no sections found, treat entire text as one section
-    if (sections.length === 0) {
-      sections.push({ title: "", content: cleanText });
-    }
-    
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-        {sections.map((section, idx) => {
-          if (!section.content.trim()) return null;
-          
-          const lines = section.content.split("\n").filter(l => l.trim());
-          
-          return (
-            <div
-              key={idx}
-              style={{
-                padding: "2rem",
-                backgroundColor: "#ffffff",
-                borderRadius: "1rem",
-                border: "1px solid #e5e7eb",
-                boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)",
-              }}
-            >
-              {section.title && (
-                <h3
-                  style={{
-                    fontSize: "1.5rem",
-                    fontWeight: "700",
-                    color: "#111827",
-                    marginBottom: "1.5rem",
-                    paddingBottom: "1rem",
-                    borderBottom: "3px solid #3b82f6",
-                  }}
-                >
-                  {section.title}
-                </h3>
-              )}
-              <div style={{ lineHeight: "1.9", color: "#374151" }}>
-                {lines.map((line, lineIdx) => {
-                  const trimmed = line.trim();
-                  
-                  // Subsection titles (plain text, no markdown)
-                  if (
-                    /^(Strategic-Fit Matrix|Score Rationale|Key Contacts|Company Snapshot|Construction Footprint)/i.test(
-                      trimmed
-                    ) ||
-                    (/^[A-Z][A-Za-z0-9\s\-&,()]+$/.test(trimmed) &&
-                      trimmed.length < 60 &&
-                      !trimmed.includes(":"))
-                  ) {
-                    return (
-                      <h4
-                        key={lineIdx}
-                        style={{
-                          fontSize: "1.15rem",
-                          fontWeight: "700",
-                          color: "#1e40af",
-                          marginTop: lineIdx > 0 ? "1.25rem" : 0,
-                          marginBottom: "0.75rem",
-                        }}
-                      >
-                        {trimmed}
-                      </h4>
-                    );
-                  }
-
-                  // Format numbered lists (1., 2., etc.)
-                  if (trimmed.match(/^\d+\.\s+/)) {
-                    const content = trimmed.replace(/^\d+\.\s+/, "");
-                    return (
-                      <div
-                        key={lineIdx}
-                        style={{
-                          marginLeft: "1.5rem",
-                          marginBottom: "1rem",
-                          paddingLeft: "1rem",
-                          padding: "0.75rem",
-                          backgroundColor: "#f9fafb",
-                          borderRadius: "0.5rem",
-                          borderLeft: "4px solid #3b82f6",
-                        }}
-                      >
-                        <strong style={{ color: "#1e40af" }}>
-                          {trimmed.match(/^\d+\./)?.[0]}
-                        </strong>{" "}
-                        {content}
-                      </div>
-                    );
-                  }
-                  
-                  // Format bullet points
-                  if (trimmed.startsWith("-") || trimmed.startsWith("•")) {
-                    return (
-                      <div
-                        key={lineIdx}
-                        style={{
-                          marginLeft: "1.5rem",
-                          marginBottom: "0.75rem",
-                          paddingLeft: "1rem",
-                          borderLeft: "3px solid #10b981",
-                        }}
-                      >
-                        {trimmed.substring(1).trim()}
-                      </div>
-                    );
-                  }
-                  
-                  // Format contact lines (Name:, Position:, LinkedIn:)
-                  if (trimmed.match(/^(Name|Position|LinkedIn):/i)) {
-                    return (
-                      <div
-                        key={lineIdx}
-                        style={{
-                          marginBottom: "0.5rem",
-                          padding: "0.5rem 0",
-                          fontSize: "0.95rem",
-                        }}
-                      >
-                        <strong style={{ color: "#374151" }}>
-                          {trimmed.split(":")[0]}:
-                        </strong>{" "}
-                        <span style={{ color: "#6b7280" }}>
-                          {trimmed.split(":").slice(1).join(":").trim()}
-                        </span>
-                      </div>
-                    );
-                  }
-                  
-                  // Regular paragraph
-                  if (trimmed) {
-                    return (
-                      <p
-                        key={lineIdx}
-                        style={{
-                          marginBottom: "1.25rem",
-                          fontSize: "1rem",
-                          lineHeight: "1.8",
-                        }}
-                      >
-                        {trimmed}
-                      </p>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
   }
 
   if (loading) {
@@ -607,8 +413,6 @@ export function CustomerProfilePage() {
 
       <ProfileResearchContext meta={customer.latest_profile_research_meta} />
 
-      <StrategicFitAssessment items={strategicFitItems} />
-
       {/* Profile Content */}
       <section className="card" style={{ position: "relative" }}>
         <div
@@ -664,10 +468,12 @@ export function CustomerProfilePage() {
               padding: "0",
             }}
           >
-            {formatProfileForDisplay(effectiveProfileText)}
+            <ProfileSections text={effectiveProfileText} />
           </div>
         )}
       </section>
+
+      <StrategicFitAssessment items={strategicFitItems} />
 
       {/* Download and Feedback Section */}
       <section className="card" style={{ marginTop: "2rem" }}>
