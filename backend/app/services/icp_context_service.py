@@ -25,6 +25,7 @@ import logging
 from supabase import Client
 
 from app.database.connection import get_supabase_client
+from app.services.crm_service import merge_customer_interaction_history
 from app.services.ai_service import search_documents_for_profile
 from app.services.web_search_service import search_linkedin_profiles_ethiopia
 
@@ -82,33 +83,19 @@ def _fetch_recent_interactions(
     pipeline_id: Optional[str] = None,
     limit: int = 2000,
 ) -> List[Dict[str, Any]]:
-    """Load all interactions for a customer (paginated)."""
-    supabase = _get_supabase()
-    page_size = 500
-    collected: List[Dict[str, Any]] = []
-    offset = 0
-
-    while len(collected) < limit:
-        query = (
-            supabase.table("interactions")
-            .select("*")
-            .eq("customer_id", customer_id)
-            .order("created_at", desc=True)
-            .range(offset, offset + min(page_size, limit - len(collected)) - 1)
-        )
-        if pipeline_id:
-            query = query.eq("pipeline_id", pipeline_id)
-
-        resp = query.execute()
-        page = resp.data or []
-        if not page:
-            break
-        collected.extend(page)
-        if len(page) < page_size:
-            break
-        offset += len(page)
-
-    return collected
+    """Merged CRM history: interactions + conversation archive + pipeline JSON."""
+    merged, _, _, _ = merge_customer_interaction_history(
+        customer_id, max_rows=limit
+    )
+    rows = [it.model_dump(mode="json") for it in merged]
+    if pipeline_id:
+        pid = str(pipeline_id)
+        rows = [
+            r
+            for r in rows
+            if not r.get("pipeline_id") or str(r.get("pipeline_id")) == pid
+        ]
+    return rows
 
 
 def _fetch_pipelines_for_customer(

@@ -24,7 +24,12 @@ from app.models.sales_pipeline import (
     PIPELINE_STAGES,
 )
 from app.services.ai_service import gemini_chat, gemini_embed, GeminiError, log_conversation_to_rag
-from app.services.crm_service import get_customer_by_id, get_interactions_for_customer
+from app.models.crm import InteractionCreate
+from app.services.crm_service import (
+    create_interaction,
+    get_customer_by_id,
+    get_interactions_for_customer,
+)
 from app.services.pms_service import get_tds_by_id
 from app.services.ai_service import gemini_chat, GeminiError
 
@@ -1442,7 +1447,26 @@ Guidelines:
     except GeminiError as e:
         raise ValueError(f"AI service error: {str(e)}")
     
-    # 10) Save interaction to pipeline's ai_interactions column
+    # 10) Persist to public.interactions (primary CRM timeline + Telegram hooks)
+    try:
+        create_interaction(
+            str(pipeline.customer_id),
+            InteractionCreate(
+                input_text=input_text,
+                ai_response=ai_response,
+                tds_id=str(pipeline.tds_id) if pipeline.tds_id else None,
+                pipeline_id=str(pipeline.id),
+            ),
+            user_id=user_id,
+        )
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to save pipeline chat to interactions table: %s", e
+        )
+
+    # 11) Save interaction to pipeline's ai_interactions column
     try:
         # Get existing interactions or initialize empty list
         existing_interactions = []
@@ -1477,7 +1501,7 @@ Guidelines:
         logger = logging.getLogger(__name__)
         logger.warning(f"Failed to save AI interaction to pipeline: {str(e)}")
     
-    # 11) Log to RAG conversation table
+    # 12) Log to RAG conversation table
     try:
         combined_text = (
             f"Pipeline: {pipeline_id}\n"

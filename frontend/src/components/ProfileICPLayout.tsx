@@ -1,4 +1,6 @@
 import {
+  extractKeyContactsSection,
+  extractLinkedInMentions,
   parseICPProfile,
   parseKeyContacts,
   parseNextStepsContent,
@@ -29,12 +31,18 @@ export function ProfileICPLayout({
     ? stripStrategicFitLinesFromProfile(parsed.strategicFit.body)
     : "";
 
-  const nextStepsParsed = parseNextStepsContent(parsed.nextSteps?.body ?? "");
-  const contactsText =
-    parsed.deepDive.linkedin ||
-    parsed.nextSteps?.body ||
-    text;
-  const contacts = parseKeyContacts(contactsText);
+  const nextStepsParsed = parseNextStepsContent(
+    parsed.nextSteps?.body ?? "",
+    strategicFitItems,
+  );
+  const contactsBlocks = [
+    extractKeyContactsSection(parsed.nextSteps?.body ?? ""),
+    parsed.deepDive.linkedin,
+    extractLinkedInMentions(text),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const contacts = parseKeyContacts(contactsBlocks);
 
   return (
     <div className="flex flex-col gap-8">
@@ -86,12 +94,12 @@ export function ProfileICPLayout({
         <header className="mb-5">
           <h2 className="text-xl font-extrabold text-slate-900 m-0">Recommended Next Steps</h2>
           <p className="text-sm text-slate-500 mt-1 mb-0">
-            Prioritized actions — highlighted opportunities vs muted dead-ends
+            Key analysis and next step by product category
           </p>
         </header>
         <ProfileNextSteps
           interactionReview={nextStepsParsed.interactionReview}
-          items={nextStepsParsed.items}
+          categories={nextStepsParsed.categories}
         />
       </section>
 

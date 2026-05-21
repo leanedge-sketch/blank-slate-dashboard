@@ -96,22 +96,45 @@ def audit_interactions_table(customer_id: str | None) -> None:
 
 def audit_conversation_table(customer_id: str | None) -> None:
     sb = get_supabase_service_client()
-    resp = (
-        sb.table("conversation")
-        .select("id, content, metadata, created_at")
-        .order("created_at", desc=True)
-        .limit(2000)
-        .execute()
-    )
-    rows = resp.data or []
-    matched: list[dict] = []
+    rows: list[dict] = []
+    if customer_id:
+        offset = 0
+        page = 500
+        while True:
+            resp = (
+                sb.table("conversation")
+                .select("id, content, metadata, created_at")
+                .eq("metadata->>customer_id", str(customer_id))
+                .order("created_at", desc=True)
+                .range(offset, offset + page - 1)
+                .execute()
+            )
+            batch = resp.data or []
+            rows.extend(batch)
+            if len(batch) < page:
+                break
+            offset += page
+    else:
+        resp = (
+            sb.table("conversation")
+            .select("id, content, metadata, created_at")
+            .order("created_at", desc=True)
+            .limit(2000)
+            .execute()
+        )
+        rows = resp.data or []
+
+    matched: list[dict] = rows if customer_id else []
     by_month: dict[str, int] = defaultdict(int)
-    for r in rows:
-        meta = r.get("metadata") or {}
-        cid = meta.get("customer_id") if isinstance(meta, dict) else None
-        if customer_id and str(cid) != str(customer_id):
-            continue
-        if customer_id or cid:
+    if not customer_id:
+        for r in rows:
+            meta = r.get("metadata") or {}
+            cid = meta.get("customer_id") if isinstance(meta, dict) else None
+            if cid:
+                matched.append(r)
+                by_month[month_key(r.get("created_at"))] += 1
+    else:
+        for r in rows:
             matched.append(r)
             by_month[month_key(r.get("created_at"))] += 1
 
@@ -137,8 +160,8 @@ def main() -> None:
     audit_interactions_table(args.customer_id)
     audit_conversation_table(args.customer_id)
     print(
-        "\nNote: The CRM UI reads public.interactions only. "
-        "Older chats may exist only in public.conversation until migrated."
+        "\nNote: The CRM UI merges public.interactions + public.conversation "
+        "+ sales_pipeline.ai_interactions. Clear date filters on the customer page to see May rows."
     )
 
 

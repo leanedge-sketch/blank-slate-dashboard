@@ -117,6 +117,7 @@ class InteractionListResponse(BaseModel):
     total: int
     interactions_table_total: Optional[int] = None
     conversation_total: Optional[int] = None
+    pipeline_total: Optional[int] = None
     conversation_logs: Optional[List[Dict[str, Any]]] = None
 
 
@@ -125,12 +126,21 @@ class InteractionSourceAudit(BaseModel):
     customer_id: str
     interactions_table: str
     conversation_table: str
+    pipeline_table: Optional[str] = None
     interactions_total: int
     conversation_total: int
+    pipeline_total: Optional[int] = 0
+    merged_total: Optional[int] = 0
     interactions_by_month: Dict[str, int]
     conversation_by_month: Dict[str, int]
+    pipeline_by_month: Optional[Dict[str, int]] = None
     may_interactions: int
     may_conversation: int
+    may_pipeline: Optional[int] = 0
+    may_merged: Optional[int] = 0
+    merged_table_rows: Optional[int] = 0
+    merged_conversation_only: Optional[int] = 0
+    merged_pipeline_only: Optional[int] = 0
 
 
 class CustomerChatRequest(BaseModel):

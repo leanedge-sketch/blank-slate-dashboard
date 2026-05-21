@@ -372,15 +372,16 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     
     # Unified CRM history: interactions table + conversation archive
     try:
-        interactions, table_total, archive_added = merge_customer_interaction_history(
+        interactions, table_total, archive_added, pipeline_added = merge_customer_interaction_history(
             str(customer.customer_id),
         )
         logging.info(
-            "Profile build for %s: %s merged history (%s interactions table + %s conversation archive)",
+            "Profile build for %s: %s merged history (%s interactions + %s conversation + %s pipeline-only)",
             customer.customer_name,
             len(interactions),
             table_total,
             archive_added,
+            pipeline_added,
         )
     except Exception as e:
         logging.warning(
@@ -389,6 +390,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         interactions = []
         table_total = 0
         archive_added = 0
+        pipeline_added = 0
 
     research_inputs = gather_profile_research_inputs(
         customer, interactions, user_id=user_id
@@ -490,7 +492,9 @@ Explain volume, pain points, competition, and switching per high-scoring categor
 Subsection: Interaction Review
 Summarize CRM relationship stage, blockers, and momentum from section 0 CRM bullets.
 Subsection: Strategic Actions
-Numbered list (1., 2., …) of 5–8 concrete actions by subsector ({', '.join(categories_list)}): outreach channel, samples, contracts, technical advisory.
+One line per product category ({', '.join(categories_list)}), exactly this format:
+CategoryName: [2–3 sentence key analysis] — [concrete next step: outreach, samples, contract, technical advisory]
+Use "No direct engagement" as the next step when fit is 0/3 or there is no viable opportunity. Do not write this subsection as a single paragraph.
 Subsection: Key Contacts
 Up to 10 verified decision-makers, one block per person:
 Name: ...
@@ -588,6 +592,7 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     update_payload["latest_profile_text"] = profile_text
     update_payload["latest_profile_updated_at"] = datetime.utcnow().isoformat()
     research_meta["conversation_archive_count"] = archive_added
+    research_meta["pipeline_archive_count"] = pipeline_added
     research_meta["interactions_table_count"] = table_total
     update_payload["latest_profile_research_meta"] = research_meta
 
@@ -667,6 +672,17 @@ def _supabase_for_interaction_reads() -> Client:
     return get_supabase_service_client()
 
 
+def _metadata_matches_customer(meta: Any, customer_id: str) -> bool:
+    if not isinstance(meta, dict):
+        return False
+    cid = str(customer_id)
+    for key in ("customer_id", "customerId", "customer_uuid"):
+        val = meta.get(key)
+        if val is not None and str(val) == cid:
+            return True
+    return False
+
+
 def get_conversation_logs_for_customer(
     customer_id: str,
     *,
@@ -674,13 +690,61 @@ def get_conversation_logs_for_customer(
 ) -> List[Dict[str, Any]]:
     """
     RAG archive (`conversation` table). Older chats may exist here without a row in
-    `interactions` (e.g. legacy Streamlit imports or failed interaction inserts).
+    `interactions` (e.g. legacy Streamlit imports, pipeline-only saves, or failed inserts).
     """
     supabase = _supabase_for_interaction_reads()
+    cid = str(customer_id)
     collected: List[Dict[str, Any]] = []
     offset = 0
     page_size = 500
 
+    def _append_row(row: Dict[str, Any]) -> None:
+        meta = row.get("metadata") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        collected.append(
+            {
+                "id": row.get("id"),
+                "content": row.get("content") or "",
+                "created_at": row.get("created_at"),
+                "metadata": meta,
+            }
+        )
+
+    # Prefer DB-side filter (fast, complete) instead of scanning the whole table in Python.
+    while len(collected) < max_rows:
+        try:
+            resp = (
+                supabase.table("conversation")
+                .select("id, content, metadata, created_at")
+                .eq("metadata->>customer_id", cid)
+                .order("created_at", desc=True)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+        except Exception as exc:
+            logging.warning(
+                "conversation filter metadata->>customer_id failed for %s: %s",
+                cid,
+                exc,
+            )
+            break
+        batch = resp.data or []
+        if not batch:
+            break
+        for row in batch:
+            _append_row(row)
+            if len(collected) >= max_rows:
+                break
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    if collected:
+        return collected
+
+    # Fallback: paginate entire table and match flexible metadata keys (legacy rows).
+    offset = 0
     while len(collected) < max_rows:
         resp = (
             supabase.table("conversation")
@@ -694,24 +758,87 @@ def get_conversation_logs_for_customer(
             break
         for row in batch:
             meta = row.get("metadata") or {}
-            if not isinstance(meta, dict):
+            if not _metadata_matches_customer(meta, cid):
                 continue
-            if str(meta.get("customer_id")) != str(customer_id):
-                continue
-            collected.append(
-                {
-                    "id": row.get("id"),
-                    "content": row.get("content") or "",
-                    "created_at": row.get("created_at"),
-                    "metadata": meta,
-                }
-            )
+            _append_row(row)
             if len(collected) >= max_rows:
                 break
         if len(batch) < page_size:
             break
         offset += page_size
 
+    return collected
+
+
+def get_pipeline_chat_history_for_customer(
+    customer_id: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    max_rows: int = INTERACTIONS_MAX_FETCH,
+) -> List[Interaction]:
+    """
+    Pipeline AI chats are stored in sales_pipeline.ai_interactions (JSON), not in
+    public.interactions. They are also logged to conversation for RAG — merge includes both.
+    """
+    supabase = _supabase_for_interaction_reads()
+    resp = (
+        supabase.table("sales_pipeline")
+        .select("id, customer_id, ai_interactions, created_at, updated_at")
+        .eq("customer_id", customer_id)
+        .execute()
+    )
+    rows = resp.data or []
+    collected: List[Interaction] = []
+
+    for pipeline in rows:
+        pipeline_id = pipeline.get("id")
+        raw = pipeline.get("ai_interactions")
+        if isinstance(raw, str):
+            try:
+                entries = json.loads(raw)
+            except json.JSONDecodeError:
+                entries = []
+        elif isinstance(raw, list):
+            entries = raw
+        else:
+            entries = []
+
+        for idx, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            created_at = (
+                entry.get("timestamp")
+                or entry.get("created_at")
+                or pipeline.get("updated_at")
+                or pipeline.get("created_at")
+            )
+            if not _row_in_date_range(created_at, start_date, end_date):
+                continue
+            input_text = (entry.get("user_input") or entry.get("input_text") or "").strip()
+            ai_response = (entry.get("ai_response") or "").strip()
+            if not input_text and not ai_response:
+                continue
+            synthetic_id = uuid5(
+                NAMESPACE_URL,
+                f"pipeline-{pipeline_id}-{idx}-{created_at}",
+            )
+            collected.append(
+                Interaction(
+                    id=synthetic_id,
+                    customer_id=UUIDType(str(customer_id)),
+                    input_text=input_text or None,
+                    ai_response=ai_response or None,
+                    created_at=created_at,
+                    history_source="pipeline",
+                )
+            )
+            if len(collected) >= max_rows:
+                break
+        if len(collected) >= max_rows:
+            break
+
+    collected.sort(key=lambda r: str(r.created_at or ""), reverse=True)
     return collected
 
 
@@ -768,10 +895,10 @@ def merge_customer_interaction_history(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     max_rows: int = INTERACTIONS_MAX_FETCH,
-) -> tuple[List[Interaction], int, int]:
+) -> tuple[List[Interaction], int, int, int]:
     """
-    Unified timeline: public.interactions + public.conversation (deduped).
-    Returns (merged newest-first, table_count, archive-only count).
+    Unified timeline: public.interactions + public.conversation + pipeline JSON (deduped).
+    Returns (merged newest-first, table_count, conversation-only count, pipeline-only count).
     """
     table_rows = get_all_interactions_for_customer(
         customer_id,
@@ -818,17 +945,34 @@ def merge_customer_interaction_history(
         )
         archive_added += 1
 
+    pipeline_added = 0
+    for it in get_pipeline_chat_history_for_customer(
+        customer_id,
+        start_date=start_date,
+        end_date=end_date,
+        max_rows=max_rows,
+    ):
+        fp = _interaction_fingerprint(it.input_text or "", it.ai_response or "")
+        if fp in fingerprints:
+            continue
+        fingerprints.add(fp)
+        merged.append(it)
+        pipeline_added += 1
+
     merged.sort(
         key=lambda r: str(r.created_at or ""),
         reverse=True,
     )
-    return merged, len(table_rows), archive_added
+    if len(merged) > max_rows:
+        merged = merged[:max_rows]
+    return merged, len(table_rows), archive_added, pipeline_added
 
 
 def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
-    """Counts by month in `interactions` vs `conversation` for diagnostics."""
+    """Counts by month in interactions vs conversation vs pipeline JSON for diagnostics."""
     interactions = get_all_interactions_for_customer(customer_id)
     conversations = get_conversation_logs_for_customer(customer_id)
+    pipeline_rows = get_pipeline_chat_history_for_customer(customer_id)
 
     def bucket(rows: List[Any], date_fn) -> Dict[str, int]:
         counts: Dict[str, int] = defaultdict(int)
@@ -838,28 +982,40 @@ def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
             counts[key] += 1
         return dict(sorted(counts.items()))
 
+    def count_may(rows: List[Any], date_fn) -> int:
+        return sum(
+            1
+            for r in rows
+            if date_fn(r) and str(date_fn(r))[5:7] == "05"
+        )
+
+    merged, table_n, conv_n, pipe_n = merge_customer_interaction_history(customer_id)
+
     return {
         "customer_id": customer_id,
         "interactions_table": "public.interactions",
         "conversation_table": "public.conversation",
+        "pipeline_table": "public.sales_pipeline.ai_interactions",
         "interactions_total": len(interactions),
         "conversation_total": len(conversations),
+        "pipeline_total": len(pipeline_rows),
+        "merged_total": len(merged),
         "interactions_by_month": bucket(
             interactions, lambda r: getattr(r, "created_at", None)
         ),
         "conversation_by_month": bucket(
             conversations, lambda r: r.get("created_at")
         ),
-        "may_interactions": sum(
-            1
-            for r in interactions
-            if r.created_at and str(r.created_at)[5:7] == "05"
+        "pipeline_by_month": bucket(
+            pipeline_rows, lambda r: getattr(r, "created_at", None)
         ),
-        "may_conversation": sum(
-            1
-            for r in conversations
-            if r.get("created_at") and str(r.get("created_at"))[5:7] == "05"
-        ),
+        "may_interactions": count_may(interactions, lambda r: getattr(r, "created_at", None)),
+        "may_conversation": count_may(conversations, lambda r: r.get("created_at")),
+        "may_pipeline": count_may(pipeline_rows, lambda r: getattr(r, "created_at", None)),
+        "may_merged": count_may(merged, lambda r: getattr(r, "created_at", None)),
+        "merged_table_rows": table_n,
+        "merged_conversation_only": conv_n,
+        "merged_pipeline_only": pipe_n,
     }
 
 
@@ -1522,7 +1678,7 @@ def chat_with_customer(
         raise RuntimeError("Customer not found")
 
     # 2) Fetch recent interactions to give the AI richer CRM context
-    recent_interactions, _, _ = merge_customer_interaction_history(
+    recent_interactions, _, _, _ = merge_customer_interaction_history(
         customer_id, max_rows=100
     )
     # Oldest first in the prompt so the story reads naturally

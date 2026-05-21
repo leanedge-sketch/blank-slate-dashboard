@@ -1,91 +1,111 @@
-import { CheckCircle2, CircleSlash, Eye } from "lucide-react";
-import type { NextStepItem } from "../../utils/profileText";
+import { CircleSlash, Sparkles } from "lucide-react";
+import type { CategoryRecommendation } from "../../utils/profileText";
 import { ProfileProse } from "../ProfileProse";
 
 const toneStyles: Record<
-  NextStepItem["tone"],
-  { card: string; icon: string; badge: string }
+  CategoryRecommendation["tone"],
+  { card: string; badge: string; action: string }
 > = {
   action: {
-    card: "border-emerald-200 bg-emerald-50/80",
-    icon: "text-emerald-600",
-    badge: "bg-emerald-100 text-emerald-800",
+    card: "border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50/90 shadow-sm",
+    badge: "bg-emerald-600 text-white",
+    action: "text-slate-900 font-bold",
   },
   review: {
-    card: "border-amber-200 bg-amber-50/60",
-    icon: "text-amber-600",
+    card: "border-amber-200 bg-amber-50/70",
     badge: "bg-amber-100 text-amber-800",
+    action: "text-slate-800 font-semibold",
   },
   muted: {
-    card: "border-slate-200 bg-slate-50 opacity-75",
-    icon: "text-slate-400",
+    card: "border-slate-200 bg-slate-50/60",
     badge: "bg-slate-100 text-slate-500",
+    action: "text-slate-400 font-normal",
   },
 };
 
-function StepIcon({ tone }: { tone: NextStepItem["tone"] }) {
-  if (tone === "action") return <CheckCircle2 size={18} className={toneStyles.action.icon} />;
-  if (tone === "review") return <Eye size={18} className={toneStyles.review.icon} />;
-  return <CircleSlash size={18} className={toneStyles.muted.icon} />;
-}
-
 export function ProfileNextSteps({
   interactionReview,
-  items,
+  categories,
 }: {
   interactionReview: string;
-  items: NextStepItem[];
+  categories: CategoryRecommendation[];
 }) {
+  const hasCategories = categories.some(
+    (c) => c.analysis.trim() || c.action.trim(),
+  );
+
   return (
     <div className="space-y-6">
       {interactionReview.trim() ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-          <h4 className="text-sm font-semibold text-slate-800 m-0 mb-2">Interaction review</h4>
+          <h4 className="text-sm font-semibold text-slate-800 m-0 mb-2">
+            Interaction review
+          </h4>
           <ProfileProse body={interactionReview} compact />
         </div>
       ) : null}
 
-      {items.length ? (
-        <ul className="space-y-3 list-none m-0 p-0">
-          {items.map((item, i) => {
+      {hasCategories ? (
+        <ul className="space-y-4 list-none m-0 p-0">
+          {categories.map((item) => {
             const styles = toneStyles[item.tone];
+            const isPrimary = item.tone === "action";
+
             return (
               <li
-                key={`${item.index ?? i}-${item.text.slice(0, 40)}`}
-                className={`flex gap-3 rounded-xl border p-4 transition-colors ${styles.card}`}
+                key={item.category}
+                className={`rounded-xl border p-4 sm:p-5 ${styles.card}`}
               >
-                <span className="mt-0.5 shrink-0">
-                  <StepIcon tone={item.tone} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    {item.index != null ? (
-                      <span className="text-xs font-bold text-slate-500">#{item.index}</span>
-                    ) : null}
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}`}
-                    >
-                      {item.tone === "action"
-                        ? "Action"
-                        : item.tone === "review"
-                          ? "Review"
-                          : "Low priority"}
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h4 className="text-sm font-extrabold text-slate-900 m-0 tracking-tight">
+                    {item.category}
+                  </h4>
+                  {item.score != null ? (
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200">
+                      {item.score}/3 fit
                     </span>
-                  </div>
-                  <p
-                    className={`text-sm leading-relaxed m-0 ${
-                      item.tone === "muted" ? "text-slate-500" : "text-slate-800"
-                    }`}
-                  >
-                    {item.text}
-                  </p>
+                  ) : null}
+                  {isPrimary ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles.badge}`}
+                    >
+                      <Sparkles size={11} aria-hidden />
+                      Primary Action
+                    </span>
+                  ) : item.tone === "muted" ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                      <CircleSlash size={14} aria-hidden />
+                      Low priority
+                    </span>
+                  ) : null}
                 </div>
+
+                <p className="text-sm text-slate-600 leading-relaxed m-0 mb-2">
+                  <span className="font-semibold text-slate-700">Analysis: </span>
+                  {item.analysis}
+                </p>
+
+                <p className={`text-sm leading-relaxed m-0 ${styles.action}`}>
+                  <span
+                    className={
+                      isPrimary
+                        ? "font-bold text-emerald-800"
+                        : "font-semibold text-slate-600"
+                    }
+                  >
+                    Next step:{" "}
+                  </span>
+                  {item.action}
+                </p>
               </li>
             );
           })}
         </ul>
       ) : (
-        <ProfileProse body="No structured action items found. See full profile text in edit mode." compact />
+        <ProfileProse
+          body="No structured category actions found. Regenerate the ICP profile for Cement, Dry-Mix, Admixtures, and Paint & Coatings bullets."
+          compact
+        />
       )}
     </div>
   );

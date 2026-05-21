@@ -15,6 +15,7 @@ import {
 import {
   fetchAllCustomerInteractions,
   isConversationArchiveRow,
+  isPipelineArchiveRow,
 } from "../../utils/interactions";
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package, DollarSign } from "lucide-react";
 
@@ -23,6 +24,7 @@ export function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [archiveCount, setArchiveCount] = useState(0);
+  const [pipelineCount, setPipelineCount] = useState(0);
   const [tableCount, setTableCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function CustomerDetailPage() {
       setCustomer(customerRes.data);
       setInteractions(allInteractions.interactions);
       setArchiveCount(allInteractions.conversationArchiveTotal);
+      setPipelineCount(allInteractions.pipelineArchiveTotal);
       setTableCount(allInteractions.interactionsTableTotal);
     } catch (err: any) {
       console.error(err);
@@ -509,8 +512,8 @@ export function CustomerDetailPage() {
                 <span className="text-[11px] text-slate-500">
                   {interactions.length} merged
                   {interactions.length === 1 ? " entry" : " entries"}
-                  {archiveCount > 0
-                    ? ` (${tableCount} CRM + ${archiveCount} RAG archive)`
+                  {archiveCount > 0 || pipelineCount > 0
+                    ? ` (${tableCount} CRM${archiveCount > 0 ? ` + ${archiveCount} RAG` : ""}${pipelineCount > 0 ? ` + ${pipelineCount} pipeline` : ""})`
                     : ""}
                 </span>
               </div>
@@ -570,6 +573,7 @@ export function CustomerDetailPage() {
                     const isEditing = editingInteraction === it.id;
                     const isDeleting = deleting === it.id;
                     const fromArchive = isConversationArchiveRow(it);
+                    const fromPipeline = isPipelineArchiveRow(it);
 
                     return (
                       <div
@@ -615,6 +619,11 @@ export function CustomerDetailPage() {
                                   RAG archive
                                 </span>
                               )}
+                              {fromPipeline && (
+                                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300 border border-amber-500/30">
+                                  Pipeline chat
+                                </span>
+                              )}
                             </div>
                             {it.input_text && (
                               <div className="text-xs sm:text-sm font-medium text-slate-100 truncate">
@@ -634,7 +643,7 @@ export function CustomerDetailPage() {
                             className="flex items-center gap-1 ml-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {!isEditing && !fromArchive && (
+                            {!isEditing && !fromArchive && !fromPipeline && (
                               <>
                                 <button
                                   type="button"

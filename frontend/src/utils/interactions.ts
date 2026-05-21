@@ -15,6 +15,7 @@ export interface CustomerInteractionBundle {
   total: number;
   interactionsTableTotal: number;
   conversationArchiveTotal: number;
+  pipelineArchiveTotal: number;
 }
 
 /** Fetch unified history (interactions table + conversation archive, merged). */
@@ -47,6 +48,7 @@ export async function fetchAllCustomerInteractions(
       res.data.interactions_table_total ?? interactionsTableTotal;
     conversationArchiveTotal =
       res.data.conversation_total ?? conversationArchiveTotal;
+    pipelineArchiveTotal = res.data.pipeline_total ?? pipelineArchiveTotal;
     all.push(...page);
 
     if (page.length < PAGE_SIZE || all.length >= total) {
@@ -60,11 +62,16 @@ export async function fetchAllCustomerInteractions(
     total: Math.max(total, all.length),
     interactionsTableTotal,
     conversationArchiveTotal,
+    pipelineArchiveTotal,
   };
 }
 
 export function isConversationArchiveRow(interaction: Interaction): boolean {
   return interaction.history_source === "conversation";
+}
+
+export function isPipelineArchiveRow(interaction: Interaction): boolean {
+  return interaction.history_source === "pipeline";
 }
 
 /** Format unified CRM history for Deep Dive tab. */
@@ -114,7 +121,9 @@ export function formatInteractionsForCrmTab(
       : "unknown time";
     const label = isConversationArchiveRow(it)
       ? "RAG conversation archive"
-      : "CRM interaction";
+      : isPipelineArchiveRow(it)
+        ? "Pipeline chat (sales_pipeline.ai_interactions)"
+        : "CRM interaction";
     lines.push(`--- ${label} at ${ts} ---`);
     if (it.input_text?.trim()) {
       lines.push(`Sales/Customer note: ${it.input_text.trim()}`);
