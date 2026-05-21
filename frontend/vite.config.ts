@@ -40,8 +40,21 @@ export default defineConfig(({ mode }) => {
     `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}, frontend: ${productionAppUrl}, API: ${mode === "production" ? "Vercel same-origin" : rawApiUrl || "local"}`,
   );
 
+  const buildStamp = new Date().toISOString();
+
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: "html-cache-bust",
+        transformIndexHtml(html: string) {
+          return html.replace(
+            "<html",
+            `<html data-build="${buildStamp}"`,
+          );
+        },
+      },
+    ],
     envDir: __dirname,
     define: {
       "import.meta.env.VITE_API_URL": JSON.stringify(

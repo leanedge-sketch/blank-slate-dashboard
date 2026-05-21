@@ -63,14 +63,23 @@ a:hover {
   font-size: 0.875rem;
 }
 
+.app-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+}
+
 .app-nav a {
-  margin-left: 1rem;
   color: #cbd5f5;
   font-size: 0.95rem;
+  white-space: nowrap;
+  text-decoration: none;
 }
 
 .app-nav a:hover {
   color: white;
+  text-decoration: none;
 }
 
 .app-main {
