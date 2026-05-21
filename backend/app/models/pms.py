@@ -193,6 +193,7 @@ class CostingPricingUpdate(BaseModel):
 
 
 class CostingPricing(CostingPricingBase):
+    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

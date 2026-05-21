@@ -1628,7 +1628,7 @@ export function SalesPipelinePage() {
             <div className="p-4 sm:p-6 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-900">Pipeline by stage</h2>
               <p className="text-sm text-slate-500 mt-1">
-                Current deal per customer and product. Discovery and Sample are stages 2 and 3.
+                Current deal per customer and product. CRM interactions sync here automatically.
               </p>
             </div>
             <div className="overflow-x-auto p-4 sm:p-6">

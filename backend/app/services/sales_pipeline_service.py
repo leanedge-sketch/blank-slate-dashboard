@@ -943,15 +943,14 @@ def advance_pipeline_stage(
         current_metadata.update(metadata_updates)
         update_data["metadata"] = current_metadata
     
-    # If moving to Closed Lost, ensure close_reason is provided
-    if new_stage == "Closed Lost":
+    if new_stage == "Lost":
         # Check if close_reason is provided in metadata_updates or already exists
         close_reason_provided = (
             (metadata_updates and metadata_updates.get("close_reason")) or
             existing.close_reason
         )
         if not close_reason_provided:
-            raise ValueError("close_reason is required when stage is 'Closed Lost'")
+            raise ValueError("close_reason is required when stage is 'Lost'")
     
     update_body = SalesPipelineUpdate(**update_data)
     return update_sales_pipeline(pipeline_id, update_body)
@@ -998,20 +997,21 @@ def detect_pipeline_stage_from_interaction(
         context = "\n".join(context_parts) if context_parts else "No additional context available."
         
         # Create AI prompt
+        stages_list = "\n".join(f"- {s}" for s in PIPELINE_STAGES)
         prompt = f"""You are analyzing a B2B chemical sales interaction to determine the appropriate sales pipeline stage.
 
-Available pipeline stages:
-1. Lead - Initial contact, customer inquiry
-2. Product Identified - Customer has shown interest in a specific product
-3. Quote Sent - A price quote has been sent to the customer
-4. Sample Requested - Customer has requested a sample
-5. Sample Delivered - Sample has been delivered to the customer
-6. Agreement in Review - Contract or agreement is being reviewed
-7. PO Received - Purchase order has been received
-8. Invoiced - Invoice has been sent
-9. Delivered - Product has been delivered
-10. Closed Won - Deal completed successfully
-11. Closed Lost - Deal lost (requires a reason)
+Available pipeline stages (use exact names):
+{stages_list}
+
+Stage meanings:
+- Lead ID: initial inquiry or new lead
+- Discovery: understanding needs, product fit
+- Sample: sample requested, sent, or in testing
+- Validation: technical/commercial validation, trials
+- Proposal: quotation or proposal shared
+- Confirmation: agreement, PO, or final commercial terms
+- Closed: deal won / order placed
+- Lost: deal lost (requires close_reason)
 
 Context:
 {context}
@@ -1019,29 +1019,20 @@ Context:
 Customer Interaction Text:
 "{interaction_text}"
 
-Analyze this interaction and determine:
-1. What pipeline stage does this interaction indicate?
-2. What is your confidence level (high/medium/low)?
-3. Why did you choose this stage? (brief explanation)
-4. If the stage is "Closed Lost", what is the reason?
-5. Extract any relevant information: deal value, expected dates, product mentions, etc.
-
-Respond in JSON format:
+Respond in JSON only:
 {{
-    "detected_stage": "one of the 11 stages above",
+    "detected_stage": "exact stage name from the list",
     "confidence": "high|medium|low",
     "reason": "brief explanation",
-    "close_reason": "reason if Closed Lost, null otherwise",
+    "close_reason": "reason if Lost, else null",
     "metadata": {{
-        "amount": null or number,
-        "currency": null or "ETB"|"KES"|"USD"|"EUR",
-        "expected_close_date": null or "YYYY-MM-DD",
-        "product_mentioned": null or product name,
-        "notes": "any additional relevant information"
+        "amount": null,
+        "currency": null,
+        "expected_close_date": null,
+        "product_mentioned": null,
+        "notes": null
     }}
-}}
-
-Only respond with valid JSON, no additional text."""
+}}"""
 
         messages = [
             {
@@ -1069,29 +1060,25 @@ Only respond with valid JSON, no additional text."""
         # Validate detected stage
         detected_stage = result.get("detected_stage", "").strip()
         if detected_stage not in PIPELINE_STAGES:
-            # If AI returned invalid stage, try to map common variations
             stage_lower = detected_stage.lower()
-            if "lead" in stage_lower or "inquiry" in stage_lower:
-                detected_stage = "Lead"
-            elif "quote" in stage_lower or "pricing" in stage_lower:
-                detected_stage = "Quote Sent"
-            elif "sample" in stage_lower and "request" in stage_lower:
-                detected_stage = "Sample Requested"
-            elif "sample" in stage_lower and "deliver" in stage_lower:
-                detected_stage = "Sample Delivered"
-            elif "po" in stage_lower or "purchase order" in stage_lower:
-                detected_stage = "PO Received"
-            elif "invoice" in stage_lower:
-                detected_stage = "Invoiced"
-            elif "deliver" in stage_lower and "won" not in stage_lower:
-                detected_stage = "Delivered"
-            elif "won" in stage_lower or "closed won" in stage_lower:
-                detected_stage = "Closed Won"
-            elif "lost" in stage_lower or "closed lost" in stage_lower:
-                detected_stage = "Closed Lost"
+            if "lost" in stage_lower:
+                detected_stage = "Lost"
+            elif "won" in stage_lower or "closed" in stage_lower:
+                detected_stage = "Closed"
+            elif "lead" in stage_lower:
+                detected_stage = "Lead ID"
+            elif "discovery" in stage_lower:
+                detected_stage = "Discovery"
+            elif "sample" in stage_lower:
+                detected_stage = "Sample"
+            elif "validat" in stage_lower:
+                detected_stage = "Validation"
+            elif "proposal" in stage_lower or "quote" in stage_lower:
+                detected_stage = "Proposal"
+            elif "confirm" in stage_lower or "po" in stage_lower:
+                detected_stage = "Confirmation"
             else:
-                # Default to current stage or "Lead" if no match
-                detected_stage = current_stage or "Lead"
+                detected_stage = current_stage or "Lead ID"
         
         return {
             "detected_stage": detected_stage,
@@ -1104,7 +1091,7 @@ Only respond with valid JSON, no additional text."""
     except json.JSONDecodeError as e:
         # If JSON parsing fails, return a safe default
         return {
-            "detected_stage": current_stage or "Lead",
+            "detected_stage": current_stage or "Lead ID",
             "confidence": "low",
             "reason": f"AI response parsing failed: {str(e)}",
             "close_reason": None,
@@ -1178,13 +1165,13 @@ def auto_advance_pipeline_stage(
             **detection_result.get("metadata", {}),
         }
         
-        # If Closed Lost, ensure close_reason is set
-        if detected_stage == "Closed Lost":
+        if detected_stage == "Lost":
             if detection_result.get("close_reason"):
                 metadata_updates["close_reason"] = detection_result["close_reason"]
             elif not existing.close_reason:
-                # If no close reason provided, use the AI's reason
-                metadata_updates["close_reason"] = detection_result.get("reason", "Lost - see interaction details")
+                metadata_updates["close_reason"] = detection_result.get(
+                    "reason", "Lost - see interaction details"
+                )
         
         # Advance stage
         return advance_pipeline_stage(

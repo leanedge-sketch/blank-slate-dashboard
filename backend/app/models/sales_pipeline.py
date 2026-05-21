@@ -168,6 +168,7 @@ class SalesPipelineUpdate(BaseModel):
     business_unit: Optional[str] = None
     incoterm: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    ai_interactions: Optional[List[Dict[str, Any]]] = None
     reason_for_stage_change: Optional[str] = Field(None, description="Required when stage changes")
     reason_for_amount_change: Optional[str] = Field(None, description="Required when amount changes")
 

@@ -6,10 +6,12 @@ import {
   updateProduct,
   deleteProduct,
   fetchTDS,
+  fetchChemicalFullData,
   LeanchemProduct,
   LeanchemProductCreate,
   LeanchemProductUpdate,
   Tds,
+  ChemicalFullData,
 } from "../../services/api";
 import {
   Package,
@@ -32,8 +34,13 @@ const emptyForm: LeanchemProductCreate = {
   stock_nairobi: null,
 };
 
+type ProductsTab = "leanchem" | "chemical_catalog";
+
 export function ProductsPage() {
+  const [activeTab, setActiveTab] = useState<ProductsTab>("leanchem");
   const [products, setProducts] = useState<LeanchemProduct[]>([]);
+  const [chemicalCatalog, setChemicalCatalog] = useState<ChemicalFullData[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -55,6 +62,18 @@ export function ProductsPage() {
       setTdsList(res.tds);
     } catch {
       setTdsList([]);
+    }
+  }
+
+  async function loadChemicalCatalog() {
+    try {
+      setCatalogLoading(true);
+      const res = await fetchChemicalFullData({ limit: 500, offset: 0 });
+      setChemicalCatalog(res.chemicals);
+    } catch {
+      setChemicalCatalog([]);
+    } finally {
+      setCatalogLoading(false);
     }
   }
 
@@ -83,6 +102,7 @@ export function ProductsPage() {
 
   useEffect(() => {
     loadTds();
+    loadChemicalCatalog();
   }, []);
 
   useEffect(() => {
@@ -176,8 +196,9 @@ export function ProductsPage() {
                 LeanChem Products
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
-                Branded product catalog linked to TDS records — stored in{" "}
-                <code className="text-amber-200">leanchem_products</code>.
+                LeanChem branded SKUs (<code className="text-amber-200">leanchem_products</code>)
+                plus the full chemical catalog (<code className="text-amber-200">chemical_full_data</code>)
+                used by sales pipeline and partners.
               </p>
             </div>
             <button
@@ -193,6 +214,85 @@ export function ProductsPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <div className="flex gap-2 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab("leanchem")}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${
+              activeTab === "leanchem"
+                ? "border-amber-600 text-amber-800"
+                : "border-transparent text-slate-500"
+            }`}
+          >
+            LeanChem products
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("chemical_catalog")}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${
+              activeTab === "chemical_catalog"
+                ? "border-amber-600 text-amber-800"
+                : "border-transparent text-slate-500"
+            }`}
+          >
+            Chemical catalog (full list)
+          </button>
+        </div>
+
+        {activeTab === "chemical_catalog" ? (
+          catalogLoading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <p className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">
+                {chemicalCatalog.length} products in{" "}
+                <code className="text-xs bg-slate-100 px-1 rounded">chemical_full_data</code>
+                {" "}— manage details on{" "}
+                <Link to="/pms/chemicals" className="text-amber-700 font-medium hover:underline">
+                  Chemical Master Data
+                </Link>
+              </p>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-semibold">Product</th>
+                    <th className="text-left px-4 py-3 font-semibold">Vendor</th>
+                    <th className="text-left px-4 py-3 font-semibold">Category</th>
+                    <th className="text-left px-4 py-3 font-semibold">Sector</th>
+                    <th className="text-left px-4 py-3 font-semibold">UUID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chemicalCatalog.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                        No chemicals in catalog.
+                      </td>
+                    </tr>
+                  ) : (
+                    chemicalCatalog.map((c) => (
+                      <tr
+                        key={c.uuid_id || c.id}
+                        className="border-b border-slate-100 hover:bg-slate-50/80"
+                      >
+                        <td className="px-4 py-3 font-medium">{c.product_name || "—"}</td>
+                        <td className="px-4 py-3">{c.vendor || "—"}</td>
+                        <td className="px-4 py-3">{c.product_category || "—"}</td>
+                        <td className="px-4 py-3">{c.sector || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 font-mono truncate max-w-[140px]">
+                          {c.uuid_id || "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : (
+          <>
         <div className="flex flex-wrap gap-3">
           <select
             value={filterCategory}
@@ -364,6 +464,8 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
+        )}
+          </>
         )}
       </main>
     </div>

@@ -1251,7 +1251,19 @@ def create_interaction(
     except Exception as e:
         logging.warning("Telegram notify skipped for %s: %s", customer_id, e)
 
-    return Interaction(**interaction_row)
+    created = Interaction(**interaction_row)
+    try:
+        from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
+
+        sync_interaction_to_sales_pipeline(created, use_ai=True)
+    except Exception as e:
+        logging.warning(
+            "Sales pipeline sync skipped for interaction %s: %s",
+            created.id,
+            e,
+        )
+
+    return created
 
 
 def update_customer_profile_text(
@@ -1409,7 +1421,18 @@ def update_interaction(
     )
 
     if response.data:
-        return Interaction(**response.data[0])
+        updated = Interaction(**response.data[0])
+        try:
+            from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
+
+            sync_interaction_to_sales_pipeline(updated, use_ai=True)
+        except Exception as e:
+            logging.warning(
+                "Sales pipeline sync skipped on interaction update %s: %s",
+                interaction_id,
+                e,
+            )
+        return updated
     return None
 
 

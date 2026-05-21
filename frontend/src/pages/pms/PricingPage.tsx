@@ -3,21 +3,33 @@ import { Link } from "react-router-dom";
 import {
   fetchPricing,
   createPricing,
+  updatePricing,
+  deletePricing,
   fetchPartners,
   fetchTDS,
   CostingPricing,
   CostingPricingCreate,
+  CostingPricingRow,
 } from "../../services/api";
 import {
   DollarSign,
-  Search,
   Plus,
   Loader2,
   ChevronLeft,
   ChevronRight,
   Package,
   Filter,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+
+const EMPTY_PRICING_ROW: CostingPricingRow = {
+  incoterm: "FOB",
+  cost_usd: "",
+  cost_etb: "",
+  price_usd: "",
+  price_etb: "",
+};
 
 export function PricingPage() {
   const [pricing, setPricing] = useState<CostingPricing[]>([]);
@@ -41,8 +53,16 @@ export function PricingPage() {
   const [formData, setFormData] = useState<CostingPricingCreate>({
     partner_id: "",
     tds_id: "",
-    rows: [],
+    rows: [{ ...EMPTY_PRICING_ROW }],
   });
+  const [formRows, setFormRows] = useState<CostingPricingRow[]>([
+    { ...EMPTY_PRICING_ROW },
+  ]);
+  const [editingRecord, setEditingRecord] = useState<{
+    partner_id: string;
+    tds_id: string;
+  } | null>(null);
+  const [editRows, setEditRows] = useState<CostingPricingRow[]>([]);
 
   async function loadPartners() {
     try {
@@ -101,13 +121,14 @@ export function PricingPage() {
 
     try {
       setCreating(true);
-      await createPricing(formData);
+      await createPricing({ ...formData, rows: formRows });
       setShowCreateForm(false);
       setFormData({
         partner_id: "",
         tds_id: "",
-        rows: [],
+        rows: [{ ...EMPTY_PRICING_ROW }],
       });
+      setFormRows([{ ...EMPTY_PRICING_ROW }]);
       await loadPricing();
     } catch (err: any) {
       console.error(err);
@@ -209,6 +230,71 @@ export function PricingPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Cost &amp; price rows (costing_pricing_data.rows)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormRows((r) => [...r, { ...EMPTY_PRICING_ROW }])
+                    }
+                    className="text-xs font-medium text-orange-700 hover:text-orange-900"
+                  >
+                    + Add incoterm row
+                  </button>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-2 py-2 text-left">Incoterm</th>
+                        <th className="px-2 py-2 text-left">Cost USD</th>
+                        <th className="px-2 py-2 text-left">Cost ETB</th>
+                        <th className="px-2 py-2 text-left">Price USD</th>
+                        <th className="px-2 py-2 text-left">Price ETB</th>
+                        <th className="px-2 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formRows.map((row, idx) => (
+                        <tr key={idx} className="border-t border-slate-100">
+                          {(["incoterm", "cost_usd", "cost_etb", "price_usd", "price_etb"] as const).map(
+                            (field) => (
+                              <td key={field} className="px-2 py-1">
+                                <input
+                                  className="w-full min-w-[80px] rounded border border-slate-300 px-2 py-1"
+                                  value={String(row[field] ?? "")}
+                                  onChange={(e) => {
+                                    const next = [...formRows];
+                                    next[idx] = { ...next[idx], [field]: e.target.value };
+                                    setFormRows(next);
+                                  }}
+                                />
+                              </td>
+                            )
+                          )}
+                          <td className="px-2 py-1">
+                            {formRows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFormRows((r) => r.filter((_, i) => i !== idx))
+                                }
+                                className="text-red-600 text-xs"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -333,49 +419,195 @@ export function PricingPage() {
               </p>
             </div>
 
-            {/* Pricing List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pricing.map((price, idx) => {
-                const partner = partners.find((p) => p.id === price.partner_id);
-                const tds = tdsList.find((t) => t.id === price.tds_id);
-                return (
-                  <div
-                    key={`${price.partner_id}-${price.tds_id}-${idx}`}
-                    className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="text-lg font-bold text-slate-900">Pricing Record</h3>
-                      <DollarSign className="w-5 h-5 text-orange-500 flex-shrink-0" />
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      {partner && (
-                        <div>
-                          <span className="text-slate-500">Partner:</span>{" "}
-                          <span className="font-medium text-slate-700">
-                            {partner.partner || "Unnamed"}
-                          </span>
-                        </div>
-                      )}
-                      {tds && (
-                        <div>
-                          <span className="text-slate-500">TDS:</span>{" "}
-                          <span className="font-medium text-slate-700">
-                            {tds.brand || "Unnamed"} {tds.grade ? `- ${tds.grade}` : ""}
-                          </span>
-                        </div>
-                      )}
-                      {price.rows && Array.isArray(price.rows) && price.rows.length > 0 && (
-                        <div>
-                          <span className="text-slate-500">Rows:</span>{" "}
-                          <span className="font-medium text-slate-700">{price.rows.length}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-semibold">Partner</th>
+                      <th className="text-left px-4 py-3 font-semibold">TDS</th>
+                      <th className="text-left px-4 py-3 font-semibold">Incoterm</th>
+                      <th className="text-left px-4 py-3 font-semibold">Cost USD</th>
+                      <th className="text-left px-4 py-3 font-semibold">Cost ETB</th>
+                      <th className="text-left px-4 py-3 font-semibold">Price USD</th>
+                      <th className="text-left px-4 py-3 font-semibold">Price ETB</th>
+                      <th className="text-right px-4 py-3 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pricing.flatMap((price) => {
+                      const partner = partners.find((p) => p.id === price.partner_id);
+                      const tds = tdsList.find((t) => t.id === price.tds_id);
+                      const rows =
+                        price.rows && price.rows.length > 0
+                          ? price.rows
+                          : [{ ...EMPTY_PRICING_ROW }];
+                      const key = `${price.partner_id}-${price.tds_id}`;
+                      return rows.map((row, rowIdx) => (
+                        <tr
+                          key={`${key}-${rowIdx}`}
+                          className="border-b border-slate-100 hover:bg-slate-50/80"
+                        >
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {rowIdx === 0 ? partner?.partner || "—" : ""}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {rowIdx === 0
+                              ? [tds?.brand, tds?.grade].filter(Boolean).join(" · ") || "—"
+                              : ""}
+                          </td>
+                          <td className="px-4 py-3">{row.incoterm || "—"}</td>
+                          <td className="px-4 py-3">{row.cost_usd ?? "—"}</td>
+                          <td className="px-4 py-3">{row.cost_etb ?? "—"}</td>
+                          <td className="px-4 py-3">{row.price_usd ?? "—"}</td>
+                          <td className="px-4 py-3">{row.price_etb ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            {rowIdx === 0 && (
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  type="button"
+                                  title="Edit rows"
+                                  onClick={() => {
+                                    setEditingRecord({
+                                      partner_id: price.partner_id,
+                                      tds_id: price.tds_id,
+                                    });
+                                    setEditRows(
+                                      price.rows?.length
+                                        ? [...price.rows]
+                                        : [{ ...EMPTY_PRICING_ROW }]
+                                    );
+                                  }}
+                                  className="p-2 text-slate-600 hover:text-orange-700"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Delete"
+                                  onClick={async () => {
+                                    if (
+                                      !confirm(
+                                        "Delete this partner/TDS pricing record?"
+                                      )
+                                    )
+                                      return;
+                                    await deletePricing(
+                                      price.partner_id,
+                                      price.tds_id
+                                    );
+                                    await loadPricing();
+                                  }}
+                                  className="p-2 text-slate-600 hover:text-red-600"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ));
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {editingRecord && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
+                  <h3 className="text-lg font-bold mb-4">Edit costing &amp; pricing rows</h3>
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg mb-4">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {["incoterm", "cost_usd", "cost_etb", "price_usd", "price_etb"].map(
+                            (h) => (
+                              <th key={h} className="px-2 py-2 text-left capitalize">
+                                {h.replace("_", " ")}
+                              </th>
+                            )
+                          )}
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editRows.map((row, idx) => (
+                          <tr key={idx} className="border-t">
+                            {(
+                              [
+                                "incoterm",
+                                "cost_usd",
+                                "cost_etb",
+                                "price_usd",
+                                "price_etb",
+                              ] as const
+                            ).map((field) => (
+                              <td key={field} className="px-2 py-1">
+                                <input
+                                  className="w-full rounded border px-2 py-1"
+                                  value={String(row[field] ?? "")}
+                                  onChange={(e) => {
+                                    const next = [...editRows];
+                                    next[idx] = {
+                                      ...next[idx],
+                                      [field]: e.target.value,
+                                    };
+                                    setEditRows(next);
+                                  }}
+                                />
+                              </td>
+                            ))}
+                            <td>
+                              <button
+                                type="button"
+                                className="text-xs text-red-600"
+                                onClick={() =>
+                                  setEditRows((r) => r.filter((_, i) => i !== idx))
+                                }
+                              >
+                                ×
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-sm text-orange-700 mb-4"
+                    onClick={() => setEditRows((r) => [...r, { ...EMPTY_PRICING_ROW }])}
+                  >
+                    + Add row
+                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold"
+                      onClick={async () => {
+                        await updatePricing(
+                          editingRecord.partner_id,
+                          editingRecord.tds_id,
+                          { rows: editRows }
+                        );
+                        setEditingRecord(null);
+                        await loadPricing();
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg border"
+                      onClick={() => setEditingRecord(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Pagination */}
             {totalPages > 1 && (

@@ -7,6 +7,7 @@ import {
   CustomerChatRequest,
   InteractionUpdate,
   fetchSalesPipelines,
+  syncCustomerPipelines,
   SalesPipeline,
   PipelineStage,
   fetchTDS,
@@ -52,6 +53,7 @@ export function CustomerDetailPage() {
   // Sales Pipeline state
   const [pipelines, setPipelines] = useState<SalesPipeline[]>([]);
   const [loadingPipelines, setLoadingPipelines] = useState(false);
+  const [syncingPipelines, setSyncingPipelines] = useState(false);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const navigate = useNavigate();
 
@@ -90,12 +92,34 @@ export function CustomerDetailPage() {
       const res = await fetchSalesPipelines({
         customer_id: customerId,
         limit: 100,
+        latest_per_deal: true,
       });
       setPipelines(res.pipelines);
     } catch (err: any) {
       console.error("Failed to load pipelines:", err);
     } finally {
       setLoadingPipelines(false);
+    }
+  }
+
+  async function handleSyncPipelinesFromCrm() {
+    if (!customerId) return;
+    try {
+      setSyncingPipelines(true);
+      const result = await syncCustomerPipelines(customerId, false);
+      await fetchPipelines();
+      alert(
+        `Synced ${result.interactions_processed} interactions → ${result.pipelines_updated} pipeline deal(s).`
+      );
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err as Error)?.message ||
+        "Sync failed";
+      alert(String(message));
+    } finally {
+      setSyncingPipelines(false);
     }
   }
 
@@ -781,7 +805,15 @@ export function CustomerDetailPage() {
                   Track deals and opportunities for this customer.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSyncPipelinesFromCrm}
+                  disabled={syncingPipelines}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {syncingPipelines ? "Syncing…" : "Sync from CRM history"}
+                </button>
                 <button
                   onClick={() => navigate(`/sales/pipeline?customer=${customerId}`)}
                   className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"

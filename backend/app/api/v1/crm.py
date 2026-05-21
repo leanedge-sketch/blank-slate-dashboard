@@ -51,6 +51,7 @@ from app.services.crm_service import (
     list_customer_profile_feedback,
 )
 from app.services.crm_report_service import build_crm_report_pdf
+from app.services.pipeline_crm_sync import backfill_pipelines_from_customer_interactions
 from app.dependencies import get_current_user
 
 # Create a router for CRM endpoints
@@ -494,6 +495,29 @@ async def audit_customer_interactions(
         return InteractionSourceAudit(**audit_customer_interaction_sources(customer_id))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
+
+
+@router.post("/customers/{customer_id}/sync-pipelines")
+async def sync_customer_pipelines_endpoint(
+    customer_id: str,
+    use_ai: bool = Query(
+        False,
+        description="Use AI stage detection when backfilling (slower)",
+    ),
+):
+    """Backfill sales_pipeline from all CRM interactions for this customer."""
+    customer = get_customer_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    try:
+        return backfill_pipelines_from_customer_interactions(
+            customer_id, use_ai=use_ai
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error syncing pipelines: {str(e)}",
+        )
 
 
 @router.post(

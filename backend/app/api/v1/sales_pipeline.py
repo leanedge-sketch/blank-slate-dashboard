@@ -28,6 +28,7 @@ from app.models.sales_pipeline import (
     CURRENCIES,
     PIPELINE_STAGES,
 )
+from app.services.pipeline_crm_sync import get_interactions_for_pipeline
 from app.services.sales_pipeline_service import (
     list_sales_pipelines,
     count_sales_pipelines,
@@ -234,6 +235,25 @@ async def get_pipeline(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching pipeline: {str(e)}")
+
+
+@router.get("/sales-pipeline/{pipeline_id}/interactions")
+async def list_pipeline_interactions_endpoint(
+    pipeline_id: str,
+    limit: int = Query(100, ge=1, le=500),
+):
+    """CRM interactions linked to this pipeline (and matching customer + TDS)."""
+    pipeline = get_sales_pipeline_by_id(pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Sales pipeline record not found")
+    try:
+        rows = get_interactions_for_pipeline(pipeline_id, limit=limit)
+        return {"interactions": rows, "total": len(rows)}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching pipeline interactions: {str(e)}",
+        )
 
 
 @router.get("/sales-pipeline/{pipeline_id}/versions", response_model=SalesPipelineListResponse)

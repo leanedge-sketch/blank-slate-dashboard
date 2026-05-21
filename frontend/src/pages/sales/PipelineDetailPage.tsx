@@ -14,8 +14,10 @@ import {
   CustomerListResponse,
   Customer,
   fetchPipelineVersions,
+  fetchPipelineInteractions,
   updateSalesPipeline,
   SalesPipelineUpdate,
+  Interaction,
 } from "../../services/api";
 import {
   TrendingUp,
@@ -54,7 +56,7 @@ import {
 
 // Stage colors mapping with enhanced colors
 const STAGE_COLORS: Record<PipelineStage, string> = {
-  Lead: "bg-slate-100 text-slate-700 border-slate-300",
+  "Lead ID": "bg-slate-100 text-slate-700 border-slate-300",
   "Discovery": "bg-blue-100 text-blue-700 border-blue-300",
   "Sample": "bg-yellow-100 text-yellow-700 border-yellow-300",
   "Validation": "bg-orange-100 text-orange-700 border-orange-300",
@@ -92,6 +94,8 @@ export function PipelineDetailPage() {
   const [selectedPipeline, setSelectedPipeline] = useState<SalesPipeline | null>(null);
   const [relatedPipelines, setRelatedPipelines] = useState<SalesPipeline[]>([]);
   const [pipelineVersions, setPipelineVersions] = useState<SalesPipeline[]>([]);
+  const [crmInteractions, setCrmInteractions] = useState<Interaction[]>([]);
+  const [loadingCrmInteractions, setLoadingCrmInteractions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,7 +191,17 @@ export function PipelineDetailPage() {
         setRelatedPipelines([pipeline]);
       }
       
-      // Fetch all versions of this pipeline (history with change reasons)
+      setLoadingCrmInteractions(true);
+      try {
+        const crmRes = await fetchPipelineInteractions(pipeline.id, 50);
+        setCrmInteractions(crmRes.interactions);
+      } catch (err) {
+        console.error("Failed to load CRM interactions:", err);
+        setCrmInteractions([]);
+      } finally {
+        setLoadingCrmInteractions(false);
+      }
+
       try {
         const versions = await fetchPipelineVersions(pipeline.id);
         setPipelineVersions(versions);
@@ -1158,7 +1172,67 @@ export function PipelineDetailPage() {
               </div>
             </div>
 
-            {/* Full Version History (Collapsible) */}
+            {/* CRM interactions synced to this deal */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-blue-600" />
+                CRM activity on this deal
+              </h2>
+              <p className="text-sm text-slate-500 mb-4">
+                Logged in CRM and linked to this pipeline (same customer
+                {selectedPipeline.tds_id ? " + TDS" : ""}).
+              </p>
+              {loadingCrmInteractions ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                </div>
+              ) : crmInteractions.length === 0 ? (
+                <p className="text-sm text-slate-500 py-4">
+                  No CRM interactions linked yet. New CRM notes sync here automatically.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {crmInteractions.map((it) => (
+                    <div
+                      key={it.id}
+                      className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm"
+                    >
+                      <p className="text-xs text-slate-500 mb-2">
+                        {it.created_at
+                          ? new Date(it.created_at).toLocaleString()
+                          : "—"}
+                        {it.pipeline_id ? " · linked" : ""}
+                      </p>
+                      {it.input_text && (
+                        <p className="text-slate-800 whitespace-pre-wrap mb-2">
+                          <span className="font-semibold text-slate-600">Note: </span>
+                          {it.input_text.length > 500
+                            ? `${it.input_text.slice(0, 500)}…`
+                            : it.input_text}
+                        </p>
+                      )}
+                      {it.ai_response && (
+                        <p className="text-slate-600 whitespace-pre-wrap">
+                          <span className="font-semibold">AI: </span>
+                          {it.ai_response.length > 400
+                            ? `${it.ai_response.slice(0, 400)}…`
+                            : it.ai_response}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selectedPipeline.customer_id && (
+                <Link
+                  to={`/crm/customers/${selectedPipeline.customer_id}`}
+                  className="inline-block mt-4 text-sm font-medium text-emerald-700 hover:text-emerald-900"
+                >
+                  Open full CRM history →
+                </Link>
+              )}
+            </div>
+
             {pipelineVersions.length > 1 && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <h2 className="text-lg font-semibold text-slate-900 mb-6 flex items-center gap-2">

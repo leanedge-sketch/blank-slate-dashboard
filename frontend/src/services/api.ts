@@ -671,10 +671,20 @@ export interface LeanchemProductCreate {
 // =============================
 // PMS: Costing/Pricing
 // =============================
+export interface CostingPricingRow {
+  incoterm?: string;
+  cost_usd?: string | number;
+  cost_etb?: string | number;
+  price_usd?: string | number;
+  price_etb?: string | number;
+  [key: string]: unknown;
+}
+
 export interface CostingPricing {
+  id?: string;
   partner_id: string;
   tds_id: string;
-  rows?: Record<string, any>[] | null;
+  rows?: CostingPricingRow[] | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -897,6 +907,32 @@ export async function fetchSalesPipelineById(id: string) {
 export async function fetchPipelineVersions(id: string) {
   const res = await api.get<SalesPipelineListResponse>(`/sales-pipeline/${id}/versions`);
   return res.data.pipelines;
+}
+
+export async function fetchPipelineInteractions(
+  pipelineId: string,
+  limit = 50
+) {
+  const res = await api.get<{ interactions: Interaction[]; total: number }>(
+    `/sales-pipeline/${pipelineId}/interactions`,
+    { params: { limit } }
+  );
+  return res.data;
+}
+
+export async function syncCustomerPipelines(
+  customerId: string,
+  useAi = false
+) {
+  const res = await api.post<{
+    customer_id: string;
+    interactions_processed: number;
+    interactions_linked: number;
+    pipelines_updated: number;
+  }>(`/crm/customers/${customerId}/sync-pipelines`, null, {
+    params: { use_ai: useAi },
+  });
+  return res.data;
 }
 
 export async function createSalesPipeline(data: SalesPipelineCreate) {
