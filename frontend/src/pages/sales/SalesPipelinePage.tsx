@@ -79,6 +79,35 @@ const STAGES_REQUIRING_BUSINESS_DETAILS: PipelineStage[] = [
   "Closed",
 ];
 
+function isPipelineEditRoute(): boolean {
+  return typeof window !== "undefined" && window.location.pathname.includes("/edit");
+}
+
+/** New pipeline form: Lead ID stage — no required fields, multi product/lead entries allowed. */
+function isCreateLeadPipelineForm(editingPipeline: SalesPipeline | null): boolean {
+  return !editingPipeline || !isPipelineEditRoute();
+}
+
+function fieldShowsRequired(
+  editingPipeline: SalesPipeline | null,
+  formStage: PipelineStage,
+  kind: "customer" | "product" | "stage" | "business" | "close"
+): boolean {
+  if (isCreateLeadPipelineForm(editingPipeline)) {
+    return false;
+  }
+  if (kind === "business") {
+    return STAGES_REQUIRING_BUSINESS_DETAILS.includes(formStage);
+  }
+  if (kind === "close") {
+    return formStage === "Closed";
+  }
+  if (kind === "customer" || kind === "product" || kind === "stage") {
+    return true;
+  }
+  return false;
+}
+
 export function SalesPipelinePage() {
   const { pipelineId: urlPipelineId } = useParams<{ pipelineId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -146,6 +175,9 @@ export function SalesPipelinePage() {
   });
   const [reasonForStageChange, setReasonForStageChange] = useState("");
   const [reasonForAmountChange, setReasonForAmountChange] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [leadSourceEntries, setLeadSourceEntries] = useState<string[]>([""]);
+  const [contactPerLeadEntries, setContactPerLeadEntries] = useState<string[]>([""]);
 
 
   // Delete state
@@ -309,6 +341,9 @@ export function SalesPipelinePage() {
     };
     
     setFormData(newFormData);
+    setSelectedProductIds([]);
+    setLeadSourceEntries([""]);
+    setContactPerLeadEntries([""]);
     setShowCreateForm(true);
     
     // Log to help debug
@@ -424,6 +459,14 @@ export function SalesPipelinePage() {
       setTdsList([]);
     }
     
+    const meta = (pipeline.metadata || {}) as Record<string, unknown>;
+    const metaSources = Array.isArray(meta.lead_sources)
+      ? (meta.lead_sources as string[]).filter(Boolean)
+      : [];
+    const metaContacts = Array.isArray(meta.contacts_per_lead)
+      ? (meta.contacts_per_lead as string[]).filter(Boolean)
+      : [];
+
     setFormData({
       customer_id: pipeline.customer_id,
       tds_id: pipeline.tds_id || null,
@@ -443,6 +486,23 @@ export function SalesPipelinePage() {
       incoterm: pipeline.incoterm || null,
       metadata: pipeline.metadata || null,
     });
+    setLeadSourceEntries(
+      metaSources.length > 0
+        ? metaSources
+        : pipeline.lead_source
+          ? [pipeline.lead_source]
+          : [""]
+    );
+    setContactPerLeadEntries(
+      metaContacts.length > 0
+        ? metaContacts
+        : pipeline.contact_per_lead
+          ? [pipeline.contact_per_lead]
+          : [""]
+    );
+    setSelectedProductIds(
+      pipeline.chemical_type_id ? [pipeline.chemical_type_id] : []
+    );
     setEditingPipeline(pipeline);
     setShowCreateForm(true);
   }
@@ -471,6 +531,9 @@ export function SalesPipelinePage() {
       incoterm: null,
       metadata: null,
     });
+    setSelectedProductIds([]);
+    setLeadSourceEntries([""]);
+    setContactPerLeadEntries([""]);
     // Reset the ref so we can process edit again if needed
     editProcessedRef.current = null;
     // If we're on an edit route, navigate back to pipeline list
@@ -482,10 +545,6 @@ export function SalesPipelinePage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!formData.customer_id) {
-      alert("Customer is required");
-      return;
-    }
 
     try {
       // CRITICAL: Only update if we're explicitly on an edit route with a valid pipeline ID
@@ -552,15 +611,43 @@ export function SalesPipelinePage() {
           stage: "Lead ID",
         });
         setCreating(true);
-        // Explicitly clear editingPipeline before creating to prevent any confusion
         setEditingPipeline(null);
-        const createData: SalesPipelineCreate = {
-          ...formData,
-          // chemical_type_id now stores the UUID from chemical_full_data.uuid_id
-          stage: "Lead ID",
+
+        const leadSources = leadSourceEntries.map((s) => s.trim()).filter(Boolean);
+        const contacts = contactPerLeadEntries.map((s) => s.trim()).filter(Boolean);
+        const metadata: Record<string, unknown> = {
+          ...(formData.metadata || {}),
         };
-        console.log("Creating pipeline with payload:", createData);
-        await createSalesPipeline(createData);
+        if (leadSources.length > 0) {
+          metadata.lead_sources = leadSources;
+        }
+        if (contacts.length > 0) {
+          metadata.contacts_per_lead = contacts;
+        }
+        if (selectedProductIds.length > 0) {
+          metadata.product_ids = selectedProductIds;
+        }
+        if (formData.vendor_name) {
+          metadata.vendor = formData.vendor_name;
+        }
+
+        const productIdsToCreate =
+          selectedProductIds.length > 0 ? selectedProductIds : [null];
+
+        for (const productId of productIdsToCreate) {
+          const { customer_id: cid, ...formRest } = formData;
+          const createData: SalesPipelineCreate = {
+            ...formRest,
+            ...(cid?.trim() ? { customer_id: cid } : {}),
+            chemical_type_id: productId,
+            stage: "Lead ID",
+            lead_source: leadSources[0] || formData.lead_source || null,
+            contact_per_lead: contacts[0] || formData.contact_per_lead || null,
+            metadata: metadata as Record<string, unknown>,
+          };
+          console.log("Creating pipeline with payload:", createData);
+          await createSalesPipeline(createData);
+        }
       }
       closeForm();
       await loadPipelines();
@@ -855,18 +942,27 @@ export function SalesPipelinePage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              {isCreateLeadPipelineForm(editingPipeline) && (
+                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                  Lead ID pipelines: all fields are optional. Select multiple products to create one
+                  pipeline per product. Add multiple lead sources and contacts if needed.
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Deal basics */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Customer <span className="text-red-500">*</span>
+                    Customer
+                    {fieldShowsRequired(editingPipeline, formData.stage, "customer") && (
+                      <span className="text-red-500"> *</span>
+                    )}
                   </label>
                   <select
                     value={formData.customer_id}
                     onChange={(e) =>
                       setFormData({ ...formData, customer_id: e.target.value })
                     }
-                    required
+                    required={fieldShowsRequired(editingPipeline, formData.stage, "customer")}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Select customer...</option>
@@ -878,42 +974,108 @@ export function SalesPipelinePage() {
                   </select>
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Product <span className="text-red-500">*</span>
+                    Products
+                    {fieldShowsRequired(editingPipeline, formData.stage, "product") && (
+                      <span className="text-red-500"> *</span>
+                    )}
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <span className="text-slate-500 font-normal"> (optional — select one or more)</span>
+                    )}
                   </label>
-                  <select
-                    value={formData.chemical_type_id || ""}
-                    onChange={(e) => {
-                      const productUuidId = e.target.value || null;
-                      setFormData({
-                        ...formData,
-                        chemical_type_id: productUuidId, // Store UUID in chemical_type_id field
-                        tds_id: null, // Clear tds_id when product changes
-                      });
-                      setTdsList([]); // Clear TDS list
-                    }}
-                    required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select product...</option>
-                    {chemicalFullData
-                      .filter((c) => c.product_name) // Show all products with names
-                      .sort((a, b) => (a.product_name || "").localeCompare(b.product_name || ""))
-                      .map((c) => (
-                        <option key={c.uuid_id || c.id} value={c.uuid_id || c.id.toString()}>
-                          {c.product_name}
-                          {c.vendor ? ` (${c.vendor})` : ""}
-                          {c.product_category ? ` - ${c.product_category}` : ""}
-                          {!c.uuid_id && " ⚠️ (No UUID)"}
-                        </option>
-                      ))}
-                  </select>
+                  {isCreateLeadPipelineForm(editingPipeline) ? (
+                    <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-300 bg-white p-3 space-y-2">
+                      {chemicalFullData
+                        .filter((c) => c.product_name && c.uuid_id)
+                        .sort((a, b) => (a.product_name || "").localeCompare(b.product_name || ""))
+                        .map((c) => {
+                          const id = c.uuid_id as string;
+                          const checked = selectedProductIds.includes(id);
+                          return (
+                            <label
+                              key={id}
+                              className="flex items-start gap-2 text-sm text-slate-800 cursor-pointer hover:bg-slate-50 rounded px-1 py-0.5"
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={checked}
+                                onChange={() => {
+                                  setSelectedProductIds((prev) =>
+                                    checked
+                                      ? prev.filter((x) => x !== id)
+                                      : [...prev, id]
+                                  );
+                                  if (!checked && selectedProductIds.length === 0) {
+                                    setFormData({
+                                      ...formData,
+                                      chemical_type_id: id,
+                                      tds_id: null,
+                                    });
+                                  }
+                                }}
+                              />
+                              <span>
+                                {c.product_name}
+                                {c.vendor ? ` (${c.vendor})` : ""}
+                                {c.product_category ? ` — ${c.product_category}` : ""}
+                                {c.typical_application
+                                  ? ` · ${c.typical_application}`
+                                  : ""}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      {chemicalFullData.filter((c) => c.product_name && c.uuid_id).length === 0 && (
+                        <p className="text-sm text-slate-500">No products with UUID available.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      value={formData.chemical_type_id || ""}
+                      onChange={(e) => {
+                        const productUuidId = e.target.value || null;
+                        setFormData({
+                          ...formData,
+                          chemical_type_id: productUuidId,
+                          tds_id: null,
+                        });
+                        setTdsList([]);
+                      }}
+                      required={fieldShowsRequired(editingPipeline, formData.stage, "product")}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Select product...</option>
+                      {chemicalFullData
+                        .filter((c) => c.product_name)
+                        .sort((a, b) => (a.product_name || "").localeCompare(b.product_name || ""))
+                        .map((c) => (
+                          <option key={c.uuid_id || c.id} value={c.uuid_id || c.id.toString()}>
+                            {c.product_name}
+                            {c.vendor ? ` (${c.vendor})` : ""}
+                            {c.product_category ? ` - ${c.product_category}` : ""}
+                            {!c.uuid_id && " ⚠️ (No UUID)"}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  {isCreateLeadPipelineForm(editingPipeline) && selectedProductIds.length > 0 && (
+                    <p className="text-xs text-emerald-700 mt-1">
+                      {selectedProductIds.length} product
+                      {selectedProductIds.length === 1 ? "" : "s"} selected — creates{" "}
+                      {selectedProductIds.length} pipeline
+                      {selectedProductIds.length === 1 ? "" : "s"}.
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Stage <span className="text-red-500">*</span>
+                    Stage
+                    {fieldShowsRequired(editingPipeline, formData.stage, "stage") && (
+                      <span className="text-red-500"> *</span>
+                    )}
                   </label>
                   <select
                     value={formData.stage}
@@ -923,12 +1085,12 @@ export function SalesPipelinePage() {
                         stage: e.target.value as PipelineStage,
                       })
                     }
-                    required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required={fieldShowsRequired(editingPipeline, formData.stage, "stage")}
+                    disabled={isCreateLeadPipelineForm(editingPipeline)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100"
                   >
-                    {/* When creating a new pipeline, only 'Lead' stage is allowed */}
-                    {!editingPipeline && (
-                      <option value="Lead">Lead</option>
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <option value="Lead ID">Lead ID</option>
                     )}
                     {/* When editing, allow full stage selection */}
                     {editingPipeline && PIPELINE_STAGES.map((stage) => (
@@ -987,31 +1149,41 @@ export function SalesPipelinePage() {
                         },
                       })
                     }
-                    disabled={!formData.chemical_type_id}
+                    disabled={
+                      !isCreateLeadPipelineForm(editingPipeline) &&
+                      !formData.chemical_type_id &&
+                      selectedProductIds.length === 0
+                    }
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
                   >
-                    <option value="">
-                      {!formData.chemical_type_id
-                        ? "Select product first..."
-                        : "Select vendor..."}
-                    </option>
+                    <option value="">Select vendor (optional)...</option>
                     {(() => {
-                      // Filter vendors based on selected product
-                      if (!formData.chemical_type_id) {
+                      const activeProductId =
+                        formData.chemical_type_id || selectedProductIds[0] || null;
+                      if (!activeProductId && !isCreateLeadPipelineForm(editingPipeline)) {
                         return [];
                       }
 
-                      // Get the selected product
-                      const selectedProduct = chemicalFullData.find(
-                        (c) => c.uuid_id === formData.chemical_type_id || c.id.toString() === formData.chemical_type_id
-                      );
+                      const selectedProduct = activeProductId
+                        ? chemicalFullData.find(
+                            (c) =>
+                              c.uuid_id === activeProductId ||
+                              c.id.toString() === activeProductId
+                          )
+                        : null;
+
+                      const availableVendors = new Set<string>();
+
+                      if (isCreateLeadPipelineForm(editingPipeline) && !selectedProduct) {
+                        vendors.forEach((v) => availableVendors.add(v));
+                        return Array.from(availableVendors).sort();
+                      }
 
                       if (!selectedProduct) {
                         return [];
                       }
 
                       // Get vendors from partner_chemicals that match the product's vendor or partner_id
-                      const availableVendors = new Set<string>();
 
                       // Add vendor from the selected product if it exists
                       if (selectedProduct.vendor) {
@@ -1043,36 +1215,122 @@ export function SalesPipelinePage() {
                       </option>
                     ))}
                   </select>
-                  {formData.chemical_type_id && (
+                  {(formData.chemical_type_id || selectedProductIds.length > 0) && (
                     <p className="text-xs text-slate-500 mt-1">
-                      Vendors filtered for selected product
+                      Vendors filtered for selected product(s)
                     </p>
                   )}
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Lead Source
+                    Lead sources
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <span className="text-slate-500 font-normal"> (optional — add multiple)</span>
+                    )}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.lead_source || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        lead_source: e.target.value || null,
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="e.g., Website, Referral, Trade Show..."
-                  />
+                  <div className="space-y-2">
+                    {leadSourceEntries.map((entry, index) => (
+                      <div key={`lead-source-${index}`} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={entry}
+                          onChange={(e) => {
+                            const next = [...leadSourceEntries];
+                            next[index] = e.target.value;
+                            setLeadSourceEntries(next);
+                            setFormData({
+                              ...formData,
+                              lead_source: e.target.value || null,
+                            });
+                          }}
+                          className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="e.g., Website, Referral, Trade Show..."
+                        />
+                        {leadSourceEntries.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLeadSourceEntries((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              )
+                            }
+                            className="px-3 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <button
+                        type="button"
+                        onClick={() => setLeadSourceEntries((prev) => [...prev, ""])}
+                        className="text-sm text-emerald-700 font-medium hover:text-emerald-800"
+                      >
+                        + Add another lead source
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Contacts per lead
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <span className="text-slate-500 font-normal"> (optional — add multiple)</span>
+                    )}
+                  </label>
+                  <div className="space-y-2">
+                    {contactPerLeadEntries.map((entry, index) => (
+                      <div key={`contact-lead-${index}`} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={entry}
+                          onChange={(e) => {
+                            const next = [...contactPerLeadEntries];
+                            next[index] = e.target.value;
+                            setContactPerLeadEntries(next);
+                            setFormData({
+                              ...formData,
+                              contact_per_lead: e.target.value || null,
+                            });
+                          }}
+                          className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="Name, role, email, or phone..."
+                        />
+                        {contactPerLeadEntries.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setContactPerLeadEntries((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              )
+                            }
+                            className="px-3 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {isCreateLeadPipelineForm(editingPipeline) && (
+                      <button
+                        type="button"
+                        onClick={() => setContactPerLeadEntries((prev) => [...prev, ""])}
+                        className="text-sm text-emerald-700 font-medium hover:text-emerald-800"
+                      >
+                        + Add another contact
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Commercial details: Business model & unit/amount/pricing */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Business Model
-                    {STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage) && (
+                    {fieldShowsRequired(editingPipeline, formData.stage, "business") && (
                       <span className="text-red-500"> *</span>
                     )}
                   </label>
@@ -1084,7 +1342,7 @@ export function SalesPipelinePage() {
                         business_model: e.target.value || null,
                       })
                     }
-                    required={STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage)}
+                    required={fieldShowsRequired(editingPipeline, formData.stage, "business")}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Select business model...</option>
@@ -1129,7 +1387,7 @@ export function SalesPipelinePage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Unit
-                    {STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage) && (
+                    {fieldShowsRequired(editingPipeline, formData.stage, "business") && (
                       <span className="text-red-500"> *</span>
                     )}
                   </label>
@@ -1141,7 +1399,7 @@ export function SalesPipelinePage() {
                         unit: e.target.value || null,
                       })
                     }
-                    required={STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage)}
+                    required={fieldShowsRequired(editingPipeline, formData.stage, "business")}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Select unit...</option>
@@ -1197,7 +1455,7 @@ export function SalesPipelinePage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Unit Price
-                    {STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage) && (
+                    {fieldShowsRequired(editingPipeline, formData.stage, "business") && (
                       <span className="text-red-500"> *</span>
                     )}
                   </label>
@@ -1213,7 +1471,7 @@ export function SalesPipelinePage() {
                           unit_price: e.target.value ? parseFloat(e.target.value) : null,
                         })
                       }
-                      required={STAGES_REQUIRING_BUSINESS_DETAILS.includes(formData.stage)}
+                      required={fieldShowsRequired(editingPipeline, formData.stage, "business")}
                       className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       placeholder="Price per unit..."
                     />
@@ -1272,7 +1530,10 @@ export function SalesPipelinePage() {
                 {formData.stage === "Closed" && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Close Reason <span className="text-red-500">*</span>
+                      Close Reason
+                      {fieldShowsRequired(editingPipeline, formData.stage, "close") && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </label>
                     <textarea
                       value={formData.close_reason || ""}
@@ -1282,7 +1543,7 @@ export function SalesPipelinePage() {
                           close_reason: e.target.value || null,
                         })
                       }
-                      required={formData.stage === "Closed"}
+                      required={fieldShowsRequired(editingPipeline, formData.stage, "close")}
                       rows={3}
                       className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       placeholder="Enter reason for closing..."

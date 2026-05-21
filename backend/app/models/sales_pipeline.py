@@ -133,6 +133,8 @@ class SalesPipelineBase(BaseModel):
     @model_validator(mode="after")
     def validate_business_details_for_validation_plus(self):
         """Validate that business_model, unit, and unit_price are provided for Validation+ stages."""
+        if self.stage == "Lead ID":
+            return self
         if self.stage in STAGES_REQUIRING_BUSINESS_DETAILS:
             if not self.business_model or not self.business_model.strip():
                 raise ValueError("business_model is required for stages: Validation, Proposal, Confirmation, Closed")
@@ -152,7 +154,9 @@ class SalesPipelineBase(BaseModel):
 
 class SalesPipelineCreate(SalesPipelineBase):
     """Model for creating a new sales pipeline record."""
-    pass
+
+    # Lead ID create form: customer and product are optional in the UI
+    customer_id: Optional[UUID] = None
 
 
 class SalesPipelineUpdate(BaseModel):

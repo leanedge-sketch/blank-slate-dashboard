@@ -345,7 +345,20 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     """
     supabase: Client = get_supabase_client()
     payload = body.model_dump(exclude_unset=True)
-    
+
+    # Merge list fields from metadata into primary columns when present
+    meta = payload.get("metadata") or {}
+    if isinstance(meta, dict):
+        sources = meta.get("lead_sources")
+        if sources and isinstance(sources, list) and not payload.get("lead_source"):
+            first = next((str(s).strip() for s in sources if str(s).strip()), None)
+            if first:
+                payload["lead_source"] = first
+        contacts = meta.get("contacts_per_lead")
+        if contacts and isinstance(contacts, list) and not payload.get("contact_per_lead"):
+            first = next((str(c).strip() for c in contacts if str(c).strip()), None)
+            if first:
+                payload["contact_per_lead"] = first
     # Auto-extract lead_source and contact_per_lead from interactions if not provided
     if not payload.get("lead_source") or not payload.get("contact_per_lead"):
         lead_info = extract_lead_info_from_interactions(str(body.customer_id))

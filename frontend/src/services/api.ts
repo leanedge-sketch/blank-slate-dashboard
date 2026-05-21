@@ -741,7 +741,7 @@ export interface SalesPipeline {
 }
 
 export interface SalesPipelineCreate {
-  customer_id: string;
+  customer_id?: string;
   tds_id?: string | null;
   chemical_type_id?: string | null;
   stage: PipelineStage;
