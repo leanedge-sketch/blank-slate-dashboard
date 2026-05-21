@@ -33,6 +33,31 @@ from app.services.ai_service import gemini_chat, GeminiError
 # HELPER FUNCTIONS
 # =============================
 
+_CLOSED_STAGES = {"Closed", "Lost"}
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    """Parse Supabase/Pydantic timestamps for analytics comparisons."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _pipeline_deal_value(p: SalesPipeline) -> float:
+    """Estimated deal value from quantity × unit price, or amount alone."""
+    amount = float(p.amount or 0)
+    unit_price = float(p.unit_price or 0)
+    if amount and unit_price:
+        return amount * unit_price
+    return amount
+
 
 def convert_uuids(obj: Any) -> Any:
     """
@@ -1068,24 +1093,20 @@ def generate_pipeline_insights(
         tds_id=tds_id,
     )
     
-    # Filter by date if needed
     cutoff_date = datetime.utcnow() - timedelta(days=days_back)
-    recent_pipelines = [
-        p for p in pipelines
-        if p.created_at and datetime.fromisoformat(p.created_at.replace('Z', '+00:00')) >= cutoff_date
-    ]
-    
-    # Calculate basic metrics
-    total_pipeline_value = sum(
-        p.amount or 0
-        for p in recent_pipelines
-        if p.stage not in ["Closed"]
-    )
-    
-    # Revenue forecast (stages that indicate committed revenue)
+    recent_pipelines: List[SalesPipeline] = []
+    for p in pipelines:
+        created = _coerce_datetime(p.created_at)
+        if created is None or created >= cutoff_date:
+            recent_pipelines.append(p)
+
+    open_pipelines = [p for p in recent_pipelines if p.stage not in _CLOSED_STAGES]
+
+    total_pipeline_value = sum(_pipeline_deal_value(p) for p in open_pipelines)
+
     forecast_stages = ["Proposal", "Confirmation", "Closed"]
     forecast_value = sum(
-        p.amount or 0
+        _pipeline_deal_value(p)
         for p in recent_pipelines
         if p.stage in forecast_stages
     )
@@ -1095,49 +1116,38 @@ def generate_pipeline_insights(
     for stage in PIPELINE_STAGES:
         stage_counts[stage] = sum(1 for p in recent_pipelines if p.stage == stage)
     
-    # Churn risk: pipelines stuck in same stage >14 days
     churn_risk_pipelines = []
-    for p in recent_pipelines:
-        if p.stage in ["Closed Won", "Closed Lost"]:
-            continue
-        
-        # Check metadata for stage history
+    now = datetime.utcnow()
+    for p in open_pipelines:
         metadata = p.metadata or {}
         stage_history = metadata.get("stage_history", [])
-        
+        last_change_dt = _coerce_datetime(p.updated_at) or _coerce_datetime(p.created_at)
         if stage_history:
             last_change = stage_history[-1].get("changed_at")
-            if last_change:
-                try:
-                    last_change_dt = datetime.fromisoformat(last_change.replace('Z', '+00:00'))
-                    days_in_stage = (datetime.utcnow() - last_change_dt.replace(tzinfo=None)).days
-                    if days_in_stage > 14:
-                        churn_risk_pipelines.append({
-                            "pipeline_id": str(p.id),
-                            "stage": p.stage,
-                            "days_in_stage": days_in_stage,
-                            "customer_id": str(p.customer_id),
-                        })
-                except:
-                    pass
-    
-    # Sample effectiveness: % of Sample Delivered → Closed Won
-    sample_delivered = [p for p in recent_pipelines if p.stage == "Sample Delivered" or any(
-        h.get("to_stage") == "Sample Delivered" for h in (p.metadata or {}).get("stage_history", [])
-    )]
-    sample_won = sum(
-        1 for p in sample_delivered
-        if p.stage == "Closed Won" or any(
-            h.get("to_stage") == "Closed Won" for h in (p.metadata or {}).get("stage_history", [])
-        )
+            parsed = _coerce_datetime(last_change)
+            if parsed:
+                last_change_dt = parsed
+        if last_change_dt:
+            days_in_stage = (now - last_change_dt).days
+            if days_in_stage > 14:
+                churn_risk_pipelines.append({
+                    "pipeline_id": str(p.id),
+                    "stage": p.stage,
+                    "days_in_stage": days_in_stage,
+                    "customer_id": str(p.customer_id),
+                })
+
+    sample_pipelines = [p for p in recent_pipelines if p.stage == "Sample"]
+    closed_won = [p for p in recent_pipelines if p.stage == "Closed"]
+    sample_effectiveness = (
+        (len(closed_won) / len(sample_pipelines) * 100) if sample_pipelines else 0.0
     )
-    sample_effectiveness = (sample_won / len(sample_delivered) * 100) if sample_delivered else 0
-    
-    # Product demand: count Quote Sent per product
-    quote_sent_by_product = {}
+
+    quote_stages = {"Proposal", "Confirmation", "Validation"}
+    quote_sent_by_product: Dict[str, int] = {}
     for p in recent_pipelines:
-        if p.stage == "Quote Sent" and p.tds_id:
-            product_key = str(p.tds_id)
+        if p.stage in quote_stages:
+            product_key = str(p.chemical_type_id or p.tds_id or "unknown")
             quote_sent_by_product[product_key] = quote_sent_by_product.get(product_key, 0) + 1
     
     # Use AI to generate insights summary
@@ -1225,28 +1235,29 @@ def get_pipeline_forecast(
     
     # Filter pipelines with expected_close_date in the forecast window
     forecast_end = date.today() + timedelta(days=days_ahead)
+    today = date.today()
     forecast_pipelines = [
-        p for p in pipelines
+        p
+        for p in pipelines
         if p.expected_close_date
+        and p.expected_close_date >= today
         and p.expected_close_date <= forecast_end
-        and p.stage not in ["Closed Lost"]
+        and p.stage not in _CLOSED_STAGES
     ]
-    
-    # Calculate forecast by stage
+
     forecast_by_stage = {}
     for stage in PIPELINE_STAGES:
         stage_pipelines = [p for p in forecast_pipelines if p.stage == stage]
-        forecast_by_stage[stage] = sum(p.amount or 0 for p in stage_pipelines)
-    
+        forecast_by_stage[stage] = sum(_pipeline_deal_value(p) for p in stage_pipelines)
+
     total_forecast = sum(forecast_by_stage.values())
-    
-    # Calculate forecast by week
+
     forecast_by_week = {}
     for p in forecast_pipelines:
         if p.expected_close_date:
             week_start = p.expected_close_date - timedelta(days=p.expected_close_date.weekday())
             week_key = week_start.isoformat()
-            forecast_by_week[week_key] = forecast_by_week.get(week_key, 0) + (p.amount or 0)
+            forecast_by_week[week_key] = forecast_by_week.get(week_key, 0) + _pipeline_deal_value(p)
     
     return PipelineForecast(
         forecast_period_days=days_ahead,
