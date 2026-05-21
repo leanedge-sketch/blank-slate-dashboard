@@ -20,6 +20,7 @@ from app.services.password_change_service import (
     change_password_with_current,
     confirm_password_change,
     request_password_change_verification,
+    request_password_change_with_current,
 )
 
 router = APIRouter()
@@ -208,13 +209,45 @@ async def change_password(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.post("/auth/change-password/start")
+async def start_change_password(
+    body: PasswordChangeBody,
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_service_client),
+    anon_supabase: Client = Depends(get_supabase_client),
+):
+    """
+    Verify current password and email a 6-digit code to the signed-in user.
+    Complete with POST /auth/change-password/confirm.
+    """
+    email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
+    display_name = _employee_display_name(supabase, email)
+
+    try:
+        return request_password_change_with_current(
+            supabase=supabase,
+            anon_supabase=anon_supabase,
+            user=user,
+            current_password=body.current_password,
+            new_password=body.new_password,
+            display_name=display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmailNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/auth/change-password/request")
 async def request_change_password_code(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase_service_client),
 ):
     """
-    Legacy: send a 6-digit verification code (prefer POST /auth/change-password).
+    Legacy: send a 6-digit verification code without verifying current password.
+    Prefer POST /auth/change-password/start.
     """
     email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
     display_name = _employee_display_name(supabase, email)

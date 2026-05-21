@@ -82,6 +82,16 @@ a:hover {
   text-decoration: none;
 }
 
+.app-build-badge {
+  font-size: 0.65rem;
+  color: #64748b;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #334155;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+  align-self: center;
+}
+
 .app-sign-out-btn {
   display: inline-flex;
   align-items: center;

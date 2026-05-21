@@ -27,6 +27,7 @@ import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabi
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
 import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AppBuildBadge } from "./components/AppBuildBadge";
 import { UserProfileMenu } from "./components/UserProfileMenu";
 import { useAuth } from "./contexts/AuthContext";
 import { LogOut } from "lucide-react";
@@ -50,6 +51,7 @@ function AppHeader() {
           <h1 className="app-title">LeanChem Connect</h1>
         </Link>
         <nav className="app-nav">
+          <AppBuildBadge />
           {loading ? (
             <span className="app-nav-loading">Loading…</span>
           ) : user ? (

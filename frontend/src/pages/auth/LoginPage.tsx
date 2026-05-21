@@ -1,6 +1,6 @@
 import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
+import { PRODUCTION_APP_URL, useAuth } from "../../contexts/AuthContext";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
 
@@ -11,8 +11,13 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const { signIn, resetPassword } = useAuth();
+  const { signIn, resetPassword, signInDevMock } = useAuth();
+  const isDev = import.meta.env.DEV;
   const navigate = useNavigate();
+  const onWrongHost =
+    import.meta.env.PROD &&
+    typeof window !== "undefined" &&
+    !window.location.href.startsWith(PRODUCTION_APP_URL);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -95,6 +100,22 @@ export function LoginPage() {
                   Check your email and click the link to reset your password.
                 </p>
               </div>
+            </div>
+          )}
+
+          {onWrongHost && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p>
+                You may be on an old deployment URL. Use{" "}
+                <a
+                  href={PRODUCTION_APP_URL}
+                  className="text-amber-100 underline font-semibold"
+                >
+                  {PRODUCTION_APP_URL.replace("https://", "")}
+                </a>{" "}
+                and hard-refresh (Ctrl+Shift+R).
+              </p>
             </div>
           )}
 
@@ -201,6 +222,37 @@ export function LoginPage() {
                 : "Sign In"}
             </button>
           </form>
+
+          {isDev && (
+            <div className="pt-4 border-t border-slate-800 space-y-2">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={async () => {
+                  setError(null);
+                  setLoading(true);
+                  try {
+                    await signInDevMock();
+                    navigate("/");
+                  } catch (err) {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Dev login failed",
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-amber-500/50 bg-amber-500/10 text-amber-300 text-sm font-semibold hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+              >
+                Continue as dev user (skip login)
+              </button>
+              <p className="text-center text-xs text-slate-600">
+                Local development only — uses a mock admin profile, no email reset.
+              </p>
+            </div>
+          )}
 
           {/* Footer Note */}
           <p className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800">

@@ -15,6 +15,7 @@ from app.services.email_service import EmailNotConfiguredError, send_email
 CODE_TTL_MINUTES = 15
 META_CODE_HASH = "password_change_code_hash"
 META_EXPIRES = "password_change_expires"
+META_NEW_PASSWORD_HASH = "password_change_new_password_hash"
 
 
 def _user_id(user: object) -> str:
@@ -45,9 +46,16 @@ def _user_metadata(user: object) -> dict:
     return dict(meta) if meta else {}
 
 
+def _pepper() -> str:
+    return settings.JWT_SECRET or settings.SUPABASE_SERVICE_KEY or "leanchem"
+
+
 def _hash_code(code: str) -> str:
-    pepper = settings.JWT_SECRET or settings.SUPABASE_SERVICE_KEY or "leanchem"
-    return hashlib.sha256(f"{pepper}:{code}".encode()).hexdigest()
+    return hashlib.sha256(f"{_pepper()}:{code}".encode()).hexdigest()
+
+
+def _hash_new_password(password: str) -> str:
+    return hashlib.sha256(f"{_pepper()}:new:{password}".encode()).hexdigest()
 
 
 def _generate_code() -> str:
@@ -91,7 +99,8 @@ def _apply_new_password(
     cleaned_meta = {
         k: v
         for k, v in meta.items()
-        if k not in (META_CODE_HASH, META_EXPIRES)
+        if k
+        not in (META_CODE_HASH, META_EXPIRES, META_NEW_PASSWORD_HASH)
     }
     cleaned_meta["password_set"] = True
     cleaned_meta["password_set_at"] = datetime.now(timezone.utc).isoformat()
@@ -148,6 +157,76 @@ def change_password_with_current(
             "Password updated. Confirmation email was not sent (email provider not configured)."
         )
     return result
+
+
+def request_password_change_with_current(
+    *,
+    supabase: Client,
+    anon_supabase: Client,
+    user: object,
+    current_password: str,
+    new_password: str,
+    display_name: str | None = None,
+) -> dict:
+    """
+    Verify current password, then email a 6-digit code. New password is bound to this
+    request and must match on confirm.
+    """
+    if len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if current_password == new_password:
+        raise ValueError("New password must be different from your current password.")
+
+    user_id = _user_id(user)
+    email = _user_email(user)
+
+    try:
+        sign_in = anon_supabase.auth.sign_in_with_password(
+            {"email": email, "password": current_password}
+        )
+    except Exception as exc:
+        raise ValueError("Current password is incorrect.") from exc
+
+    if not sign_in or not getattr(sign_in, "user", None):
+        raise ValueError("Current password is incorrect.")
+
+    code = _generate_code()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=CODE_TTL_MINUTES)
+
+    meta = _fresh_user_metadata(supabase, user_id)
+    meta[META_CODE_HASH] = _hash_code(code)
+    meta[META_EXPIRES] = expires_at.isoformat()
+    meta[META_NEW_PASSWORD_HASH] = _hash_new_password(new_password)
+
+    supabase.auth.admin.update_user_by_id(user_id, {"user_metadata": meta})
+
+    name = display_name or email
+    subject = "LeanChem Connect — password change verification"
+    html = f"""
+    <p>Hello {name},</p>
+    <p>You requested to change the password for your LeanChem Connect account (<strong>{email}</strong>).</p>
+    <p>Your verification code is:</p>
+    <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">{code}</p>
+    <p>This code expires in {CODE_TTL_MINUTES} minutes. If you did not request this, ignore this email and contact your administrator.</p>
+    <p>— LeanChem Connect</p>
+    """
+    text = (
+        f"Password change verification for {email}. Code: {code}. "
+        f"Expires in {CODE_TTL_MINUTES} minutes."
+    )
+
+    try:
+        send_email(to=email, subject=subject, html=html, text=text)
+    except EmailNotConfiguredError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Failed to send verification email: {exc}") from exc
+
+    return {
+        "message": f"Verification code sent to {email}.",
+        "expires_in_minutes": CODE_TTL_MINUTES,
+        "email_sent": True,
+    }
 
 
 def request_password_change_verification(
@@ -241,6 +320,12 @@ def confirm_password_change(
 
     if _hash_code(code) != stored_hash:
         raise ValueError("Incorrect verification code.")
+
+    pending_new_hash = meta.get(META_NEW_PASSWORD_HASH)
+    if pending_new_hash and _hash_new_password(new_password) != pending_new_hash:
+        raise ValueError(
+            "New password does not match the one you entered before the verification code was sent."
+        )
 
     _apply_new_password(supabase=supabase, user_id=user_id, new_password=new_password)
     _send_password_changed_notification(email=email, display_name=display_name)

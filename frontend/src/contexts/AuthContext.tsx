@@ -3,6 +3,16 @@ import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
 import { checkEmployeeStatus as checkEmployeeStatusAPI } from "../services/api";
+import {
+  createDevMockSession,
+  createDevMockUser,
+  DEV_MOCK_EMAIL,
+  DEV_MOCK_NAME,
+  DEV_MOCK_ROLE,
+  isDevMockAuthAvailable,
+  isDevMockSessionActive,
+  persistDevMockSession,
+} from "../lib/dev-mock-auth";
 
 /** Canonical production URL (Vercel production alias). */
 export const PRODUCTION_APP_URL = "https://blank-slate-dashboard-plum.vercel.app";
@@ -34,6 +44,8 @@ interface AuthContextType {
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   checkPasswordSet: () => boolean;
   signOut: () => Promise<void>;
+  signInDevMock: () => Promise<void>;
+  isDevMockSession: boolean;
   isEmployee: boolean;
   employeeRole: EmployeeRole | null;
   employeeData: EmployeeData | null;
@@ -49,6 +61,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isEmployee, setIsEmployee] = useState(false);
   const [employeeRole, setEmployeeRole] = useState<EmployeeRole | null>(null);
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
+  const [isDevMockSession, setIsDevMockSession] = useState(false);
+
+  const applyDevMockSession = () => {
+    const mockUser = createDevMockUser();
+    setUser(mockUser);
+    setSession(createDevMockSession(mockUser));
+    setIsEmployee(true);
+    setEmployeeRole(DEV_MOCK_ROLE);
+    setEmployeeData({
+      email: DEV_MOCK_EMAIL,
+      role: DEV_MOCK_ROLE,
+      name: DEV_MOCK_NAME,
+    });
+    setIsDevMockSession(true);
+    persistDevMockSession(true);
+    setLoading(false);
+  };
+
+  const clearDevMockSession = () => {
+    setIsDevMockSession(false);
+    persistDevMockSession(false);
+  };
 
   // Check if user email exists in employees table and get role
   // Uses backend API instead of direct Supabase query for better reliability
@@ -82,6 +116,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (isDevMockAuthAvailable() && isDevMockSessionActive()) {
+      applyDevMockSession();
+      return;
+    }
+
     if (!isSupabaseConfigured()) {
       setLoading(false);
       return;
@@ -299,7 +338,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.user_metadata?.password_set === true || user.app_metadata?.password_set === true;
   };
 
+  const signInDevMock = async () => {
+    if (!isDevMockAuthAvailable()) {
+      throw new Error("Dev mock login is only available in local development.");
+    }
+    applyDevMockSession();
+  };
+
   const signOut = async () => {
+    if (isDevMockSession) {
+      clearDevMockSession();
+      setUser(null);
+      setSession(null);
+      setIsEmployee(false);
+      setEmployeeRole(null);
+      setEmployeeData(null);
+      return;
+    }
     if (!isSupabaseConfigured()) {
       return;
     }
@@ -323,6 +378,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updatePassword,
         checkPasswordSet,
         signOut,
+        signInDevMock,
+        isDevMockSession,
         isEmployee,
         employeeRole,
         employeeData,

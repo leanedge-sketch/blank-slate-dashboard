@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getApiBaseUrl } from "../lib/api-base";
+import { isDevMockSessionActive } from "../lib/dev-mock-auth";
 import { supabase } from "../lib/supabase";
 
 const API_BASE_URL = getApiBaseUrl();
@@ -9,6 +10,9 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
+  if (isDevMockSessionActive()) {
+    return config;
+  }
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -1211,6 +1215,7 @@ export interface PasswordChangeMessageResponse {
   expires_in_minutes?: number;
 }
 
+/** One-step change (no email code). Prefer startPasswordChange + confirmPasswordChange. */
 export async function changePassword(body: {
   current_password: string;
   new_password: string;
@@ -1221,15 +1226,22 @@ export async function changePassword(body: {
   return response.data;
 }
 
-/** @deprecated Prefer changePassword — no manual verification code. */
-export async function requestPasswordChangeCode(): Promise<PasswordChangeMessageResponse> {
-  const response = await api.post<PasswordChangeMessageResponse>(
-    "/auth/change-password/request",
-  );
+/** Verify current password and email a 6-digit code to the signed-in user. */
+export async function startPasswordChange(body: {
+  current_password: string;
+  new_password: string;
+}): Promise<
+  PasswordChangeMessageResponse & { email_sent?: boolean; expires_in_minutes?: number }
+> {
+  const response = await api.post<
+    PasswordChangeMessageResponse & {
+      email_sent?: boolean;
+      expires_in_minutes?: number;
+    }
+  >("/auth/change-password/start", body);
   return response.data;
 }
 
-/** @deprecated Prefer changePassword — no manual verification code. */
 export async function confirmPasswordChange(body: {
   verification_code: string;
   new_password: string;
