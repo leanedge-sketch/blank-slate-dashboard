@@ -102,7 +102,7 @@ export function CustomerProfilePage() {
         setMergedInteractions(bundle.interactions);
       } catch (err: any) {
         console.warn("Could not fetch all interactions for profile:", err?.response?.data || err?.message);
-        setLiveCrmHistory("");
+        setMergedInteractions([]);
         setInteractionTotal(0);
       }
 

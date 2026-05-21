@@ -1,8 +1,6 @@
 import axios from "axios";
 import { getAuthAccessToken } from "../lib/auth-session";
 import { getApiBaseUrl } from "../lib/api-base";
-import { isDevMockSessionActive } from "../lib/dev-mock-auth";
-
 const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
@@ -19,7 +17,7 @@ function isPublicApiPath(url: string | undefined): boolean {
 }
 
 api.interceptors.request.use(async (config) => {
-  if (isDevMockSessionActive() || isPublicApiPath(config.url)) {
+  if (isPublicApiPath(config.url)) {
     return config;
   }
   try {

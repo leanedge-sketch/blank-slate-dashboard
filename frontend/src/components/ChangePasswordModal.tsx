@@ -13,7 +13,7 @@ interface ChangePasswordModalProps {
 }
 
 export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
-  const { user, employeeData, signOut, isDevMockSession } = useAuth();
+  const { user, employeeData, signOut } = useAuth();
   const email = employeeData?.email || user?.email || "";
   const name =
     employeeData?.name?.trim() ||
@@ -100,36 +100,6 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
       setLoading(false);
     }
   };
-
-  if (isDevMockSession) {
-    return (
-      <div className="modal-overlay" role="dialog" aria-modal="true">
-        <div className="modal-card">
-          <div className="modal-header">
-            <h2>Change password</h2>
-            <button
-              type="button"
-              className="modal-close"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="modal-body">
-            <p className="modal-hint">
-              Password change requires a real Supabase account. Sign out and use
-              your employee email on the login page, or keep using dev mock for
-              UI testing only.
-            </p>
-            <button type="button" className="btn-primary" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div

@@ -120,16 +120,6 @@ class SalesPipelineBase(BaseModel):
             )
         return v
 
-    @field_validator("incoterm")
-    @classmethod
-    def validate_incoterm(cls, v: Optional[str]) -> Optional[str]:
-        """Validate that incoterm is one of the allowed values."""
-        if v is not None and v not in INCOTERM_OPTIONS:
-            raise ValueError(
-                f"Incoterm must be one of: {', '.join(INCOTERM_OPTIONS)}"
-            )
-        return v
-
     @model_validator(mode="after")
     def validate_business_details_for_validation_plus(self):
         """Validate that business_model, unit, and unit_price are provided for Validation+ stages."""

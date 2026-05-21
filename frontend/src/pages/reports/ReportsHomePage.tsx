@@ -19,7 +19,7 @@ const modules = [
     subtitle: "Metrics · Stages · AI questions",
     description:
       "Real-time CRM metrics, sales stage distribution, and natural-language questions over your interaction history.",
-    href: "/crm/dashboard",
+    href: "/reports/analytics",
     cta: "Open analytics",
     accent: "from-cyan-600 via-sky-500 to-blue-500",
     accentHover: "group-hover:shadow-cyan-500/40",

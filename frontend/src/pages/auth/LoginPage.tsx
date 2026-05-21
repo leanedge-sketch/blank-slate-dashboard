@@ -11,8 +11,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const { signIn, resetPassword, signInDevMock } = useAuth();
-  const isDev = import.meta.env.DEV;
+  const { signIn, resetPassword } = useAuth();
   const navigate = useNavigate();
   const onWrongHost =
     import.meta.env.PROD &&
@@ -222,37 +221,6 @@ export function LoginPage() {
                 : "Sign In"}
             </button>
           </form>
-
-          {isDev && (
-            <div className="pt-4 border-t border-slate-800 space-y-2">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={async () => {
-                  setError(null);
-                  setLoading(true);
-                  try {
-                    await signInDevMock();
-                    navigate("/");
-                  } catch (err) {
-                    setError(
-                      err instanceof Error
-                        ? err.message
-                        : "Dev login failed",
-                    );
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                className="w-full py-2.5 px-4 rounded-xl border border-amber-500/50 bg-amber-500/10 text-amber-300 text-sm font-semibold hover:bg-amber-500/20 transition-colors disabled:opacity-50"
-              >
-                Continue as dev user (skip login)
-              </button>
-              <p className="text-center text-xs text-slate-600">
-                Local development only — uses a mock admin profile, no email reset.
-              </p>
-            </div>
-          )}
 
           {/* Footer Note */}
           <p className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800">

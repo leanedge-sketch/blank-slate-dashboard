@@ -6,10 +6,14 @@ Think of it as a central place where we store all configuration values.
 from pydantic_settings import BaseSettings
 from typing import List
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load backend/.env first, then repo-root .env (many devs keep Supabase keys only in root .env)
+_backend_dir = Path(__file__).resolve().parents[1]
+_repo_root = _backend_dir.parent
+load_dotenv(_backend_dir / ".env")
+load_dotenv(_repo_root / ".env", override=False)
 
 class Settings(BaseSettings):
     """
