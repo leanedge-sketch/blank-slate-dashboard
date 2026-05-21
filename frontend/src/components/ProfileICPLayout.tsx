@@ -1,156 +1,124 @@
-import { parseICPProfile, stripStrategicFitLinesFromProfile } from "../utils/profileText";
+import {
+  parseICPProfile,
+  parseKeyContacts,
+  parseNextStepsContent,
+  stripStrategicFitLinesFromProfile,
+} from "../utils/profileText";
 import type { ProfileResearchMeta } from "./ProfileResearchContext";
 import { ProfileDeepDiveTabs } from "./ProfileDeepDiveTabs";
 import { ProfileProse } from "./ProfileProse";
 import { StrategicFitAssessment } from "./StrategicFitAssessment";
 import type { StrategicFitItem } from "../utils/profileText";
-
-function SectionCard({
-  title,
-  subtitle,
-  children,
-  variant = "default",
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  variant?: "default" | "hero" | "accent";
-}) {
-  const border =
-    variant === "hero"
-      ? "3px solid #2563eb"
-      : variant === "accent"
-        ? "3px solid #0f766e"
-        : "1px solid #e5e7eb";
-
-  return (
-    <article
-      style={{
-        padding: variant === "hero" ? "2rem 2.25rem" : "1.75rem 2rem",
-        backgroundColor: "#ffffff",
-        borderRadius: "1rem",
-        border,
-        boxShadow:
-          variant === "hero"
-            ? "0 8px 24px -4px rgba(37, 99, 235, 0.12)"
-            : "0 4px 6px -1px rgba(0,0,0,0.06)",
-        height: "100%",
-      }}
-    >
-      <header style={{ marginBottom: "1.25rem" }}>
-        <h3
-          style={{
-            fontSize: variant === "hero" ? "1.65rem" : "1.35rem",
-            fontWeight: 800,
-            color: "#111827",
-            margin: 0,
-            lineHeight: 1.25,
-          }}
-        >
-          {title}
-        </h3>
-        {subtitle ? (
-          <p style={{ margin: "0.5rem 0 0", color: "#6b7280", fontSize: "0.9rem" }}>{subtitle}</p>
-        ) : null}
-      </header>
-      {children}
-    </article>
-  );
-}
+import { ProfileKeyContacts } from "./profile/ProfileKeyContacts";
+import { ProfileNextSteps } from "./profile/ProfileNextSteps";
+import type { Interaction } from "../services/api";
 
 export function ProfileICPLayout({
   text,
   strategicFitItems,
   researchMeta,
-  liveCrmHistory,
+  mergedInteractions,
 }: {
   text: string;
   strategicFitItems: StrategicFitItem[];
   researchMeta?: ProfileResearchMeta | null;
-  liveCrmHistory?: string;
+  mergedInteractions?: Interaction[];
 }) {
   const parsed = parseICPProfile(text);
   const fitNarrative = parsed.strategicFit?.body
     ? stripStrategicFitLinesFromProfile(parsed.strategicFit.body)
     : "";
 
+  const nextStepsParsed = parseNextStepsContent(parsed.nextSteps?.body ?? "");
+  const contactsText =
+    parsed.deepDive.linkedin ||
+    parsed.nextSteps?.body ||
+    text;
+  const contacts = parseKeyContacts(contactsText);
+
   return (
-    <div className="profile-icp-layout">
-      {/* 1. Overview — Company Snapshot + Construction Footprint */}
-      <div className="profile-icp-overview-grid">
-        <SectionCard
-          title="Company Snapshot"
-          subtitle="Executive summary — who they are and what matters now"
-          variant="hero"
-        >
+    <div className="flex flex-col gap-8">
+      {/* 1. Overview */}
+      <section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+        <article className="rounded-2xl border-2 border-blue-500 bg-white p-6 sm:p-8 shadow-lg shadow-blue-500/10">
+          <header className="mb-5">
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight m-0">
+              Company Snapshot
+            </h2>
+            <p className="text-sm text-slate-500 mt-1 mb-0">
+              Executive summary — who they are and what matters now
+            </p>
+          </header>
           <ProfileProse body={parsed.snapshot?.body ?? ""} hero />
-        </SectionCard>
+        </article>
 
-        <SectionCard
-          title="Construction Footprint in Ethiopia"
-          subtitle="Plants, units, and construction-related operations"
-        >
+        <article className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 shadow-sm h-full">
+          <header className="mb-5">
+            <h2 className="text-xl font-bold text-slate-900 m-0">
+              Construction Footprint in Ethiopia
+            </h2>
+            <p className="text-sm text-slate-500 mt-1 mb-0">
+              Plants, units, and construction-related operations
+            </p>
+          </header>
           <ProfileProse body={parsed.footprint?.body ?? ""} />
-        </SectionCard>
-      </div>
+        </article>
+      </section>
 
-      {/* 2. Opportunity — Strategic Fit scores */}
-      <section style={{ marginTop: "2rem" }}>
-        <div style={{ marginBottom: "1rem" }}>
-          <h3
-            style={{
-              fontSize: "1.35rem",
-              fontWeight: 800,
-              color: "#111827",
-              margin: "0 0 0.35rem",
-            }}
-          >
-            Strategic Fit Assessment
-          </h3>
-          <p style={{ margin: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-            LeanChem alignment by product category — score then rationale below.
+      {/* 2. Strategic fit */}
+      <section>
+        <header className="mb-4">
+          <h2 className="text-xl font-extrabold text-slate-900 m-0">Strategic Fit Assessment</h2>
+          <p className="text-sm text-slate-500 mt-1 mb-0">
+            LeanChem alignment by product category
           </p>
-        </div>
+        </header>
         {fitNarrative.trim() ? (
-          <div
-            className="card"
-            style={{
-              marginBottom: "1.25rem",
-              padding: "1.25rem 1.5rem",
-              backgroundColor: "#f8fafc",
-              border: "1px solid #e2e8f0",
-            }}
-          >
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
             <ProfileProse body={fitNarrative} compact />
           </div>
         ) : null}
         <StrategicFitAssessment items={strategicFitItems} />
       </section>
 
-      {/* 3. Action Plan — Recommended Next Steps */}
-      <div style={{ marginTop: "2rem" }}>
-        <SectionCard
-          title="Recommended Next Steps"
-          subtitle="Prioritized actions after reviewing fit — outreach, trials, and contracts"
-          variant="accent"
-        >
-          <ProfileProse body={parsed.nextSteps?.body ?? ""} />
-        </SectionCard>
-      </div>
+      {/* 3. Recommended next steps */}
+      <section className="rounded-2xl border-2 border-teal-600/30 bg-white p-6 sm:p-8 shadow-sm">
+        <header className="mb-5">
+          <h2 className="text-xl font-extrabold text-slate-900 m-0">Recommended Next Steps</h2>
+          <p className="text-sm text-slate-500 mt-1 mb-0">
+            Prioritized actions — highlighted opportunities vs muted dead-ends
+          </p>
+        </header>
+        <ProfileNextSteps
+          interactionReview={nextStepsParsed.interactionReview}
+          items={nextStepsParsed.items}
+        />
+      </section>
 
-      {/* 4. Deep Dive tabs — research sources */}
+      {/* 4. Key contacts */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
+        <header className="mb-5">
+          <h2 className="text-xl font-extrabold text-slate-900 m-0">Key Contacts for Engagement</h2>
+          <p className="text-sm text-slate-500 mt-1 mb-0">
+            Decision-makers with roles and sources
+          </p>
+        </header>
+        <ProfileKeyContacts contacts={contacts} />
+      </section>
+
+      {/* 5. Deep dive */}
       <ProfileDeepDiveTabs
         deepDive={parsed.deepDive}
         meta={researchMeta}
         fallbackBody={parsed.researchSummary?.body}
-        liveCrmHistory={liveCrmHistory}
+        mergedInteractions={mergedInteractions}
       />
 
-      {/* Legacy profiles without numbered sections */}
       {parsed.sections.length === 1 && parsed.sections[0].index === -1 ? (
-        <SectionCard title="Full Profile" subtitle="Unsectioned profile text">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900 mb-4">Full Profile</h2>
           <ProfileProse body={parsed.sections[0].body} />
-        </SectionCard>
+        </section>
       ) : null}
     </div>
   );

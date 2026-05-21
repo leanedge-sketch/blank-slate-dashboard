@@ -386,6 +386,133 @@ export interface ParsedICPProfile {
   deepDive: Record<DeepDiveTabId, string>;
 }
 
+export interface ProfileContact {
+  name: string;
+  position?: string;
+  linkedin?: string;
+  source?: string;
+  email?: string;
+}
+
+export type NextStepTone = "action" | "muted" | "review";
+
+export interface NextStepItem {
+  text: string;
+  tone: NextStepTone;
+  index?: number;
+}
+
+const DEAD_END_RE =
+  /\b(n\/a|not applicable|no fit|low fit|hold|pause|deprioriti[sz]e|wait until|no immediate|not recommended|avoid|skip|none at this time)\b/i;
+
+function classifyStepTone(text: string): NextStepTone {
+  const t = text.trim();
+  if (!t) return "muted";
+  if (DEAD_END_RE.test(t)) return "muted";
+  if (/^review\b|^monitor\b|^assess\b/i.test(t)) return "review";
+  return "action";
+}
+
+/** Parse Key Contacts blocks from section 4 or LinkedIn subsection text. */
+export function parseKeyContacts(text: string): ProfileContact[] {
+  if (!text?.trim()) return [];
+
+  const contacts: ProfileContact[] = [];
+  let current: ProfileContact | null = null;
+
+  const flush = () => {
+    if (current?.name?.trim()) {
+      contacts.push({
+        name: current.name.trim(),
+        position: current.position?.trim(),
+        linkedin: current.linkedin?.trim(),
+        source: current.source?.trim(),
+        email: current.email?.trim(),
+      });
+    }
+    current = null;
+  };
+
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (/^name:/i.test(trimmed)) {
+      flush();
+      current = { name: trimmed.replace(/^name:\s*/i, "").trim() };
+      continue;
+    }
+    if (!current) {
+      if (/linkedin\.com/i.test(trimmed)) {
+        contacts.push({ name: "Contact", linkedin: trimmed });
+      }
+      continue;
+    }
+    if (/^position:/i.test(trimmed)) {
+      current.position = trimmed.replace(/^position:\s*/i, "");
+    } else if (/^linkedin:/i.test(trimmed)) {
+      current.linkedin = trimmed.replace(/^linkedin:\s*/i, "");
+    } else if (/^source:/i.test(trimmed)) {
+      current.source = trimmed.replace(/^source:\s*/i, "");
+    } else if (/^email:/i.test(trimmed)) {
+      current.email = trimmed.replace(/^email:\s*/i, "");
+    }
+  }
+  flush();
+  return contacts;
+}
+
+/** Split next-steps section into review prose vs numbered action items. */
+export function parseNextStepsContent(body: string): {
+  interactionReview: string;
+  items: NextStepItem[];
+} {
+  if (!body?.trim()) {
+    return { interactionReview: "", items: [] };
+  }
+
+  const sub = extractLabeledSubsections(body, {
+    review: ["interaction review", "interaction review (from crm)"],
+    actions: ["strategic actions", "recommended actions", "next steps"],
+    contacts: ["key contacts", "key contacts for engagement"],
+  });
+
+  const interactionReview = sub.review?.trim() ?? "";
+  const actionSource = sub.actions?.trim() || body;
+  const items: NextStepItem[] = [];
+
+  for (const line of actionSource.split("\n")) {
+    const trimmed = line.trim();
+    const numbered = trimmed.match(/^(\d+)[.)]\s+(.+)$/);
+    if (numbered) {
+      const text = numbered[2].trim();
+      items.push({
+        index: parseInt(numbered[1], 10),
+        text,
+        tone: classifyStepTone(text),
+      });
+      continue;
+    }
+    if (/^[-•]\s+/.test(trimmed)) {
+      const text = trimmed.replace(/^[-•]\s+/, "").trim();
+      if (text.length > 8) {
+        items.push({ text, tone: classifyStepTone(text) });
+      }
+    }
+  }
+
+  if (!items.length) {
+    for (const block of actionSource.split(/\n{2,}/)) {
+      const t = block.trim();
+      if (t.length > 12 && !/^key contacts/i.test(t)) {
+        items.push({ text: t, tone: classifyStepTone(t) });
+      }
+    }
+  }
+
+  return { interactionReview, items };
+}
+
 export function parseICPProfile(text: string): ParsedICPProfile {
   const sections = parseProfileSections(text);
   const researchSummary = findProfileSection(

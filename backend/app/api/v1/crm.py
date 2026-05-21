@@ -14,6 +14,7 @@ from app.models.crm import (
     CustomerUpdate,
     Interaction,
     InteractionListResponse,
+    InteractionSourceAudit,
     InteractionCreate,
     InteractionUpdate,
     CustomerChatRequest,
@@ -34,6 +35,9 @@ from app.services.crm_service import (
     search_customers_by_name,
     get_interactions_for_customer,
     get_interactions_count_for_customer,
+    get_conversation_logs_for_customer,
+    audit_customer_interaction_sources,
+    merge_customer_interaction_history,
     create_interaction,
     get_interaction_by_id,
     update_interaction,
@@ -416,6 +420,10 @@ async def list_customer_interactions(
     offset: int = Query(0, ge=0, description="Number of interactions to skip"),
     start_date: Optional[str] = Query(None, description="Filter interactions from this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter interactions up to this date (YYYY-MM-DD)"),
+    include_conversation: bool = Query(
+        True,
+        description="Include RAG conversation archive rows for this customer (legacy/historical chats)",
+    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """List interactions for a specific customer with optional date filtering."""
@@ -425,6 +433,21 @@ async def list_customer_interactions(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     try:
+        if include_conversation:
+            merged, table_total, archive_added = merge_customer_interaction_history(
+                customer_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            page = merged[offset : offset + limit]
+            return InteractionListResponse(
+                interactions=page,
+                total=len(merged),
+                interactions_table_total=table_total,
+                conversation_total=archive_added,
+                conversation_logs=None,
+            )
+
         interactions = get_interactions_for_customer(
             customer_id,
             limit=limit,
@@ -437,9 +460,36 @@ async def list_customer_interactions(
             start_date=start_date,
             end_date=end_date,
         )
-        return InteractionListResponse(interactions=interactions, total=total)
+        return InteractionListResponse(
+            interactions=interactions,
+            total=total,
+            interactions_table_total=total,
+            conversation_total=0,
+            conversation_logs=None,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching interactions: {str(e)}")
+
+
+@router.get(
+    "/customers/{customer_id}/interactions/audit",
+    response_model=InteractionSourceAudit,
+)
+async def audit_customer_interactions(
+    customer_id: str,
+    # user: dict = Depends(get_current_user)
+):
+    """
+    Diagnostic: count rows in public.interactions vs public.conversation (RAG)
+    by month, including May (*-05).
+    """
+    customer = get_customer_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    try:
+        return InteractionSourceAudit(**audit_customer_interaction_sources(customer_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
 
 
 @router.post(

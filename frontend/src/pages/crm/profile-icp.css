@@ -1,36 +1,16 @@
-.profile-icp-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
+@import "tailwindcss";
 
-.profile-icp-overview-grid {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 1.5rem;
-  align-items: stretch;
-}
-
-@media (max-width: 960px) {
-  .profile-icp-overview-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.profile-deep-dive::-webkit-scrollbar {
-  width: 8px;
-}
-
-.profile-deep-dive [role="tabpanel"]::-webkit-scrollbar {
+/* Profile ICP page — Tailwind utilities + scrollbar polish */
+.profile-icp-page .max-h-\[600px\]::-webkit-scrollbar {
   width: 10px;
 }
 
-.profile-deep-dive [role="tabpanel"]::-webkit-scrollbar-thumb {
+.profile-icp-page .max-h-\[600px\]::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 6px;
 }
 
-.profile-deep-dive [role="tabpanel"]::-webkit-scrollbar-thumb:hover {
+.profile-icp-page .max-h-\[600px\]::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
 
@@ -39,12 +19,8 @@
   color: #1f2937;
 }
 
-.profile-prose-hero a {
-  color: #2563eb;
-  font-weight: 500;
-}
-
-.profile-deep-dive a {
+.profile-prose-hero a,
+.profile-icp-page a {
   color: #2563eb;
   word-break: break-word;
 }

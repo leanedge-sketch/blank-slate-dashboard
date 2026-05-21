@@ -3,19 +3,36 @@ import { api, Interaction, InteractionListResponse } from "../services/api";
 const PAGE_SIZE = 500;
 const MAX_INTERACTIONS = 2000;
 
-/** Fetch every interaction for a customer (paginated API). */
+export interface ConversationLog {
+  id: string;
+  content: string;
+  created_at?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CustomerInteractionBundle {
+  interactions: Interaction[];
+  total: number;
+  interactionsTableTotal: number;
+  conversationArchiveTotal: number;
+}
+
+/** Fetch unified history (interactions table + conversation archive, merged). */
 export async function fetchAllCustomerInteractions(
   customerId: string,
   options?: { startDate?: string; endDate?: string },
-): Promise<{ interactions: Interaction[]; total: number }> {
+): Promise<CustomerInteractionBundle> {
   const all: Interaction[] = [];
   let offset = 0;
   let total = 0;
+  let interactionsTableTotal = 0;
+  let conversationArchiveTotal = 0;
 
   while (all.length < MAX_INTERACTIONS) {
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | boolean> = {
       limit: PAGE_SIZE,
       offset,
+      include_conversation: true,
     };
     if (options?.startDate) params.start_date = options.startDate;
     if (options?.endDate) params.end_date = options.endDate;
@@ -26,6 +43,10 @@ export async function fetchAllCustomerInteractions(
     );
     const page = res.data.interactions ?? [];
     total = res.data.total ?? page.length;
+    interactionsTableTotal =
+      res.data.interactions_table_total ?? interactionsTableTotal;
+    conversationArchiveTotal =
+      res.data.conversation_total ?? conversationArchiveTotal;
     all.push(...page);
 
     if (page.length < PAGE_SIZE || all.length >= total) {
@@ -34,35 +55,56 @@ export async function fetchAllCustomerInteractions(
     offset += PAGE_SIZE;
   }
 
-  return { interactions: all, total: Math.max(total, all.length) };
+  return {
+    interactions: all,
+    total: Math.max(total, all.length),
+    interactionsTableTotal,
+    conversationArchiveTotal,
+  };
 }
 
-/** Format live DB interactions for the Deep Dive CRM History tab. */
+export function isConversationArchiveRow(interaction: Interaction): boolean {
+  return interaction.history_source === "conversation";
+}
+
+/** Format unified CRM history for Deep Dive tab. */
 export function formatInteractionsForCrmTab(
   interactions: Interaction[],
   total?: number,
 ): string {
+  const count = total ?? interactions.length;
+  const tableCount = interactions.filter(
+    (it) => !isConversationArchiveRow(it),
+  ).length;
+  const archiveCount = interactions.filter((it) =>
+    isConversationArchiveRow(it),
+  ).length;
+
   if (!interactions.length) {
-    return "No CRM interactions recorded for this customer in the database.";
+    return (
+      "No CRM history found in public.interactions or public.conversation for this customer."
+    );
   }
 
-  const count = total ?? interactions.length;
   const lines: string[] = [
-    `Source: Live database (${count} interaction${count === 1 ? "" : "s"}, newest first)`,
+    `Source: Supabase merged timeline (${count} row${count === 1 ? "" : "s"}: ${tableCount} from interactions table, ${archiveCount} from conversation archive)`,
     "",
-    "Complete interaction index:",
+    "Complete history index:",
   ];
 
   interactions.forEach((it, idx) => {
     const ts = it.created_at
       ? new Date(it.created_at).toLocaleString()
       : "unknown time";
+    const src = isConversationArchiveRow(it) ? " [RAG archive]" : "";
     const preview =
       (it.input_text || "").trim() ||
       (it.ai_response || "").trim() ||
       "[empty]";
     const short = preview.replace(/\s+/g, " ").slice(0, 200);
-    lines.push(`${idx + 1}. [${ts}] ${short}${preview.length > 200 ? "…" : ""}`);
+    lines.push(
+      `${idx + 1}. [${ts}]${src} ${short}${preview.length > 200 ? "…" : ""}`,
+    );
   });
 
   lines.push("", "Full transcripts (newest first):", "");
@@ -70,7 +112,10 @@ export function formatInteractionsForCrmTab(
     const ts = it.created_at
       ? new Date(it.created_at).toLocaleString()
       : "unknown time";
-    lines.push(`--- Interaction at ${ts} ---`);
+    const label = isConversationArchiveRow(it)
+      ? "RAG conversation archive"
+      : "CRM interaction";
+    lines.push(`--- ${label} at ${ts} ---`);
     if (it.input_text?.trim()) {
       lines.push(`Sales/Customer note: ${it.input_text.trim()}`);
     }

@@ -12,13 +12,18 @@ import {
   fetchTDS,
   Tds,
 } from "../../services/api";
-import { fetchAllCustomerInteractions } from "../../utils/interactions";
+import {
+  fetchAllCustomerInteractions,
+  isConversationArchiveRow,
+} from "../../utils/interactions";
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package, DollarSign } from "lucide-react";
 
 export function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [archiveCount, setArchiveCount] = useState(0);
+  const [tableCount, setTableCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +67,8 @@ export function CustomerDetailPage() {
 
       setCustomer(customerRes.data);
       setInteractions(allInteractions.interactions);
+      setArchiveCount(allInteractions.conversationArchiveTotal);
+      setTableCount(allInteractions.interactionsTableTotal);
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to load customer");
@@ -500,8 +507,11 @@ export function CustomerDetailPage() {
                   </p>
                 </div>
                 <span className="text-[11px] text-slate-500">
-                  {interactions.length} interaction
-                  {interactions.length === 1 ? "" : "s"}
+                  {interactions.length} merged
+                  {interactions.length === 1 ? " entry" : " entries"}
+                  {archiveCount > 0
+                    ? ` (${tableCount} CRM + ${archiveCount} RAG archive)`
+                    : ""}
                 </span>
               </div>
               
@@ -537,13 +547,21 @@ export function CustomerDetailPage() {
                   )}
                 </div>
               </div>
+              {(startDate || endDate) && (
+                <p
+                  className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+                  style={{ marginTop: "0.75rem" }}
+                >
+                  Date filter is active — older interactions (e.g. May) may be hidden.
+                  Clear the filter to load the full history from Supabase.
+                </p>
+              )}
             </div>
 
             <div className="p-4 sm:p-5 space-y-3 max-h-[70vh] overflow-y-auto">
         {interactions.length === 0 ? (
                 <p className="text-sm text-slate-400">
-                  No interactions yet. Ask the AI assistant a question to create the
-                  first interaction.
+                  No interactions in this date range. Clear the date filter to see May and older history from both Supabase tables.
                 </p>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -551,6 +569,7 @@ export function CustomerDetailPage() {
                     const isExpanded = expandedInteractions.has(it.id);
                     const isEditing = editingInteraction === it.id;
                     const isDeleting = deleting === it.id;
+                    const fromArchive = isConversationArchiveRow(it);
 
                     return (
                       <div
@@ -591,6 +610,11 @@ export function CustomerDetailPage() {
                                   Attached file
                                 </a>
                               )}
+                              {fromArchive && (
+                                <span className="inline-flex items-center rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-300 border border-violet-500/30">
+                                  RAG archive
+                                </span>
+                              )}
                             </div>
                             {it.input_text && (
                               <div className="text-xs sm:text-sm font-medium text-slate-100 truncate">
@@ -610,7 +634,7 @@ export function CustomerDetailPage() {
                             className="flex items-center gap-1 ml-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {!isEditing && (
+                            {!isEditing && !fromArchive && (
                               <>
                                 <button
                                   type="button"

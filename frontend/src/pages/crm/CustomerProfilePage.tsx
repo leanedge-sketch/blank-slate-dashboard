@@ -10,10 +10,8 @@ import {
 } from "../../services/api";
 import { ProfileICPLayout } from "../../components/ProfileICPLayout";
 import { ProfileResearchContext } from "../../components/ProfileResearchContext";
-import {
-  fetchAllCustomerInteractions,
-  formatInteractionsForCrmTab,
-} from "../../utils/interactions";
+import { fetchAllCustomerInteractions } from "../../utils/interactions";
+import type { Interaction } from "../../services/api";
 import { mergeStrategicFitItems } from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
 import "./profile-icp.css";
@@ -32,7 +30,7 @@ export function CustomerProfilePage() {
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [creatingICP, setCreatingICP] = useState(false);
   const [latestInteraction, setLatestInteraction] = useState<string | null>(null);
-  const [liveCrmHistory, setLiveCrmHistory] = useState<string>("");
+  const [mergedInteractions, setMergedInteractions] = useState<Interaction[]>([]);
   const [interactionTotal, setInteractionTotal] = useState<number>(0);
 
   async function handleGenerateICP() {
@@ -51,9 +49,9 @@ export function CustomerProfilePage() {
       setEditedProfile(refreshed.data.latest_profile_text || "");
       setLatestInteraction(null);
       try {
-        const { interactions, total } = await fetchAllCustomerInteractions(customerId);
-        setInteractionTotal(total);
-        setLiveCrmHistory(formatInteractionsForCrmTab(interactions, total));
+        const bundle = await fetchAllCustomerInteractions(customerId);
+        setInteractionTotal(bundle.total);
+        setMergedInteractions(bundle.interactions);
       } catch {
         /* keep prior live history */
       }
@@ -99,9 +97,9 @@ export function CustomerProfilePage() {
       }
 
       try {
-        const { interactions, total } = await fetchAllCustomerInteractions(customerId);
-        setInteractionTotal(total);
-        setLiveCrmHistory(formatInteractionsForCrmTab(interactions, total));
+        const bundle = await fetchAllCustomerInteractions(customerId);
+        setInteractionTotal(bundle.total);
+        setMergedInteractions(bundle.interactions);
       } catch (err: any) {
         console.warn("Could not fetch all interactions for profile:", err?.response?.data || err?.message);
         setLiveCrmHistory("");
@@ -481,7 +479,7 @@ export function CustomerProfilePage() {
           </p>
         </section>
       ) : (
-        <>
+        <div className="profile-icp-page">
           <ProfileResearchContext meta={customer.latest_profile_research_meta} />
           {interactionTotal > 0 ? (
             <p
@@ -492,21 +490,21 @@ export function CustomerProfilePage() {
                 fontWeight: 500,
               }}
             >
-              Connected to database — {interactionTotal} CRM interaction
-              {interactionTotal === 1 ? "" : "s"} loaded for this customer
+              Connected to Supabase — {interactionTotal} merged history row
+              {interactionTotal === 1 ? "" : "s"} (interactions table + conversation archive)
               {customer.latest_profile_research_meta?.crm_interaction_count != null
-                ? ` (${customer.latest_profile_research_meta.crm_interaction_count} used in last ICP build)`
+                ? ` · ${customer.latest_profile_research_meta.crm_interaction_count} in interactions table for last ICP build`
                 : ""}
-              . Regenerate ICP to refresh analysis with the latest logs.
+              . Regenerate ICP to include May and legacy logs in analysis.
             </p>
           ) : null}
           <ProfileICPLayout
             text={effectiveProfileText}
             strategicFitItems={strategicFitItems}
             researchMeta={customer.latest_profile_research_meta}
-            liveCrmHistory={liveCrmHistory}
+            mergedInteractions={mergedInteractions}
           />
-        </>
+        </div>
       )}
 
       {/* Download and Feedback Section */}

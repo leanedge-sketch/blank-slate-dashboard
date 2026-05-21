@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { DeepDiveTabId } from "../utils/profileText";
 import type { ProfileResearchMeta } from "./ProfileResearchContext";
 import { ProfileProse } from "./ProfileProse";
+import { ProfileCrmHistoryTimeline } from "./profile/ProfileCrmHistoryTimeline";
+import type { Interaction } from "../services/api";
 
 const TABS: { id: DeepDiveTabId; label: string }[] = [
   { id: "crm", label: "CRM History" },
@@ -15,7 +17,7 @@ function tabMetaHint(id: DeepDiveTabId, meta?: ProfileResearchMeta | null): stri
   switch (id) {
     case "crm":
       return meta.crm_interaction_count != null
-        ? `${meta.crm_interaction_count} interactions`
+        ? `${meta.crm_interaction_count} in last build`
         : "";
     case "rag":
       return meta.rag_document_count != null ? `${meta.rag_document_count} docs` : "";
@@ -28,79 +30,57 @@ function tabMetaHint(id: DeepDiveTabId, meta?: ProfileResearchMeta | null): stri
   }
 }
 
-function charCount(text: string): string {
-  const n = text.length;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k chars`;
-  return `${n} chars`;
-}
-
 export function ProfileDeepDiveTabs({
   deepDive,
   meta,
   fallbackBody,
-  liveCrmHistory,
+  mergedInteractions = [],
 }: {
   deepDive: Record<DeepDiveTabId, string>;
   meta?: ProfileResearchMeta | null;
-  /** Full section 0 body when subsections could not be parsed */
   fallbackBody?: string;
-  /** All interactions loaded from the database (preferred for CRM History tab) */
-  liveCrmHistory?: string;
+  mergedInteractions?: Interaction[];
 }) {
   const [active, setActive] = useState<DeepDiveTabId>("crm");
 
-  const content =
-    (active === "crm" && liveCrmHistory?.trim()) ||
-    deepDive[active]?.trim() ||
-    (active === "crm" && fallbackBody?.trim() ? fallbackBody : "");
+  const proseContent =
+    active === "crm"
+      ? ""
+      : deepDive[active]?.trim() ||
+        (active === "crm" && fallbackBody?.trim() ? fallbackBody : "");
+
+  const showCrmTimeline = active === "crm" && mergedInteractions.length > 0;
+  const showCrmProse =
+    active === "crm" && !mergedInteractions.length && (deepDive.crm || fallbackBody);
+  const crmProseText = deepDive.crm?.trim() || fallbackBody?.trim() || "";
 
   const totalChars = Object.values(deepDive).reduce((n, s) => n + s.length, 0);
 
   return (
-    <section
-      className="card profile-deep-dive"
-      style={{
-        marginTop: "2rem",
-        padding: 0,
-        overflow: "hidden",
-        backgroundColor: "#ffffff",
-      }}
-    >
-      <div style={{ padding: "1.5rem 2rem 0" }}>
-        <h3
-          style={{
-            fontSize: "1.35rem",
-            fontWeight: 700,
-            marginBottom: "0.35rem",
-            color: "#111827",
-          }}
-        >
-          Deep Dive — Research Sources
-        </h3>
-        <p style={{ color: "#6b7280", fontSize: "0.9rem", marginBottom: "1rem", marginTop: 0 }}>
-          Raw research fed into the last profile build. Scroll within each tab for large exports
-          {totalChars > 0 ? ` (${totalChars.toLocaleString()} characters total)` : ""}.
-          {meta?.context_capped ? " Some sources were truncated to fit the model budget." : ""}
+    <section className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-6 pt-6 pb-2 sm:px-8">
+        <h2 className="text-xl font-bold text-slate-900 m-0">Deep Dive — Research Sources</h2>
+        <p className="text-sm text-slate-500 mt-1 mb-0">
+          Large research payloads — scroll within each tab
+          {totalChars > 0 ? ` (${totalChars.toLocaleString()} characters in profile text)` : ""}.
+          {meta?.context_capped ? " Some sources were truncated for the AI budget." : ""}
         </p>
       </div>
 
       <div
         role="tablist"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.25rem",
-          padding: "0 1.5rem",
-          borderBottom: "2px solid #e5e7eb",
-        }}
+        className="flex flex-wrap gap-1 px-4 sm:px-6 border-b border-slate-200"
       >
         {TABS.map((tab) => {
           const isActive = active === tab.id;
           const hint = tabMetaHint(tab.id, meta);
-          const size =
-            tab.id === "crm" && liveCrmHistory
-              ? liveCrmHistory.length
-              : deepDive[tab.id]?.length ?? 0;
+          const countLabel =
+            tab.id === "crm" && mergedInteractions.length
+              ? `${mergedInteractions.length} entries`
+              : deepDive[tab.id]?.length
+                ? `${(deepDive[tab.id].length / 1000).toFixed(1)}k chars`
+                : "";
+
           return (
             <button
               key={tab.id}
@@ -108,32 +88,20 @@ export function ProfileDeepDiveTabs({
               role="tab"
               aria-selected={isActive}
               onClick={() => setActive(tab.id)}
-              style={{
-                padding: "0.75rem 1.25rem",
-                marginBottom: "-2px",
-                border: "none",
-                borderBottom: isActive ? "3px solid #2563eb" : "3px solid transparent",
-                background: isActive ? "#eff6ff" : "transparent",
-                color: isActive ? "#1d4ed8" : "#4b5563",
-                fontWeight: isActive ? 700 : 500,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                borderRadius: "0.5rem 0.5rem 0 0",
-                transition: "background 0.15s, color 0.15s",
-              }}
+              className={`px-4 py-3 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px ${
+                isActive
+                  ? "border-blue-600 text-blue-700 bg-blue-50"
+                  : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
             >
               {tab.label}
-              {(hint || size > 0) && (
+              {(hint || countLabel) && (
                 <span
-                  style={{
-                    display: "block",
-                    fontSize: "0.7rem",
-                    fontWeight: 500,
-                    color: isActive ? "#3b82f6" : "#9ca3af",
-                    marginTop: "0.15rem",
-                  }}
+                  className={`block text-[10px] font-normal mt-0.5 ${
+                    isActive ? "text-blue-500" : "text-slate-400"
+                  }`}
                 >
-                  {[hint, size > 0 ? charCount(deepDive[tab.id]) : ""].filter(Boolean).join(" · ")}
+                  {[hint, countLabel].filter(Boolean).join(" · ")}
                 </span>
               )}
             </button>
@@ -143,20 +111,18 @@ export function ProfileDeepDiveTabs({
 
       <div
         role="tabpanel"
-        style={{
-          maxHeight: "600px",
-          overflowY: "auto",
-          padding: "1.5rem 2rem 2rem",
-          backgroundColor: "#fafbfc",
-          borderTop: "1px solid #e5e7eb",
-        }}
+        className="max-h-[600px] overflow-y-auto bg-slate-50/80 px-6 py-6 sm:px-8 sm:py-7 scroll-smooth"
       >
-        {content ? (
-          <ProfileProse body={content} compact />
+        {showCrmTimeline ? (
+          <ProfileCrmHistoryTimeline interactions={mergedInteractions} maxVisible={20} />
+        ) : showCrmProse && crmProseText ? (
+          <ProfileProse body={crmProseText} compact />
+        ) : proseContent ? (
+          <ProfileProse body={proseContent} compact />
         ) : (
-          <p style={{ color: "#9ca3af", fontStyle: "italic", margin: 0 }}>
-            No {TABS.find((t) => t.id === active)?.label} content in this profile. Regenerate the
-            ICP after adding CRM notes or configuring search keys.
+          <p className="text-sm text-slate-400 italic m-0">
+            No {TABS.find((t) => t.id === active)?.label} content. Regenerate ICP after adding CRM
+            notes or configuring search keys.
           </p>
         )}
       </div>

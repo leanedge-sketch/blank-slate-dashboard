@@ -14,6 +14,7 @@ Why separate?
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
+from uuid import UUID as UUIDType, uuid5, NAMESPACE_URL
 import json
 import re
 import tempfile
@@ -24,7 +25,7 @@ from supabase import Client
 from thefuzz import fuzz
 from openpyxl import load_workbook
 
-from app.database.connection import get_supabase_client
+from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.models.crm import (
     Customer,
     CustomerCreate,
@@ -369,21 +370,25 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     if not customer:
         raise RuntimeError("Customer not found")
     
-    # CRM interactions — fetch every row from DB (paginated), newest first
+    # Unified CRM history: interactions table + conversation archive
     try:
-        interactions = get_all_interactions_for_customer(
+        interactions, table_total, archive_added = merge_customer_interaction_history(
             str(customer.customer_id),
         )
         logging.info(
-            "Profile build for %s: loaded %s interactions from database",
+            "Profile build for %s: %s merged history (%s interactions table + %s conversation archive)",
             customer.customer_name,
             len(interactions),
+            table_total,
+            archive_added,
         )
     except Exception as e:
         logging.warning(
             f"Failed to fetch interactions for customer {customer.customer_id}: {str(e)}"
         )
         interactions = []
+        table_total = 0
+        archive_added = 0
 
     research_inputs = gather_profile_research_inputs(
         customer, interactions, user_id=user_id
@@ -394,6 +399,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         interactions=research_inputs["interactions"],
         web_context=research_inputs["web_context"],
         linkedin_context=research_inputs["linkedin_context"],
+        conversation_logs=None,
     )
     logging.info(
         "Profile context for %s: %s chars sent (raw %s, max %s) | RAG=%s CRM=%s web=%s linkedin=%s",
@@ -581,6 +587,8 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     # Also store the full ICP profile text so ICP workspace can read it directly
     update_payload["latest_profile_text"] = profile_text
     update_payload["latest_profile_updated_at"] = datetime.utcnow().isoformat()
+    research_meta["conversation_archive_count"] = archive_added
+    research_meta["interactions_table_count"] = table_total
     update_payload["latest_profile_research_meta"] = research_meta
 
     if update_payload:
@@ -651,6 +659,210 @@ INTERACTIONS_PAGE_SIZE = 500
 INTERACTIONS_MAX_FETCH = 2000
 
 
+def _supabase_for_interaction_reads() -> Client:
+    """
+    Use service role for reads so Row Level Security does not hide historical rows.
+    CRM UI and ICP analysis must see the full interactions table.
+    """
+    return get_supabase_service_client()
+
+
+def get_conversation_logs_for_customer(
+    customer_id: str,
+    *,
+    max_rows: int = 2000,
+) -> List[Dict[str, Any]]:
+    """
+    RAG archive (`conversation` table). Older chats may exist here without a row in
+    `interactions` (e.g. legacy Streamlit imports or failed interaction inserts).
+    """
+    supabase = _supabase_for_interaction_reads()
+    collected: List[Dict[str, Any]] = []
+    offset = 0
+    page_size = 500
+
+    while len(collected) < max_rows:
+        resp = (
+            supabase.table("conversation")
+            .select("id, content, metadata, created_at")
+            .order("created_at", desc=True)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        if not batch:
+            break
+        for row in batch:
+            meta = row.get("metadata") or {}
+            if not isinstance(meta, dict):
+                continue
+            if str(meta.get("customer_id")) != str(customer_id):
+                continue
+            collected.append(
+                {
+                    "id": row.get("id"),
+                    "content": row.get("content") or "",
+                    "created_at": row.get("created_at"),
+                    "metadata": meta,
+                }
+            )
+            if len(collected) >= max_rows:
+                break
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return collected
+
+
+def _parse_conversation_content(content: str) -> tuple[str, str]:
+    """Extract user + AI parts from a RAG conversation row."""
+    text = (content or "").strip()
+    if not text:
+        return "", ""
+
+    patterns = [
+        (r"(?:^|\n)Q:\s*(.+?)(?=\nA:|\Z)", r"(?:^|\n)A:\s*(.+?)(?=\nQ:|\nCustomer:|\Z)"),
+        (r"(?:^|\n)Input:\s*(.+?)(?=\nOutput:|\Z)", r"(?:^|\n)Output:\s*(.+?)(?=\nInput:|\Z)"),
+    ]
+    for q_pat, a_pat in patterns:
+        qm = re.search(q_pat, text, re.IGNORECASE | re.DOTALL)
+        am = re.search(a_pat, text, re.IGNORECASE | re.DOTALL)
+        if qm or am:
+            return (
+                (qm.group(1).strip() if qm else ""),
+                (am.group(1).strip() if am else ""),
+            )
+
+    if text.lower().startswith("customer:"):
+        text = re.sub(r"^Customer:\s*[^\n]+\n?", "", text, flags=re.IGNORECASE).strip()
+
+    return ("[RAG conversation archive]", text)
+
+
+def _interaction_fingerprint(input_text: str, ai_response: str) -> str:
+    return f"{(input_text or '').strip()[:180]}|{(ai_response or '').strip()[:180]}"
+
+
+def _row_in_date_range(
+    created_at: Any,
+    start_date: Optional[str],
+    end_date: Optional[str],
+) -> bool:
+    if not start_date and not end_date:
+        return True
+    if not created_at:
+        return False
+    raw = str(created_at)
+    day = raw[:10]
+    if start_date and day < start_date:
+        return False
+    if end_date and day > end_date:
+        return False
+    return True
+
+
+def merge_customer_interaction_history(
+    customer_id: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    max_rows: int = INTERACTIONS_MAX_FETCH,
+) -> tuple[List[Interaction], int, int]:
+    """
+    Unified timeline: public.interactions + public.conversation (deduped).
+    Returns (merged newest-first, table_count, archive-only count).
+    """
+    table_rows = get_all_interactions_for_customer(
+        customer_id,
+        max_rows=max_rows,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    fingerprints = {
+        _interaction_fingerprint(it.input_text or "", it.ai_response or "")
+        for it in table_rows
+    }
+
+    merged: List[Interaction] = []
+    for it in table_rows:
+        payload = it.model_dump()
+        payload["history_source"] = "interactions"
+        merged.append(Interaction(**payload))
+
+    archive_added = 0
+    for row in get_conversation_logs_for_customer(customer_id, max_rows=max_rows):
+        if not _row_in_date_range(row.get("created_at"), start_date, end_date):
+            continue
+        input_text, ai_response = _parse_conversation_content(row.get("content") or "")
+        fp = _interaction_fingerprint(input_text, ai_response)
+        if fp in fingerprints:
+            continue
+        fingerprints.add(fp)
+
+        conv_id = row.get("id")
+        try:
+            synthetic_id = UUIDType(str(conv_id)) if conv_id else uuid5(NAMESPACE_URL, "conversation-empty")
+        except (ValueError, TypeError):
+            synthetic_id = uuid5(NAMESPACE_URL, f"conversation-{conv_id}")
+
+        merged.append(
+            Interaction(
+                id=synthetic_id,
+                customer_id=UUIDType(str(customer_id)),
+                input_text=input_text or None,
+                ai_response=ai_response or None,
+                created_at=row.get("created_at"),
+                history_source="conversation",
+            )
+        )
+        archive_added += 1
+
+    merged.sort(
+        key=lambda r: str(r.created_at or ""),
+        reverse=True,
+    )
+    return merged, len(table_rows), archive_added
+
+
+def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
+    """Counts by month in `interactions` vs `conversation` for diagnostics."""
+    interactions = get_all_interactions_for_customer(customer_id)
+    conversations = get_conversation_logs_for_customer(customer_id)
+
+    def bucket(rows: List[Any], date_fn) -> Dict[str, int]:
+        counts: Dict[str, int] = defaultdict(int)
+        for row in rows:
+            raw = date_fn(row)
+            key = str(raw)[:7] if raw else "unknown"
+            counts[key] += 1
+        return dict(sorted(counts.items()))
+
+    return {
+        "customer_id": customer_id,
+        "interactions_table": "public.interactions",
+        "conversation_table": "public.conversation",
+        "interactions_total": len(interactions),
+        "conversation_total": len(conversations),
+        "interactions_by_month": bucket(
+            interactions, lambda r: getattr(r, "created_at", None)
+        ),
+        "conversation_by_month": bucket(
+            conversations, lambda r: r.get("created_at")
+        ),
+        "may_interactions": sum(
+            1
+            for r in interactions
+            if r.created_at and str(r.created_at)[5:7] == "05"
+        ),
+        "may_conversation": sum(
+            1
+            for r in conversations
+            if r.get("created_at") and str(r.get("created_at"))[5:7] == "05"
+        ),
+    }
+
+
 def get_all_interactions_for_customer(
     customer_id: str,
     *,
@@ -695,7 +907,7 @@ def get_interactions_for_customer(
         start_date: Optional ISO date string (YYYY-MM-DD) - filter interactions from this date onwards
         end_date: Optional ISO date string (YYYY-MM-DD) - filter interactions up to this date
     """
-    supabase: Client = get_supabase_client()
+    supabase = _supabase_for_interaction_reads()
 
     query = (
         supabase.table("interactions")
@@ -731,7 +943,7 @@ def get_interactions_count_for_customer(
         start_date: Optional ISO date string (YYYY-MM-DD) - filter interactions from this date onwards
         end_date: Optional ISO date string (YYYY-MM-DD) - filter interactions up to this date
     """
-    supabase: Client = get_supabase_client()
+    supabase = _supabase_for_interaction_reads()
 
     query = (
         supabase.table("interactions")
@@ -752,7 +964,7 @@ def get_interactions_count_for_customer(
 
 def get_interaction_by_id(interaction_id: str) -> Optional[Interaction]:
     """Fetch a single interaction by its UUID."""
-    supabase: Client = get_supabase_client()
+    supabase = _supabase_for_interaction_reads()
 
     response = (
         supabase.table("interactions")
@@ -1310,7 +1522,7 @@ def chat_with_customer(
         raise RuntimeError("Customer not found")
 
     # 2) Fetch recent interactions to give the AI richer CRM context
-    recent_interactions = get_all_interactions_for_customer(
+    recent_interactions, _, _ = merge_customer_interaction_history(
         customer_id, max_rows=100
     )
     # Oldest first in the prompt so the story reads naturally

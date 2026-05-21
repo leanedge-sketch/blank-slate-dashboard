@@ -189,8 +189,35 @@ def _format_interaction_block(inter: Interaction, note_budget: int, resp_budget:
     return block
 
 
+def _format_conversation_archive_section(
+    conversation_logs: List[Dict[str, Any]],
+    char_budget: int,
+) -> str:
+    """Append RAG `conversation` rows (legacy chats) after the interactions block."""
+    if not conversation_logs:
+        return ""
+    lines = [
+        f"\n=== RAG CONVERSATION ARCHIVE ({len(conversation_logs)} logs, metadata.customer_id) ===\n",
+        "These are stored in public.conversation (not public.interactions).\n",
+    ]
+    per_item = max(400, char_budget // max(1, min(len(conversation_logs), 100)))
+    for idx, row in enumerate(conversation_logs, start=1):
+        ts = row.get("created_at") or "unknown_time"
+        content = _truncate_text(
+            (row.get("content") or "").strip(),
+            per_item,
+            f"conversation log {idx}",
+        )
+        lines.append(f"\n[Conversation archive {idx} at {ts}]\n{content}\n")
+    body = "".join(lines)
+    return _truncate_text(body, char_budget, "conversation archive")
+
+
 def _format_crm_section(
-    interactions: List[Interaction], char_budget: int
+    interactions: List[Interaction],
+    char_budget: int,
+    *,
+    conversation_logs: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     if not interactions:
         body = "No CRM interactions recorded for this customer yet.\n"
@@ -251,16 +278,34 @@ def _format_crm_section(
         )
 
     body = index_body + "\n".join(full_text_parts)
+    archive_budget = max(3_000, char_budget // 5) if conversation_logs else 0
+    if conversation_logs:
+        archive = _format_conversation_archive_section(
+            conversation_logs, archive_budget
+        )
+        if len(body) + len(archive) <= char_budget:
+            body += archive
+        else:
+            remaining = max(0, char_budget - len(body))
+            if remaining > 500:
+                body += _format_conversation_archive_section(
+                    conversation_logs, remaining
+                )
+            truncated_any = True
+
     if len(body) > char_budget:
         body = _truncate_text(body, char_budget, "CRM section")
         truncated_any = True
 
-    return body, {
+    meta: Dict[str, Any] = {
         "crm_interaction_count": total,
         "crm_interaction_count_full_text": full_count,
         "crm_chars": len(body),
         "crm_truncated": truncated_any or full_count < total,
     }
+    if conversation_logs:
+        meta["conversation_archive_count"] = len(conversation_logs)
+    return body, meta
 
 
 def _format_web_section(web_context: str, char_budget: int) -> Tuple[str, Dict[str, Any]]:
@@ -358,6 +403,7 @@ def build_profile_research_context(
     interactions: List[Interaction],
     web_context: str,
     linkedin_context: str,
+    conversation_logs: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Assemble labeled research sections with per-source budgets.
@@ -374,7 +420,9 @@ def build_profile_research_context(
         rag_docs, _section_char_budget(total_budget, "rag")
     )
     crm_section, crm_meta = _format_crm_section(
-        interactions, _section_char_budget(total_budget, "crm")
+        interactions,
+        _section_char_budget(total_budget, "crm"),
+        conversation_logs=conversation_logs,
     )
     web_section, web_meta = _format_web_section(
         web_context, _section_char_budget(total_budget, "web")

@@ -107,12 +107,30 @@ class Interaction(InteractionBase):
     user_id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Present on merged history rows sourced from public.conversation (RAG archive)
+    history_source: Optional[str] = None
 
 
 class InteractionListResponse(BaseModel):
     """Response model for listing interactions for a customer"""
     interactions: List[Interaction]
     total: int
+    interactions_table_total: Optional[int] = None
+    conversation_total: Optional[int] = None
+    conversation_logs: Optional[List[Dict[str, Any]]] = None
+
+
+class InteractionSourceAudit(BaseModel):
+    """Diagnostic: where CRM history lives in Supabase for one customer."""
+    customer_id: str
+    interactions_table: str
+    conversation_table: str
+    interactions_total: int
+    conversation_total: int
+    interactions_by_month: Dict[str, int]
+    conversation_by_month: Dict[str, int]
+    may_interactions: int
+    may_conversation: int
 
 
 class CustomerChatRequest(BaseModel):

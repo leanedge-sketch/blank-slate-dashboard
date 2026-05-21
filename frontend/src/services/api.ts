@@ -84,6 +84,8 @@ export interface Interaction {
   pipeline_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  /** interactions = public.interactions; conversation = public.conversation (RAG archive) */
+  history_source?: "interactions" | "conversation" | null;
 }
 
 export interface CustomerListResponse {
@@ -94,6 +96,14 @@ export interface CustomerListResponse {
 export interface InteractionListResponse {
   interactions: Interaction[];
   total: number;
+  interactions_table_total?: number | null;
+  conversation_total?: number | null;
+  conversation_logs?: Array<{
+    id: string;
+    content: string;
+    created_at?: string | null;
+    metadata?: Record<string, unknown>;
+  }> | null;
 }
 
 export interface CustomerChatRequest {
