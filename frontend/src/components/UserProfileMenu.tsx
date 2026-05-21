@@ -71,7 +71,7 @@ export function UserProfileMenu() {
           <span className="user-profile-avatar" aria-hidden>
             {initials(label)}
           </span>
-          <span className="user-profile-label">Profile</span>
+          <span className="user-profile-label">Profile ▾</span>
           <ChevronDown
             className={`user-profile-chevron ${open ? "is-open" : ""}`}
             size={16}
