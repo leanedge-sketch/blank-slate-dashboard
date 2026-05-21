@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import type { AuthChangeEvent } from "@supabase/supabase-js";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
@@ -14,6 +15,14 @@ import {
   isDevMockSessionActive,
   persistDevMockSession,
 } from "../lib/dev-mock-auth";
+import { isRequestAborted } from "../lib/request-errors";
+
+const EMPLOYEE_CHECK_EVENTS = new Set<AuthChangeEvent>([
+  "INITIAL_SESSION",
+  "SIGNED_IN",
+  "USER_UPDATED",
+  "PASSWORD_RECOVERY",
+]);
 
 /** Canonical production URL (Vercel production alias). */
 export const PRODUCTION_APP_URL = CANONICAL_PRODUCTION_URL;
@@ -67,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [employeeRole, setEmployeeRole] = useState<EmployeeRole | null>(null);
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [isDevMockSession, setIsDevMockSession] = useState(false);
+  const employeeCheckGeneration = useRef(0);
+  const lastEmployeeEmail = useRef<string | null>(null);
 
   const applyDevMockSession = () => {
     const mockUser = createDevMockUser();
@@ -91,16 +102,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Check if user email exists in employees table and get role
   // Uses backend API instead of direct Supabase query for better reliability
-  const checkEmployeeStatus = async (email: string): Promise<EmployeeData | null> => {
+  const checkEmployeeStatus = async (
+    email: string,
+    generation: number,
+  ): Promise<EmployeeData | null> => {
     const normalizedEmail = email.toLowerCase().trim();
-    console.log("🔍 Checking employee status for email:", normalizedEmail);
-    
+
     try {
-      // Use backend API endpoint - more reliable and bypasses RLS issues
       const result = await checkEmployeeStatusAPI(normalizedEmail);
-      
+      if (generation !== employeeCheckGeneration.current) {
+        return null;
+      }
+
       if (result.is_employee && result.role) {
-        console.log("✅ Employee found:", result);
         return {
           email: result.email,
           role: result.role as EmployeeRole,
@@ -108,15 +122,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      console.log("❌ No employee found for email:", normalizedEmail);
       return null;
     } catch (error) {
-      console.error("❌ Exception checking employee status:", error);
-      if (error instanceof Error) {
-        console.error("Exception message:", error.message);
-        console.error("Exception stack:", error.stack);
+      if (isRequestAborted(error) || generation !== employeeCheckGeneration.current) {
+        return null;
       }
+      console.error("Employee status check failed:", error);
       return null;
+    }
+  };
+
+  const applyEmployeeFromSession = async (
+    email: string | undefined | null,
+    event: AuthChangeEvent,
+  ) => {
+    if (!email) {
+      setIsEmployee(false);
+      setEmployeeRole(null);
+      setEmployeeData(null);
+      lastEmployeeEmail.current = null;
+      return;
+    }
+
+    const normalized = email.toLowerCase().trim();
+    if (
+      !EMPLOYEE_CHECK_EVENTS.has(event) &&
+      lastEmployeeEmail.current === normalized
+    ) {
+      return;
+    }
+
+    const generation = ++employeeCheckGeneration.current;
+    const employeeInfo = await checkEmployeeStatus(normalized, generation);
+    if (generation !== employeeCheckGeneration.current) {
+      return;
+    }
+
+    lastEmployeeEmail.current = normalized;
+    if (employeeInfo) {
+      setIsEmployee(true);
+      setEmployeeRole(employeeInfo.role);
+      setEmployeeData(employeeInfo);
+    } else {
+      console.warn(
+        "Employee check failed — user may not be registered or API error",
+      );
+      setIsEmployee(false);
+      setEmployeeRole(null);
+      setEmployeeData(null);
     }
   };
 
@@ -131,63 +184,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user?.email) {
-        const employeeInfo = await checkEmployeeStatus(session.user.email);
-        if (employeeInfo) {
-          setIsEmployee(true);
-          setEmployeeRole(employeeInfo.role);
-          setEmployeeData(employeeInfo);
-        } else {
-          // Don't auto-sign out on employee check failure - might be network error
-          // Let the user see an error message instead
-          console.warn("⚠️ Employee check failed - user may not be registered or API error");
-          setIsEmployee(false);
-          setEmployeeRole(null);
-          setEmployeeData(null);
-          // Don't sign out immediately - might be a temporary network issue
-        }
-      } else {
-        setIsEmployee(false);
-        setEmployeeRole(null);
-        setEmployeeData(null);
-      }
-      setLoading(false);
-    });
-
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user?.email) {
-        const employeeInfo = await checkEmployeeStatus(session.user.email);
-        if (employeeInfo) {
-          setIsEmployee(true);
-          setEmployeeRole(employeeInfo.role);
-          setEmployeeData(employeeInfo);
-        } else {
-          // Don't auto-sign out on employee check failure - might be network error
-          // Let the user see an error message instead
-          console.warn("⚠️ Employee check failed - user may not be registered or API error");
-          setIsEmployee(false);
-          setEmployeeRole(null);
-          setEmployeeData(null);
-          // Don't sign out immediately - might be a temporary network issue
-        }
-      } else {
-        setIsEmployee(false);
-        setEmployeeRole(null);
-        setEmployeeData(null);
-      }
+      await applyEmployeeFromSession(session?.user?.email, event);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      employeeCheckGeneration.current += 1;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -211,7 +220,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check if user is an employee
       if (data.user?.email) {
-        const employeeInfo = await checkEmployeeStatus(data.user.email);
+        const generation = ++employeeCheckGeneration.current;
+        const employeeInfo = await checkEmployeeStatus(
+          data.user.email,
+          generation,
+        );
         if (!employeeInfo) {
           // Sign out if not an employee
           await supabase.auth.signOut();
@@ -243,7 +256,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // First check if email is an employee
-      const employeeInfo = await checkEmployeeStatus(email);
+      const generation = ++employeeCheckGeneration.current;
+      const employeeInfo = await checkEmployeeStatus(email, generation);
       if (!employeeInfo) {
         return {
           error: new Error(
@@ -282,7 +296,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // First check if email is an employee
-      const employeeInfo = await checkEmployeeStatus(email);
+      const generation = ++employeeCheckGeneration.current;
+      const employeeInfo = await checkEmployeeStatus(email, generation);
       if (!employeeInfo) {
         return {
           error: new Error(

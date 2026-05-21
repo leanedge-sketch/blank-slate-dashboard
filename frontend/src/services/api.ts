@@ -9,15 +9,28 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+/** Routes that must not call getSession() during auth transitions (avoids AbortError races). */
+function isPublicApiPath(url: string | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.includes("/auth/check-employee") ||
+    url.includes("/auth/public-config")
+  );
+}
+
 api.interceptors.request.use(async (config) => {
-  if (isDevMockSessionActive()) {
+  if (isDevMockSessionActive() || isPublicApiPath(config.url)) {
     return config;
   }
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    // Session read failed during auth churn — proceed without Authorization.
   }
   return config;
 });
