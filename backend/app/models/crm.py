@@ -9,7 +9,7 @@ Example:
 - When someone calls POST /customers, they send a CustomerCreate object
 """
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -55,6 +55,7 @@ class Customer(CustomerBase):
     sales_stage: Optional[str] = None  # Current sales stage (1-7 from Brian Tracy process)
     latest_profile_text: Optional[str] = None
     latest_profile_updated_at: Optional[datetime] = None
+    latest_profile_research_meta: Optional[Dict[str, Any]] = None
     external_last_fetched_at: Optional[datetime] = None
 
     class Config:

@@ -377,6 +377,44 @@ def log_conversation_to_rag(
     supabase.table("conversation").insert(row).execute()
 
 
+def search_documents_for_profile(
+    query: str,
+    user_id: Optional[str] = None,
+    limit: int = 8,
+    match_threshold: float = 0.35,
+) -> List[Dict[str, Any]]:
+    """
+    RAG search tuned for profile generation: more matches, lower threshold.
+    """
+    supabase: Client = get_supabase_service_client()
+
+    try:
+        query_embedding = ai_embed(query)
+        try:
+            response = supabase.rpc(
+                "match_conversation",
+                {
+                    "query_embedding": query_embedding,
+                    "match_count": limit,
+                    "match_threshold": match_threshold,
+                    "filter": {},
+                },
+            ).execute()
+            return response.data or []
+        except Exception:
+            response = (
+                supabase.table("conversation")
+                .select("content, metadata")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return response.data or []
+    except Exception as e:
+        logger.warning("Profile RAG search failed: %s", e)
+        return []
+
+
 def search_documents(
     query: str, user_id: Optional[str] = None, limit: int = 3
 ) -> List[Dict[str, Any]]:

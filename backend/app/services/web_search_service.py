@@ -22,6 +22,48 @@ except ImportError:
 from app.config import settings
 
 
+def _fetch_url_snippet(url: str, max_chars: int = 4_000) -> str:
+    """Best-effort plain text from a customer-provided website URL."""
+    if not url or not url.strip():
+        return ""
+    target = url.strip()
+    if not target.startswith(("http://", "https://")):
+        target = f"https://{target}"
+    try:
+        resp = requests.get(
+            target,
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; LeanChemBot/1.0)"},
+        )
+        if resp.status_code != 200:
+            return f"HTTP {resp.status_code} when fetching {target}"
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        text = " ".join(soup.get_text(separator=" ", strip=True).split())
+        if len(text) > max_chars:
+            return text[:max_chars] + f"\n...[website truncated to {max_chars:,} chars]"
+        return text or f"No extractable text from {target}"
+    except Exception as exc:
+        return f"Could not fetch {target}: {exc}"
+
+
+def enrich_web_context_for_profile(
+    company_name: str, website_url: Optional[str] = None
+) -> str:
+    """Web search plus optional scrape of the CRM website URL."""
+    base = search_web_for_company(company_name)
+    if website_url and website_url.strip():
+        snippet = _fetch_url_snippet(website_url.strip())
+        return (
+            f"=== Customer website ({website_url.strip()}) ===\n"
+            f"{snippet}\n\n"
+            f"=== Web search results (Google / SerpAPI / Wikipedia) ===\n"
+            f"{base}"
+        )
+    return base
+
+
 def search_web_for_company(company_name: str) -> str:
     """
     Search the web for company information using both Google PSE, SerpAPI, 
@@ -39,7 +81,7 @@ def search_web_for_company(company_name: str) -> str:
         if pse_api_key and pse_cx:
             query = f"{company_name} company information business profile"
             encoded_query = urllib.parse.quote(query)
-            url = f"https://www.googleapis.com/customsearch/v1?key={pse_api_key}&cx={pse_cx}&q={encoded_query}&num=5"
+            url = f"https://www.googleapis.com/customsearch/v1?key={pse_api_key}&cx={pse_cx}&q={encoded_query}&num=8"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 results = response.json()
@@ -64,12 +106,12 @@ def search_web_for_company(company_name: str) -> str:
                 "engine": "google",
                 "q": f"{company_name} company information business profile",
                 "api_key": serpapi_key,
-                "num": 5
+                "num": 8
             }
             search = GoogleSearch(params)
             results = search.get_dict()
             if "organic_results" in results:
-                for result in results["organic_results"]:
+                for result in results["organic_results"][:8]:
                     combined_results.append({
                         'title': result.get('title', ''),
                         'snippet': result.get('snippet', ''),
@@ -135,7 +177,12 @@ def search_web_for_company(company_name: str) -> str:
         return f"Web search failed: {str(e)}\n"
 
 
-def search_linkedin_profiles_ethiopia(company_name: str) -> str:
+def search_linkedin_profiles_ethiopia(
+    company_name: str,
+    *,
+    company_linkedin_url: Optional[str] = None,
+    max_profiles: int = 20,
+) -> str:
     """
     Search for LinkedIn profiles in Ethiopia using both Google PSE and SerpAPI.
     
@@ -231,8 +278,12 @@ def search_linkedin_profiles_ethiopia(company_name: str) -> str:
                 unique_profiles.append(profile)
         
         linkedin_context = "\nLinkedIn Profiles in Ethiopia:\n"
+        if company_linkedin_url and company_linkedin_url.strip():
+            linkedin_context += (
+                f"\nCRM LinkedIn company page: {company_linkedin_url.strip()}\n"
+            )
         if unique_profiles:
-            for profile in unique_profiles[:10]:  # Limit to top 10 profiles
+            for profile in unique_profiles[:max_profiles]:
                 linkedin_context += f"\n- Name: {profile['name']}\n"
                 linkedin_context += f"  Position: {profile['position']}\n"
                 linkedin_context += f"  Profile: {profile['link']}\n"

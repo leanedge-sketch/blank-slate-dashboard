@@ -163,6 +163,7 @@ class ProfileUpdateWorker:
             customer_id=customer_id,
             interaction_id=interaction_id,
             pipeline_id=pipeline_id,
+            force_external_refresh=True,
         )
         customer_row = context_bundle["customer"]
         context_text: str = context_bundle["context_text"]

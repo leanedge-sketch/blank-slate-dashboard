@@ -48,7 +48,27 @@ export interface Customer {
   primary_contact_phone?: string | null;
   latest_profile_text?: string | null;
   latest_profile_updated_at?: string | null;
+  latest_profile_research_meta?: ProfileResearchMeta | null;
   external_last_fetched_at?: string | null;
+}
+
+export interface ProfileResearchMeta {
+  rag_document_count?: number;
+  rag_chars?: number;
+  rag_truncated?: boolean;
+  crm_interaction_count?: number;
+  crm_chars?: number;
+  crm_truncated?: boolean;
+  web_search_available?: boolean;
+  web_search_chars?: number;
+  web_truncated?: boolean;
+  linkedin_available?: boolean;
+  linkedin_chars?: number;
+  linkedin_truncated?: boolean;
+  total_research_chars_raw?: number;
+  total_research_chars_sent?: number;
+  context_max_chars?: number;
+  context_capped?: boolean;
 }
 
 export interface Interaction {

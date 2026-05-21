@@ -8,6 +8,7 @@ import {
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
 } from "../../services/api";
+import { ProfileResearchContext } from "../../components/ProfileResearchContext";
 import { StrategicFitAssessment } from "../../components/StrategicFitAssessment";
 import {
   mergeStrategicFitItems,
@@ -603,6 +604,8 @@ export function CustomerProfilePage() {
           )}
         </div>
       </div>
+
+      <ProfileResearchContext meta={customer.latest_profile_research_meta} />
 
       <StrategicFitAssessment items={strategicFitItems} />
 

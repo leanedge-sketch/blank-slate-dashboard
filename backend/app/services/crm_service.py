@@ -41,107 +41,13 @@ from app.services.ai_service import (
     gemini_chat,
     gemini_embed,
     log_conversation_to_rag,
-    search_documents,
 )
-
-# Profile builds use ai_chat cascade: gpt-4o → Gemini → gpt-4o-mini.
-# Research context capped at 91k chars (~9k buffer for system prompt formatting).
-PROFILE_CONTEXT_MAX_CHARS = 91_000
-PROFILE_SYSTEM_PROMPT_BUFFER_CHARS = 9_000
-PROFILE_MAX_RAG_DOCS = 5
-PROFILE_MAX_CHARS_PER_RAG_DOC = 4_000
-PROFILE_MAX_INTERACTIONS = 20
-PROFILE_MAX_CHARS_PER_INTERACTION = 3_000
-PROFILE_MAX_WEB_CHARS = 20_000
-PROFILE_MAX_LINKEDIN_CHARS = 15_000
-
-def _truncate_text(text: str, max_chars: int, label: str = "content") -> str:
-    """Slice oversized text so profile prompts stay under token limits."""
-    cleaned = (text or "").strip()
-    if len(cleaned) <= max_chars:
-        return cleaned
-    suffix = f"\n...[truncated {label}: kept first {max_chars:,} chars]"
-    return cleaned[:max_chars] + suffix
-
-
-def _truncate_profile_context(context: str, max_chars: int = PROFILE_CONTEXT_MAX_CHARS) -> str:
-    """
-    Final safety cap on assembled research context (91k chars max).
-    Keeps the start (section headers) and end (most recent interactions).
-    """
-    if len(context) <= max_chars:
-        return context
-    marker = (
-        f"\n\n...[context truncated to {max_chars:,} char budget "
-        f"({PROFILE_SYSTEM_PROMPT_BUFFER_CHARS:,} reserved for system prompt)]...\n\n"
-    )
-    usable = max_chars - len(marker)
-    head = usable // 3
-    tail = usable - head
-    return context[:head] + marker + context[-tail:]
-
-
-def _build_profile_research_context(
-    *,
-    relevant_docs: List[Dict[str, Any]],
-    interactions: List[Interaction],
-    web_context: str,
-    linkedin_context: str,
-) -> str:
-    """Assemble and truncate RAG, CRM, web, and LinkedIn inputs for profile generation."""
-    parts: List[str] = []
-
-    if relevant_docs:
-        parts.append("\nRelevant conversations from past AI chats:\n")
-        for doc in relevant_docs[:PROFILE_MAX_RAG_DOCS]:
-            content = _truncate_text(
-                doc.get("content", "") or "",
-                PROFILE_MAX_CHARS_PER_RAG_DOC,
-                "RAG snippet",
-            )
-            if content:
-                parts.append(f"\n{content}\n")
-
-    if interactions:
-        parts.append("\nRecent CRM interactions with this customer (newest first):\n")
-        for inter in interactions[:PROFILE_MAX_INTERACTIONS]:
-            ts = getattr(inter, "created_at", None)
-            ts_str = ts.isoformat() if ts else "unknown_time"
-            note_budget = PROFILE_MAX_CHARS_PER_INTERACTION // 2
-            resp_budget = PROFILE_MAX_CHARS_PER_INTERACTION - note_budget
-            input_text = _truncate_text(
-                (inter.input_text or "").strip(),
-                note_budget,
-                "interaction note",
-            )
-            ai_resp = _truncate_text(
-                (inter.ai_response or "").strip(),
-                resp_budget,
-                "interaction response",
-            )
-            block = f"\n[Interaction at {ts_str}]\n"
-            if input_text:
-                block += f"Sales/Customer note: {input_text}\n"
-            if ai_resp:
-                block += f"AI response/summary: {ai_resp}\n"
-            parts.append(
-                _truncate_text(block, PROFILE_MAX_CHARS_PER_INTERACTION, "interaction log")
-            )
-
-    if web_context:
-        parts.append("\nWeb Search Results:\n")
-        parts.append(
-            _truncate_text(web_context, PROFILE_MAX_WEB_CHARS, "web search")
-        )
-
-    if linkedin_context:
-        parts.append("\nLinkedIn Information:\n")
-        parts.append(
-            _truncate_text(linkedin_context, PROFILE_MAX_LINKEDIN_CHARS, "LinkedIn")
-        )
-
-    return _truncate_profile_context("".join(parts))
-
+from app.services.profile_research_service import (
+    PROFILE_CONTEXT_MAX_CHARS,
+    PROFILE_MAX_INTERACTIONS,
+    build_profile_research_context,
+    gather_profile_research_inputs,
+)
 
 # Sales stage definitions (Brian Tracy 7-stage process)
 SALES_STAGES = {
@@ -153,7 +59,6 @@ SALES_STAGES = {
     "6": "Closing",
     "7": "Follow-up & Cross-sell",
 }
-from app.services.web_search_service import search_web_for_company, search_linkedin_profiles_ethiopia
 from app.services.pms_service import get_all_categories
 from app.utils.profile_text import sanitize_profile_plain_text
 
@@ -462,30 +367,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     if not customer:
         raise RuntimeError("Customer not found")
     
-    # Step 1: Search relevant documents and memories (RAG)
-    try:
-        relevant_docs = search_documents(
-            customer.customer_name, user_id=user_id, limit=PROFILE_MAX_RAG_DOCS
-        )
-    except Exception as e:
-        logging.warning(f"Document search failed: {str(e)}")
-        relevant_docs = []
-    
-    # Step 2: Search web for company information
-    try:
-        web_context = search_web_for_company(customer.customer_name)
-    except Exception as e:
-        logging.warning(f"Web search failed: {str(e)}")
-        web_context = ""
-    
-    # Step 3: Search for LinkedIn profiles in Ethiopia
-    try:
-        linkedin_context = search_linkedin_profiles_ethiopia(customer.customer_name)
-    except Exception as e:
-        logging.warning(f"LinkedIn search failed: {str(e)}")
-        linkedin_context = ""
-    
-    # Step 4: CRM interactions (newest first; truncated before AI call)
+    # CRM interactions (newest first)
     try:
         interactions = get_interactions_for_customer(
             customer_id=str(customer.customer_id),
@@ -498,18 +380,26 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         )
         interactions = []
 
-    context = _build_profile_research_context(
-        relevant_docs=relevant_docs,
-        interactions=interactions,
-        web_context=web_context,
-        linkedin_context=linkedin_context,
+    research_inputs = gather_profile_research_inputs(
+        customer, interactions, user_id=user_id
+    )
+    context, research_meta = build_profile_research_context(
+        customer,
+        rag_docs=research_inputs["rag_docs"],
+        interactions=research_inputs["interactions"],
+        web_context=research_inputs["web_context"],
+        linkedin_context=research_inputs["linkedin_context"],
     )
     logging.info(
-        "Profile context for %s: %s chars (max %s), model=%s",
+        "Profile context for %s: %s chars sent (raw %s, max %s) | RAG=%s CRM=%s web=%s linkedin=%s",
         customer.customer_name,
-        len(context),
+        research_meta.get("total_research_chars_sent"),
+        research_meta.get("total_research_chars_raw"),
         PROFILE_CONTEXT_MAX_CHARS,
-        "cascade gpt-4o→gemini→mini",
+        research_meta.get("rag_document_count"),
+        research_meta.get("crm_interaction_count"),
+        research_meta.get("web_search_chars"),
+        research_meta.get("linkedin_chars"),
     )
 
     # Step 5: Fetch unique categories from chemical_types table (dynamically)
@@ -641,16 +531,30 @@ Use numbered citations [1], [2], etc. only when they truly help.
 
 Provide honest results—if a construction vertical is not present, list as "N/A" or "0" in the fit matrix.
 
+MANDATORY — USE ALL RESEARCH SECTIONS IN THE USER CONTEXT:
+The user message contains labeled blocks: CUSTOMER RECORD, RAG DOCUMENTS, CRM INTERACTIONS, WEB SEARCH, LINKEDIN.
+You MUST read each non-empty block and reflect its facts in section 0 and in later sections. Do not ignore CRM logs or RAG snippets.
+
 STYLE REQUIREMENTS (CRITICAL - FOLLOW EXACTLY):
 - ABSOLUTELY NO MARKDOWN: Never use the pipe character | for tables. No ### or ## headers. No asterisks (* or **), no code fences (```), no emojis, no markdown links [text](url).
 - Use ONLY plain text with simple line breaks.
-- Use exactly 4 numbered sections: "1. Company Snapshot", "2. Construction Footprint in Ethiopia", "3. Strategic Fit Assessment", "4. Recommended Next Steps".
-- Inside section 3, add a subsection title line "Strategic-Fit Matrix" (plain text, no # symbols), then one line per category like "Admixtures: 0/3 - No manufacturing presence in Ethiopia" or "Paint & Coatings: 2/3 - Potential for raw material supply".
-- For business units: Use simple bullet points with dashes, one per line, like "- Unit Name: Products - Location - Scale".
-- For contacts: List as simple lines like "Name: [Name], Position: [Title], LinkedIn: [URL]".
-- Keep sentences short. Maximum 2-3 sentences per paragraph.
-- Remove all citations [1], [2] from the main text - only mention sources naturally in sentences if needed.
-- Total length should be under 800 words, easy to scan in 2 minutes.
+- Use exactly 5 numbered sections:
+  "0. Research Context Summary"
+  "1. Company Snapshot"
+  "2. Construction Footprint in Ethiopia"
+  "3. Strategic Fit Assessment"
+  "4. Recommended Next Steps"
+- Section 0 MUST have four plain-text subsection titles (no # symbols), each with bullet lines (- item):
+  "RAG documents" — at least 3 bullets summarizing past-case snippets when RAG data exists; otherwise state "No RAG matches".
+  "CRM interactions" — timeline of meetings, quotes, objections, and follow-ups from CRM logs when present.
+  "Web search" — verified company facts, sites, and news from WEB SEARCH block.
+  "LinkedIn" — people found (Name, Position, LinkedIn URL) from LINKEDIN block.
+  End section 0 with one line: "Total research context: [N] RAG docs, [N] CRM interactions, web=[yes/no], LinkedIn=[yes/no]."
+- Inside section 3, add "Strategic-Fit Matrix" then one line per category like "Admixtures: 2/3 - reason".
+- For business units: dash bullets, one per line.
+- For contacts: "Name: ..., Position: ..., LinkedIn: ..."
+- Remove citation markers [1], [2] from prose.
+- Target 1,200–1,800 words so research detail is preserved (not a one-paragraph summary).
 
 CRITICAL: At the END of your response, include a JSON block with the Strategic-Fit Matrix scores:
 {json_example}
@@ -662,7 +566,11 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
         {"role": "system", "content": system_prompt},
         {
             "role": "user",
-            "content": f"Generate a profile for: {customer.customer_name}\n\nContext:{context}"
+            "content": (
+                f"Generate a profile for: {customer.customer_name}\n\n"
+                f"Use every labeled research section below (RAG, CRM, Web, LinkedIn).\n\n"
+                f"{context}"
+            ),
         }
     ]
     
@@ -737,9 +645,22 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     # Also store the full ICP profile text so ICP workspace can read it directly
     update_payload["latest_profile_text"] = profile_text
     update_payload["latest_profile_updated_at"] = datetime.utcnow().isoformat()
+    update_payload["latest_profile_research_meta"] = research_meta
 
     if update_payload:
-        supabase.table("customers").update(update_payload).eq("customer_id", customer.customer_id).execute()
+        try:
+            supabase.table("customers").update(update_payload).eq(
+                "customer_id", customer.customer_id
+            ).execute()
+        except Exception as exc:
+            logging.warning(
+                "Profile update without research_meta (run docs/0002_profile_research_meta.sql): %s",
+                exc,
+            )
+            update_payload.pop("latest_profile_research_meta", None)
+            supabase.table("customers").update(update_payload).eq(
+                "customer_id", customer.customer_id
+            ).execute()
 
     # Store as an interaction so the history view shows it.
     interaction_payload = InteractionCreate(

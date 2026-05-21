@@ -25,11 +25,8 @@ import logging
 from supabase import Client
 
 from app.database.connection import get_supabase_client
-from app.services.ai_service import search_documents
-from app.services.web_search_service import (
-    search_web_for_company,
-    search_linkedin_profiles_ethiopia,
-)
+from app.services.ai_service import search_documents_for_profile
+from app.services.web_search_service import search_linkedin_profiles_ethiopia
 
 
 def _get_supabase() -> Client:
@@ -189,7 +186,7 @@ def _build_rag_section(
         query = customer_name
 
     try:
-        matches = search_documents(query=query, user_id=None, limit=5)
+        matches = search_documents_for_profile(query=query, user_id=None, limit=10)
     except Exception as e:
         logging.warning(f"RAG search_documents failed for '{query}': {e}")
         matches = []
@@ -203,13 +200,15 @@ def _build_rag_section(
         content = (m.get("content") or "").strip()
         if not content:
             continue
-        lines.append("- " + content[:400])
+        lines.append("- " + content[:2_500])
 
     return "\n".join(lines) + "\n", matches
 
 
 def _build_external_section(
     customer_row: Dict[str, Any],
+    *,
+    force_refresh: bool = False,
 ) -> Tuple[str, Optional[datetime]]:
     """
     Build external context (web + LinkedIn).
@@ -221,19 +220,26 @@ def _build_external_section(
     external_last_fetched_at = customer_row.get("external_last_fetched_at")
 
     # Decide if we should fetch
-    if not _should_refresh_external(external_last_fetched_at):
+    if not force_refresh and not _should_refresh_external(external_last_fetched_at):
         return "External data considered fresh; skipping re-fetch.\n", None
 
-    # For now we use existing search functions keyed by company name.
-    # Later we can add URL-based scraping when website_url/linkedin_company_url are present.
+    from app.services.web_search_service import enrich_web_context_for_profile
+
     try:
-        web_ctx = search_web_for_company(customer_name)
+        web_ctx = enrich_web_context_for_profile(
+            customer_name,
+            website_url=customer_row.get("website_url"),
+        )
     except Exception as e:
         logging.warning(f"Web search failed for '{customer_name}': {e}")
         web_ctx = "Web search failed.\n"
 
     try:
-        linkedin_ctx = search_linkedin_profiles_ethiopia(customer_name)
+        linkedin_ctx = search_linkedin_profiles_ethiopia(
+            customer_name,
+            company_linkedin_url=customer_row.get("linkedin_company_url"),
+            max_profiles=20,
+        )
     except Exception as e:
         logging.warning(f"LinkedIn search failed for '{customer_name}': {e}")
         linkedin_ctx = "LinkedIn search failed.\n"
@@ -253,6 +259,8 @@ def build_customer_context(
     customer_id: str,
     interaction_id: Optional[str] = None,
     pipeline_id: Optional[str] = None,
+    *,
+    force_external_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
     Build a rich context bundle for ICP generation.
@@ -277,7 +285,9 @@ def build_customer_context(
         customer_id=customer_id, pipeline_id=pipeline_id
     )
 
-    external_section, external_fetched_at = _build_external_section(customer_row)
+    external_section, external_fetched_at = _build_external_section(
+        customer_row, force_refresh=force_external_refresh
+    )
     rag_section, rag_matches = _build_rag_section(
         customer_name=customer_row.get("customer_name", ""), recent_interactions=recent_interactions
     )
