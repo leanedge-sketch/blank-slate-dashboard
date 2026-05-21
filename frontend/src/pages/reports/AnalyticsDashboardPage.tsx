@@ -15,7 +15,7 @@ const SALES_STAGES: { [key: string]: { name: string; color: string; bgColor: str
   "7": { name: "Follow-up & Cross-sell", color: "text-green-700", bgColor: "bg-green-100", borderColor: "border-green-300" },
 };
 
-export function CRMDashboardPage() {
+export function AnalyticsDashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function CRMDashboardPage() {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div className="space-y-2">
               <p className="inline-flex items-center text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-                CRM · Analytics Dashboard
+                Reports · Analytics Dashboard
               </p>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 flex items-center gap-3">
                 <BarChart3 className="text-blue-400" size={32} />

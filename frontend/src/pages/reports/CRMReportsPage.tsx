@@ -208,7 +208,7 @@ export function CRMReportsPage() {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div className="space-y-2">
               <p className="inline-flex items-center text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-                CRM · Reports
+                Reports · CRM
               </p>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 flex items-center gap-3">
                 <FileText className="text-emerald-400" size={32} />
@@ -558,8 +558,8 @@ export function CRMReportsPage() {
 
             <p className="text-sm text-slate-500 text-center pb-8">
               Need more detail? Open the{" "}
-              <Link to="/crm/dashboard" className="text-emerald-700 font-medium hover:underline">
-                CRM Dashboard
+              <Link to="/reports/analytics" className="text-emerald-700 font-medium hover:underline">
+                Analytics Dashboard
               </Link>{" "}
               or{" "}
               <Link to="/sales/pipeline" className="text-emerald-700 font-medium hover:underline">

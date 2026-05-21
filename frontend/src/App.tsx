@@ -10,8 +10,9 @@ import { CustomerProfilePage } from "./pages/crm/CustomerProfilePage";
 import { ManageCustomersPage } from "./pages/crm/ManageCustomersPage";
 import { AddCustomerPage } from "./pages/crm/AddCustomerPage";
 import { CreateQuotePage } from "./pages/crm/CreateQuotePage";
-import { CRMDashboardPage } from "./pages/crm/CRMDashboardPage";
-import { CRMReportsPage } from "./pages/crm/CRMReportsPage";
+import { ReportsHomePage } from "./pages/reports/ReportsHomePage";
+import { CRMReportsPage } from "./pages/reports/CRMReportsPage";
+import { AnalyticsDashboardPage } from "./pages/reports/AnalyticsDashboardPage";
 import { PMSHomePage } from "./pages/pms/PMSHomePage";
 import { ChemicalsPage } from "./pages/pms/ChemicalsPage";
 import { TDSPage } from "./pages/pms/TDSPage";
@@ -24,10 +25,6 @@ import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
 import { WorkspaceDock } from "./components/WorkspaceDock";
-import {
-  CRMReportAnalysisDock,
-  isCrmReportAnalysisPath,
-} from "./components/CRMReportAnalysisDock";
 import { useCanView } from "./hooks/usePermissions";
 import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabilityPage";
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
@@ -44,6 +41,7 @@ function AppHeader() {
   const location = useLocation();
   const canViewSales = useCanView("sales");
   const canViewStock = useCanView("stock");
+  const canViewReports = useCanView("crm");
   const isAuthScreen =
     location.pathname.startsWith("/login") ||
     location.pathname.startsWith("/auth/");
@@ -69,6 +67,7 @@ function AppHeader() {
               <Link to="/pms">PMS</Link>
               {canViewSales && <Link to="/sales/pipeline">Sales</Link>}
               {canViewStock && <Link to="/stock">Stock</Link>}
+              {canViewReports && <Link to="/reports">Reports</Link>}
               <UserProfileMenu />
               <button
                 type="button"
@@ -95,13 +94,10 @@ function AppChrome() {
   const location = useLocation();
   const showDock =
     !location.pathname.startsWith("/login") && !location.pathname.startsWith("/auth/");
-  const showCrmReportDock = showDock && isCrmReportAnalysisPath(location.pathname);
-
   return (
     <>
       <AppHeader />
       {showDock && <WorkspaceDock />}
-      {showCrmReportDock && <CRMReportAnalysisDock />}
     </>
   );
 }
@@ -192,19 +188,31 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/crm/dashboard" element={<Navigate to="/reports/analytics" replace />} />
+          <Route path="/crm/reports" element={<Navigate to="/reports/crm" replace />} />
+
+          {/* Reports & Analysis routes */}
           <Route
-            path="/crm/dashboard"
+            path="/reports"
             element={
               <ProtectedRoute>
-                <CRMDashboardPage />
+                <ReportsHomePage />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/crm/reports"
+            path="/reports/crm"
             element={
               <ProtectedRoute>
                 <CRMReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsDashboardPage />
               </ProtectedRoute>
             }
           />

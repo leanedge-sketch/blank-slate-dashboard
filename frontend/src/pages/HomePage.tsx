@@ -1,5 +1,16 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, Boxes, Sparkles, Users, TrendingUp, Warehouse, Activity, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Boxes,
+  FileText,
+  Sparkles,
+  Users,
+  TrendingUp,
+  Warehouse,
+  Activity,
+  Zap,
+} from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 export function HomePage() {
@@ -53,11 +64,11 @@ export function HomePage() {
                 <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white tracking-tighter leading-tight">
                   <span className="block">One home for</span>
                   <span className="block bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent animate-gradient">
-                    CRM, PMS &amp; Stock
+                    CRM, PMS, Stock &amp; Reports
                   </span>
                 </h1>
                 <p className="text-lg sm:text-xl text-slate-300 max-w-3xl leading-relaxed font-light">
-                  Manage customers, deals, products, stock inventory, and logistics from a single,
+                  Manage customers, deals, products, stock inventory, reports, and logistics from a single,
                   AI-augmented control center built for LeanChem&apos;s real-world
                   workflows.
                 </p>
@@ -101,7 +112,7 @@ export function HomePage() {
                       CRM Workspace
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 font-medium">
-                      Customers · AI interactions · Profiles · Dashboards
+                      Customers · AI interactions · Profiles · ICP
                     </p>
                   </div>
                 </div>
@@ -114,8 +125,7 @@ export function HomePage() {
                 <ul className="text-slate-300 text-sm space-y-2 list-disc list-inside">
                   <li>Customer list &amp; rich interaction history</li>
                   <li>Per-customer AI copilot for deals and product fit</li>
-                  <li>CRM dashboard and reporting views</li>
-                  <li>Customer profile and relationship tracking</li>
+                  <li>ICP profiles and customer relationship tracking</li>
                 </ul>
 
                 <div className="pt-2">
@@ -261,6 +271,50 @@ export function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Reports & Analysis card */}
+            <div className="crm-feature-card-enhanced group relative overflow-hidden rounded-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-800/60 via-slate-900/40 to-black/40 rounded-2xl border border-slate-700/60 transition-all duration-500 group-hover:border-rose-500/60" />
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-pink-400 to-cyan-400 rounded-t-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+              <div className="relative p-7 sm:p-8 flex flex-col h-full gap-5">
+                <div className="inline-flex items-center gap-3">
+                  <div className="inline-flex w-12 h-12 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-cyan-500 shadow-lg">
+                    <FileText className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">
+                      Reports &amp; Analysis
+                    </h2>
+                    <p className="text-xs sm:text-sm text-rose-300 font-medium">
+                      Coverage · Pipeline · Forecast · Export
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-light">
+                  Pipeline, activity, and interaction intelligence from your data. Filter by date,
+                  track quiet customers, and export CSV or PDF for the team.
+                </p>
+
+                <ul className="text-slate-300 text-sm space-y-2 list-disc list-inside">
+                  <li>Customer coverage and interaction volume</li>
+                  <li>Opportunity tracking and revenue forecast</li>
+                  <li>Weekly activity charts and quiet-customer lists</li>
+                  <li>CSV and PDF export for sharing</li>
+                </ul>
+
+                <div className="pt-2">
+                  <Link
+                    to="/reports"
+                    className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-gradient-to-r from-rose-600 to-cyan-600 text-white font-semibold text-sm sm:text-base transition-all duration-300 hover:shadow-xl hover:shadow-rose-500/40 hover:-translate-y-1 active:translate-y-0 group/btn"
+                  >
+                    View Reports
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-1 transition-transform" />
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -320,6 +374,10 @@ export function HomePage() {
                 <div className="flex items-center gap-1">
                   <Warehouse className="w-4 h-4 text-amber-400" />
                   <span>Stock Control</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <FileText className="w-4 h-4 text-rose-400" />
+                  <span>Reports &amp; Analysis</span>
                 </div>
               </div>
             </div>
