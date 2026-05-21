@@ -44,8 +44,7 @@ from app.services.ai_service import (
     search_documents,
 )
 
-# Customer profile generation — gpt-4o-mini has higher TPM limits than gpt-4o.
-PROFILE_BUILD_MODEL = "gpt-4o-mini"
+# Profile builds use ai_chat cascade: gpt-4o → gpt-4o-mini → Gemini.
 # ~100k chars ≈ safe ceiling under 30k TPM on gpt-4o; mini allows more headroom.
 PROFILE_CONTEXT_MAX_CHARS = 100_000
 PROFILE_MAX_RAG_DOCS = 3
@@ -501,7 +500,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         customer.customer_name,
         len(context),
         PROFILE_CONTEXT_MAX_CHARS,
-        PROFILE_BUILD_MODEL,
+        "cascade gpt-4o→mini→gemini",
     )
 
     # Step 5: Fetch unique categories from chemical_types table (dynamically)
@@ -667,9 +666,9 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
         }
     ]
     
-    # Step 8: Get AI response (gpt-4o-mini — higher TPM limit than gpt-4o)
+    # Step 8: Get AI response (three-tier fallback in ai_service.ai_chat)
     try:
-        profile_text = gemini_chat(messages, model=PROFILE_BUILD_MODEL)
+        profile_text = gemini_chat(messages)
         if not profile_text or not profile_text.strip():
             raise RuntimeError("AI service returned empty response. Please check OPENAI_API_KEY configuration.")
     except Exception as e:

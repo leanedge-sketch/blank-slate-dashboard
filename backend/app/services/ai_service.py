@@ -1,38 +1,49 @@
 """
-AI Service - OpenAI Integration and RAG Helpers
-==============================================
+AI Service - OpenAI + Gemini fallback and RAG helpers
+====================================================
 
-Centralizes all AI logic for the backend:
-- Chat completion via OpenAI Chat Completions API
-- Text embeddings via OpenAI Embeddings API (768 dims to match pgvector schema)
-- RAG helpers for the `conversation` table
+Chat completion cascade (ai_chat / gemini_chat):
+  1. OpenAI gpt-4o
+  2. OpenAI gpt-4o-mini (on rate limit / connection errors)
+  3. Google Gemini gemini-2.5-flash (GEMINI_API_KEY)
 
-Public API (unchanged so existing callers don't break):
-- gemini_chat(messages) -> str
-- gemini_embed(text) -> List[float]   # 768-dim
+Embeddings remain OpenAI-only (ai_embed / gemini_embed).
+
+Public API (backward-compatible):
+- gemini_chat(messages, *, model=None) -> str
+- gemini_embed(text) -> List[float]
 - log_conversation_to_rag(...)
 - search_documents(...)
-- GeminiError (raised on AI provider failures)
-
-The historical `gemini_*` names are kept as aliases for backward compatibility.
-Provider-neutral aliases `ai_chat` / `ai_embed` / `AIServiceError` are also exported.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
 
-from openai import OpenAI
+import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+from openai import (
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+    OpenAI,
+    RateLimitError,
+)
 
 from app.config import settings
 from app.database.connection import get_supabase_service_client
 from supabase import Client
 
+logger = logging.getLogger(__name__)
 
 CHAT_MODEL = (
     settings.MODEL_CHOICE or settings.OPENAI_CHAT_MODEL or "gpt-4o-mini"
 )
 EMBED_MODEL = settings.OPENAI_EMBED_MODEL or "text-embedding-3-small"
 EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
+
+PRIMARY_OPENAI_MODEL = "gpt-4o"
+FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
 
 
 class AIServiceError(Exception):
@@ -43,17 +54,30 @@ class AIServiceError(Exception):
 GeminiError = AIServiceError
 
 
-_client: Optional[OpenAI] = None
+_openai_client: Optional[OpenAI] = None
+_gemini_configured = False
 
 
-def _api_key() -> str:
+def _openai_api_key() -> str:
     return (settings.OPENAI_API_KEY or "").strip()
 
 
-def _get_client() -> OpenAI:
-    global _client
-    key = _api_key()
-    if _client is None:
+def _gemini_api_key() -> str:
+    return (os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY or "").strip()
+
+
+def _gemini_model_name() -> str:
+    return (
+        os.getenv("GEMINI_CHAT_MODEL")
+        or settings.GEMINI_CHAT_MODEL
+        or "gemini-2.5-flash"
+    ).strip()
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    key = _openai_api_key()
+    if _openai_client is None:
         if not key:
             raise AIServiceError(
                 "OPENAI_API_KEY is not configured in environment/settings."
@@ -62,14 +86,166 @@ def _get_client() -> OpenAI:
             raise AIServiceError(
                 "OPENAI_API_KEY looks truncated. Re-copy the full key on Vercel."
             )
-        _client = OpenAI(api_key=key)
-    return _client
+        _openai_client = OpenAI(api_key=key)
+    return _openai_client
 
 
 def reset_openai_client() -> None:
-    """Clear cached client (e.g. after env key rotation)."""
-    global _client
-    _client = None
+    """Clear cached OpenAI client (e.g. after env key rotation)."""
+    global _openai_client
+    _openai_client = None
+
+
+# Health-check / legacy imports (auth.py)
+_api_key = _openai_api_key
+_get_client = _get_openai_client
+
+
+def reset_gemini_client() -> None:
+    """Clear Gemini configure flag so the next call re-reads GEMINI_API_KEY."""
+    global _gemini_configured
+    _gemini_configured = False
+
+
+def _openai_fallback_eligible(exc: BaseException) -> bool:
+    """True when we should retry with gpt-4o-mini or Gemini."""
+    if isinstance(exc, (RateLimitError, APIConnectionError, APITimeoutError)):
+        return True
+    status = getattr(exc, "status_code", None)
+    if status == 429:
+        return True
+    if isinstance(exc, APIError):
+        code = getattr(exc, "code", None)
+        if code == "rate_limit_exceeded":
+            return True
+    msg = str(exc).lower()
+    return (
+        "rate limit" in msg
+        or "rate_limit" in msg
+        or "429" in msg
+        or "connection" in msg
+        or "timeout" in msg
+        or "timed out" in msg
+    )
+
+
+def _format_openai_error(exc: BaseException, model: str) -> str:
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", "")
+    message = getattr(exc, "message", None) or str(exc)
+    hint = ""
+    if status == 401 or "invalid_api_key" in str(message).lower():
+        hint = (
+            " Check OPENAI_API_KEY on your host and create a new key at "
+            "https://platform.openai.com/api-keys if needed."
+        )
+    elif status == 429 or "rate_limit" in str(message).lower():
+        hint = " Rate limit hit; cascade should retry with gpt-4o-mini or Gemini."
+    return f"OpenAI chat error ({model}) {status}: {message}".strip() + hint
+
+
+def _extract_openai_text(resp: Any) -> str:
+    choice = resp.choices[0] if resp.choices else None
+    if not choice or not choice.message or not choice.message.content:
+        return ""
+    return choice.message.content
+
+
+def _chat_openai(messages: List[Dict[str, str]], model: str) -> str:
+    resp = _get_openai_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.7,
+    )
+    return _extract_openai_text(resp)
+
+
+def _openai_messages_to_gemini(
+    messages: List[Dict[str, str]],
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    Map OpenAI chat schema to Gemini generate_content contents.
+
+    OpenAI roles: system | user | assistant
+    Gemini roles: user | model (+ system_instruction)
+    """
+    system_parts: List[str] = []
+    contents: List[Dict[str, Any]] = []
+
+    for msg in messages:
+        role = (msg.get("role") or "user").lower()
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [content]})
+        else:
+            contents.append({"role": "user", "parts": [content]})
+
+    system_instruction = "\n\n".join(system_parts) if system_parts else None
+    return system_instruction, contents
+
+
+def _configure_gemini() -> None:
+    global _gemini_configured
+    key = _gemini_api_key()
+    if not key:
+        raise AIServiceError(
+            "GEMINI_API_KEY is not configured. Set it in environment/settings."
+        )
+    try:
+        import google.generativeai as genai
+    except ImportError as exc:
+        raise AIServiceError(
+            "google-generativeai is not installed. Add it to requirements.txt."
+        ) from exc
+
+    if not _gemini_configured:
+        genai.configure(api_key=key)
+        _gemini_configured = True
+
+
+def _chat_gemini(messages: List[Dict[str, str]]) -> str:
+    """Tertiary fallback: Google Generative AI (Gemini)."""
+    import google.generativeai as genai
+
+    _configure_gemini()
+    system_instruction, contents = _openai_messages_to_gemini(messages)
+    if not contents:
+        raise AIServiceError("No user/model content to send to Gemini.")
+
+    model_name = _gemini_model_name()
+    model_kwargs: Dict[str, Any] = {}
+    if system_instruction:
+        model_kwargs["system_instruction"] = system_instruction
+
+    model = genai.GenerativeModel(model_name, **model_kwargs)
+    response = model.generate_content(
+        contents,
+        generation_config={"temperature": 0.7},
+    )
+
+    text = getattr(response, "text", None)
+    if text and str(text).strip():
+        return str(text).strip()
+
+    # Fallback parse for blocked / multi-part responses
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) if content else None
+        if not parts:
+            continue
+        chunks = []
+        for part in parts:
+            part_text = getattr(part, "text", None)
+            if part_text:
+                chunks.append(str(part_text))
+        if chunks:
+            return "\n".join(chunks).strip()
+
+    return ""
 
 
 def ai_chat(
@@ -78,38 +254,61 @@ def ai_chat(
     model: Optional[str] = None,
 ) -> str:
     """
-    Call OpenAI chat completion.
+    Chat completion with three-tier fallback (signature unchanged).
 
-    messages: list of dicts like:
-      {"role": "system"|"user"|"assistant", "content": "..."}
-    model: optional override (e.g. gpt-4o-mini for large-context tasks)
+    messages: [{"role": "system"|"user"|"assistant", "content": "..."}, ...]
+    model: optional — kept for backward compatibility. When set, it is tried
+           before the default cascade only if it differs from gpt-4o; the
+           standard path is always gpt-4o → gpt-4o-mini → Gemini.
 
     Returns:
-      The response text from the model (empty string if blocked / no content).
+      Response text, or "" if the model returned no content.
     """
-    chat_model = (model or CHAT_MODEL).strip() or CHAT_MODEL
-    try:
-        resp = _get_client().chat.completions.create(
-            model=chat_model,
-            messages=messages,
-            temperature=0.7,
-        )
-    except Exception as e:
-        status = getattr(e, "status_code", None) or getattr(e, "code", "")
-        message = getattr(e, "message", None) or str(e)
-        hint = ""
-        if status == 401 or "invalid_api_key" in str(message).lower():
-            hint = " Check OPENAI_API_KEY on your host (Vercel or Render) and create a new key at https://platform.openai.com/api-keys if needed."
-        elif status == 429 or "rate_limit" in str(message).lower():
-            hint = " Try again shortly or use a smaller request; gpt-4o-mini has higher TPM limits than gpt-4o."
-        raise AIServiceError(
-            f"OpenAI chat error {status}: {message}".strip() + hint
+    if model is not None and model.strip() and model.strip() != PRIMARY_OPENAI_MODEL:
+        logger.info(
+            "ai_chat: explicit model=%s ignored; using cascade %s → %s → %s",
+            model,
+            PRIMARY_OPENAI_MODEL,
+            FALLBACK_OPENAI_MODEL,
+            _gemini_model_name(),
         )
 
-    choice = resp.choices[0] if resp.choices else None
-    if not choice or not choice.message or not choice.message.content:
-        return ""
-    return choice.message.content
+    # --- Tier 1: gpt-4o ---
+    try:
+        logger.debug("ai_chat: attempting OpenAI model=%s", PRIMARY_OPENAI_MODEL)
+        return _chat_openai(messages, PRIMARY_OPENAI_MODEL)
+    except Exception as primary_exc:
+        if not _openai_fallback_eligible(primary_exc):
+            raise AIServiceError(_format_openai_error(primary_exc, PRIMARY_OPENAI_MODEL)) from primary_exc
+        logger.warning(
+            "ai_chat: OpenAI %s failed (%s); falling back to %s",
+            PRIMARY_OPENAI_MODEL,
+            primary_exc,
+            FALLBACK_OPENAI_MODEL,
+        )
+
+    # --- Tier 2: gpt-4o-mini ---
+    try:
+        return _chat_openai(messages, FALLBACK_OPENAI_MODEL)
+    except Exception as secondary_exc:
+        if not _openai_fallback_eligible(secondary_exc):
+            raise AIServiceError(
+                _format_openai_error(secondary_exc, FALLBACK_OPENAI_MODEL)
+            ) from secondary_exc
+        logger.warning(
+            "ai_chat: OpenAI %s failed (%s); falling back to Gemini %s",
+            FALLBACK_OPENAI_MODEL,
+            secondary_exc,
+            _gemini_model_name(),
+        )
+
+    # --- Tier 3: Gemini ---
+    try:
+        return _chat_gemini(messages)
+    except Exception as gemini_exc:
+        raise AIServiceError(
+            f"All chat providers failed. Last error (Gemini): {gemini_exc}"
+        ) from gemini_exc
 
 
 def ai_embed(text: str) -> List[float]:
@@ -123,7 +322,7 @@ def ai_embed(text: str) -> List[float]:
         raise AIServiceError("Cannot embed empty text")
 
     try:
-        resp = _get_client().embeddings.create(
+        resp = _get_openai_client().embeddings.create(
             model=EMBED_MODEL,
             input=text,
             dimensions=EMBED_DIM,
@@ -195,7 +394,6 @@ def search_documents(
             ).execute()
             return response.data or []
         except Exception:
-            # RPC missing — fall back to plain select so callers don't break.
             response = (
                 supabase.table("conversation")
                 .select("content, metadata")
@@ -204,5 +402,5 @@ def search_documents(
             )
             return response.data or []
     except Exception as e:
-        print(f"Document search failed: {str(e)}")
+        logger.warning("Document search failed: %s", e)
         return []
