@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ChevronDown, KeyRound, LogOut, User } from "lucide-react";
+import { ChevronDown, KeyRound, User } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 
@@ -23,8 +22,7 @@ function initials(label: string): string {
 }
 
 export function UserProfileMenu() {
-  const { user, employeeData, signOut } = useAuth();
-  const navigate = useNavigate();
+  const { user, employeeData } = useAuth();
   const [open, setOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -50,12 +48,6 @@ export function UserProfileMenu() {
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
-
-  const handleSignOut = async () => {
-    setOpen(false);
-    await signOut();
-    navigate("/login");
-  };
 
   return (
     <>
@@ -120,15 +112,6 @@ export function UserProfileMenu() {
             >
               <KeyRound size={16} />
               Change password
-            </button>
-            <button
-              type="button"
-              className="user-profile-dropdown-item user-profile-dropdown-item-danger"
-              role="menuitem"
-              onClick={handleSignOut}
-            >
-              <LogOut size={16} />
-              Sign out
             </button>
           </div>
         )}

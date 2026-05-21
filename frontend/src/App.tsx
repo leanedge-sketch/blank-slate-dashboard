@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { AuthCallbackPage } from "./pages/auth/AuthCallbackPage";
@@ -29,9 +29,11 @@ import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserProfileMenu } from "./components/UserProfileMenu";
 import { useAuth } from "./contexts/AuthContext";
+import { LogOut } from "lucide-react";
 
 function AppHeader() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const isAuthScreen =
     location.pathname.startsWith("/login") ||
@@ -56,6 +58,17 @@ function AppHeader() {
               <Link to="/crm">CRM</Link>
               <Link to="/pms">PMS</Link>
               <UserProfileMenu />
+              <button
+                type="button"
+                className="app-sign-out-btn"
+                onClick={async () => {
+                  await signOut();
+                  navigate("/login");
+                }}
+              >
+                <LogOut className="app-sign-out-icon" aria-hidden />
+                Sign Out
+              </button>
             </>
           ) : (
             <Link to="/login">Login</Link>
