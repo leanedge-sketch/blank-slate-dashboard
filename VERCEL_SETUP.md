@@ -32,6 +32,8 @@ Set in Vercel → **Settings → Environment Variables** (Production + Preview):
 | `SUPABASE_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key |
 | `OPENAI_API_KEY` | Valid key from https://platform.openai.com/api-keys |
+| `GEMINI_API_KEY` | Google AI key — **tertiary fallback** when OpenAI rate-limits (`gpt-4o` → `gpt-4o-mini` → `gemini-2.5-flash`) |
+| `GEMINI_CHAT_MODEL` | Optional; default `gemini-2.5-flash` |
 
 Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) — sends a **confirmation** email after password change (not required for the change to work).
 
