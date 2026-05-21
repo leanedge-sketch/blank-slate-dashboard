@@ -97,23 +97,6 @@ async def list_products_endpoint(
         raise HTTPException(status_code=500, detail=f"Error listing products: {str(e)}")
 
 
-@router.get("/stock/products/{product_id}", response_model=Product)
-async def get_product_endpoint(
-    product_id: str,
-    # user: dict = Depends(get_current_user)
-):
-    """Get a single product by ID with computed stock values."""
-    try:
-        product = get_product_by_id(product_id)
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
-        return product
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching product: {str(e)}")
-
-
 @router.get("/stock/products/by-tds/{tds_id}", response_model=Product)
 async def get_product_by_tds_endpoint(
     tds_id: str,
@@ -124,6 +107,23 @@ async def get_product_by_tds_endpoint(
         product = get_product_by_tds_id(tds_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found for this TDS")
+        return product
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching product: {str(e)}")
+
+
+@router.get("/stock/products/{product_id}", response_model=Product)
+async def get_product_endpoint(
+    product_id: str,
+    # user: dict = Depends(get_current_user)
+):
+    """Get a single product by ID with computed stock values."""
+    try:
+        product = get_product_by_id(product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
         return product
     except HTTPException:
         raise

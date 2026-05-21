@@ -8,7 +8,7 @@ Pydantic models for stock management with three locations:
 - Nairobi Partner: Partner supplier stock tracking
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 from datetime import datetime, date
 from typing import Optional
 from uuid import UUID
@@ -69,18 +69,22 @@ class Product(ProductBase):
     reserved_stock_sez_kenya: float = 0.0
     reserved_stock_nairobi_partner: float = 0.0
 
+    @computed_field
     @property
     def available_stock_addis_ababa(self) -> float:
         return self.total_stock_addis_ababa - self.reserved_stock_addis_ababa
 
+    @computed_field
     @property
     def available_stock_sez_kenya(self) -> float:
         return self.total_stock_sez_kenya - self.reserved_stock_sez_kenya
 
+    @computed_field
     @property
     def available_stock_nairobi_partner(self) -> float:
         return self.total_stock_nairobi_partner - self.reserved_stock_nairobi_partner
 
+    @computed_field
     @property
     def total_stock(self) -> float:
         return (
@@ -89,6 +93,7 @@ class Product(ProductBase):
             self.total_stock_nairobi_partner
         )
 
+    @computed_field
     @property
     def total_reserved_stock(self) -> float:
         return (
@@ -97,6 +102,7 @@ class Product(ProductBase):
             self.reserved_stock_nairobi_partner
         )
 
+    @computed_field
     @property
     def total_available_stock(self) -> float:
         return self.total_stock - self.total_reserved_stock
