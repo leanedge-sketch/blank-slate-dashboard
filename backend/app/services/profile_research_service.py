@@ -322,10 +322,10 @@ def build_profile_research_context(
     crm_section, crm_meta = _format_crm_section(
         interactions, _section_char_budget(total_budget, "crm")
     )
-    web_meta, web_section = _format_web_section(
+    web_section, web_meta = _format_web_section(
         web_context, _section_char_budget(total_budget, "web")
     )
-    linkedin_meta, linkedin_section = _format_linkedin_section(
+    linkedin_section, linkedin_meta = _format_linkedin_section(
         linkedin_context, _section_char_budget(total_budget, "linkedin")
     )
 
