@@ -143,6 +143,40 @@ async def get_stages_endpoint():
     return {"stages": PIPELINE_STAGES}
 
 
+@router.get("/sales-pipeline/forecast", response_model=PipelineForecast)
+async def get_forecast(
+    days_ahead: int = Query(30, ge=1, le=365, description="Number of days to forecast"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    # user: dict = Depends(get_current_user)
+):
+    """Generate revenue forecast for the next N days based on pipeline data."""
+    try:
+        return get_pipeline_forecast(
+            days_ahead=days_ahead,
+            customer_id=customer_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating forecast: {str(e)}")
+
+
+@router.get("/sales-pipeline/insights", response_model=PipelineInsights)
+async def get_insights(
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    tds_id: Optional[str] = Query(None, description="Filter by product/TDS ID"),
+    days_back: int = Query(90, ge=1, le=365, description="Number of days to analyze"),
+    # user: dict = Depends(get_current_user)
+):
+    """Generate AI-powered insights and analytics for the sales pipeline."""
+    try:
+        return generate_pipeline_insights(
+            customer_id=customer_id,
+            tds_id=tds_id,
+            days_back=days_back,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating insights: {str(e)}")
+
+
 # =============================
 # CRUD ENDPOINTS
 # =============================
@@ -324,45 +358,6 @@ async def auto_advance_from_interaction(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error auto-advancing stage: {str(e)}")
-
-
-# =============================
-# ANALYTICS ENDPOINTS
-# =============================
-
-
-@router.get("/sales-pipeline/forecast", response_model=PipelineForecast)
-async def get_forecast(
-    days_ahead: int = Query(30, ge=1, le=365, description="Number of days to forecast"),
-    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
-    # user: dict = Depends(get_current_user)
-):
-    """Generate revenue forecast for the next N days based on pipeline data."""
-    try:
-        return get_pipeline_forecast(
-            days_ahead=days_ahead,
-            customer_id=customer_id,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating forecast: {str(e)}")
-
-
-@router.get("/sales-pipeline/insights", response_model=PipelineInsights)
-async def get_insights(
-    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
-    tds_id: Optional[str] = Query(None, description="Filter by product/TDS ID"),
-    days_back: int = Query(90, ge=1, le=365, description="Number of days to analyze"),
-    # user: dict = Depends(get_current_user)
-):
-    """Generate AI-powered insights and analytics for the sales pipeline."""
-    try:
-        return generate_pipeline_insights(
-            customer_id=customer_id,
-            tds_id=tds_id,
-            days_back=days_back,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating insights: {str(e)}")
 
 
 @router.post("/sales-pipeline/{pipeline_id}/chat")
