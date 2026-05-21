@@ -8,7 +8,12 @@ import {
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
 } from "../../services/api";
-import { stripProfileMarkdown } from "../../utils/profileText";
+import { StrategicFitAssessment } from "../../components/StrategicFitAssessment";
+import {
+  mergeStrategicFitItems,
+  stripProfileMarkdown,
+  stripStrategicFitLinesFromProfile,
+} from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
 
 export function CustomerProfilePage() {
@@ -185,7 +190,7 @@ export function CustomerProfilePage() {
 
   // Clean and format profile text for beautiful display
   function formatProfileForDisplay(text: string): JSX.Element {
-    const cleanText = stripProfileMarkdown(text);
+    const cleanText = stripStrategicFitLinesFromProfile(stripProfileMarkdown(text));
 
     // Split into sections: numbered headings (1. Title), markdown headers, or title lines
     const sectionPattern = /\n(?:#{1,6}\s+|(\d+\.\s+))([^\n]+)/g;
@@ -326,68 +331,6 @@ export function CustomerProfilePage() {
                         {trimmed.substring(1).trim()}
                       </div>
                     );
-                  }
-                  
-                  // Format strategic fit lines (Category: score/3)
-                  if (trimmed.match(/:\s*\d+\/3/)) {
-                    const parts = trimmed.split(":");
-                    if (parts.length >= 2) {
-                      const category = parts[0].trim();
-                      const rest = parts.slice(1).join(":").trim();
-                      const scoreMatch = rest.match(/(\d+)\/3/);
-                      const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
-                      const reason = rest.replace(/\d+\/3\s*[-–]\s*/, "").trim();
-                      
-                      return (
-                        <div
-                          key={lineIdx}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: "1rem",
-                            marginBottom: "1rem",
-                            padding: "1rem",
-                            backgroundColor: score >= 2 ? "#ecfdf5" : score === 1 ? "#fffbeb" : "#f9fafb",
-                            borderRadius: "0.75rem",
-                            border: `2px solid ${
-                              score === 3
-                                ? "#10b981"
-                                : score === 2
-                                ? "#3b82f6"
-                                : score === 1
-                                ? "#f59e0b"
-                                : "#e5e7eb"
-                            }`,
-                          }}
-                        >
-                          <span style={{ fontWeight: "700", minWidth: "180px", color: "#111827" }}>
-                            {category}:
-                          </span>
-                          <span
-                            style={{
-                              fontSize: "1.5rem",
-                              fontWeight: "800",
-                              color:
-                                score === 3
-                                  ? "#10b981"
-                                  : score === 2
-                                  ? "#3b82f6"
-                                  : score === 1
-                                  ? "#f59e0b"
-                                  : "#9ca3af",
-                              minWidth: "70px",
-                            }}
-                          >
-                            {score}/3
-                          </span>
-                          {reason && (
-                            <span style={{ color: "#6b7280", flex: 1, fontSize: "0.95rem" }}>
-                              {reason}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    }
                   }
                   
                   // Format contact lines (Name:, Position:, LinkedIn:)
@@ -538,6 +481,11 @@ export function CustomerProfilePage() {
       ? customer.latest_profile_text
       : latestInteraction || "";
 
+  const strategicFitItems = mergeStrategicFitItems(
+    customer.product_alignment_scores,
+    effectiveProfileText,
+  );
+
   return (
     <div className="page">
       {/* Header */}
@@ -656,70 +604,7 @@ export function CustomerProfilePage() {
         </div>
       </div>
 
-      {/* Strategic-Fit Matrix (if available) */}
-      {customer.product_alignment_scores &&
-        Object.keys(customer.product_alignment_scores).length > 0 && (
-          <section
-            className="card"
-            style={{
-              marginBottom: "2rem",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              color: "white",
-            }}
-          >
-            <h3 style={{ color: "white", marginBottom: "1.5rem" }}>Strategic-Fit Matrix</h3>
-            <p style={{ marginBottom: "1rem", opacity: 0.9 }}>
-              Product alignment scores (0 = No Fit, 1 = Low, 2 = Moderate, 3 = High Fit)
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "1rem",
-              }}
-            >
-              {Object.entries(customer.product_alignment_scores).map(([category, score]) => (
-                <div
-                  key={category}
-                  style={{
-                    padding: "1.25rem",
-                    backgroundColor: "rgba(255, 255, 255, 0.15)",
-                    backdropFilter: "blur(10px)",
-                    borderRadius: "0.75rem",
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "0.875rem",
-                      opacity: 0.9,
-                      marginBottom: "0.5rem",
-                      fontWeight: "500",
-                    }}
-                  >
-                    {category}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "2rem",
-                      fontWeight: "bold",
-                      color:
-                        score === 3
-                          ? "#10b981"
-                          : score === 2
-                          ? "#3b82f6"
-                          : score === 1
-                          ? "#f59e0b"
-                          : "#9ca3af",
-                    }}
-                  >
-                    {score}/3
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      <StrategicFitAssessment items={strategicFitItems} />
 
       {/* Profile Content */}
       <section className="card" style={{ position: "relative" }}>
