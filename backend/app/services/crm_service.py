@@ -37,7 +37,106 @@ from app.models.crm import (
     CustomerProfileFeedbackCreate,
     CustomerProfileFeedback,
 )
-from app.services.ai_service import gemini_chat, gemini_embed, log_conversation_to_rag, search_documents
+from app.services.ai_service import (
+    gemini_chat,
+    gemini_embed,
+    log_conversation_to_rag,
+    search_documents,
+)
+
+# Customer profile generation — gpt-4o-mini has higher TPM limits than gpt-4o.
+PROFILE_BUILD_MODEL = "gpt-4o-mini"
+# ~100k chars ≈ safe ceiling under 30k TPM on gpt-4o; mini allows more headroom.
+PROFILE_CONTEXT_MAX_CHARS = 100_000
+PROFILE_MAX_RAG_DOCS = 3
+PROFILE_MAX_INTERACTIONS = 8
+PROFILE_MAX_CHARS_PER_RAG_DOC = 3_000
+PROFILE_MAX_CHARS_PER_INTERACTION = 2_500
+PROFILE_MAX_WEB_CHARS = 12_000
+PROFILE_MAX_LINKEDIN_CHARS = 8_000
+
+def _truncate_text(text: str, max_chars: int, label: str = "content") -> str:
+    """Slice oversized text so profile prompts stay under token limits."""
+    cleaned = (text or "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    suffix = f"\n...[truncated {label}: kept first {max_chars:,} chars]"
+    return cleaned[:max_chars] + suffix
+
+
+def _truncate_profile_context(context: str, max_chars: int = PROFILE_CONTEXT_MAX_CHARS) -> str:
+    """
+    Final safety cap on assembled research context (~100k chars / ~25k tokens).
+    Keeps the start (section headers) and end (most recent interactions).
+    """
+    if len(context) <= max_chars:
+        return context
+    head = max_chars // 2
+    tail = max_chars - head - 80
+    return (
+        context[:head]
+        + "\n\n...[context truncated to stay within token limits]...\n\n"
+        + context[-tail:]
+    )
+
+
+def _build_profile_research_context(
+    *,
+    relevant_docs: List[Dict[str, Any]],
+    interactions: List[Interaction],
+    web_context: str,
+    linkedin_context: str,
+) -> str:
+    """Assemble and truncate RAG, CRM, web, and LinkedIn inputs for profile generation."""
+    parts: List[str] = []
+
+    if relevant_docs:
+        parts.append("\nRelevant conversations from past AI chats:\n")
+        for doc in relevant_docs[:PROFILE_MAX_RAG_DOCS]:
+            content = _truncate_text(
+                doc.get("content", "") or "",
+                PROFILE_MAX_CHARS_PER_RAG_DOC,
+                "RAG snippet",
+            )
+            if content:
+                parts.append(f"\n{content}\n")
+
+    if interactions:
+        parts.append("\nRecent CRM interactions with this customer (newest first):\n")
+        for inter in interactions[:PROFILE_MAX_INTERACTIONS]:
+            ts = getattr(inter, "created_at", None)
+            ts_str = ts.isoformat() if ts else "unknown_time"
+            input_text = _truncate_text(
+                (inter.input_text or "").strip(),
+                PROFILE_MAX_CHARS_PER_INTERACTION // 2,
+                "interaction note",
+            )
+            ai_resp = _truncate_text(
+                (inter.ai_response or "").strip(),
+                PROFILE_MAX_CHARS_PER_INTERACTION // 2,
+                "interaction response",
+            )
+            block = f"\n[Interaction at {ts_str}]\n"
+            if input_text:
+                block += f"Sales/Customer note: {input_text}\n"
+            if ai_resp:
+                block += f"AI response/summary: {ai_resp}\n"
+            parts.append(block)
+
+    if web_context:
+        parts.append("\nWeb Search Results:\n")
+        parts.append(
+            _truncate_text(web_context, PROFILE_MAX_WEB_CHARS, "web search")
+        )
+
+    if linkedin_context:
+        parts.append("\nLinkedIn Information:\n")
+        parts.append(
+            _truncate_text(linkedin_context, PROFILE_MAX_LINKEDIN_CHARS, "LinkedIn")
+        )
+
+    return _truncate_profile_context("".join(parts))
+
 
 # Sales stage definitions (Brian Tracy 7-stage process)
 SALES_STAGES = {
@@ -378,48 +477,33 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         logging.warning(f"LinkedIn search failed: {str(e)}")
         linkedin_context = ""
     
-    # Step 4: Combine all context (including direct CRM interactions)
-    context = ""
-
-    # 4a) RAG conversations
-    if relevant_docs:
-        context += "\nRelevant conversations from past AI chats:\n"
-        for doc in relevant_docs:
-            context += f"\n{doc.get('content', '')}\n"
-    
-    # 4b) Direct CRM interactions for this customer
+    # Step 4: CRM interactions (newest first; truncated before AI call)
     try:
         interactions = get_interactions_for_customer(
             customer_id=str(customer.customer_id),
-            limit=20,
+            limit=PROFILE_MAX_INTERACTIONS,
             offset=0,
         )
     except Exception as e:
-        logging.warning(f"Failed to fetch interactions for customer {customer.customer_id}: {str(e)}")
+        logging.warning(
+            f"Failed to fetch interactions for customer {customer.customer_id}: {str(e)}"
+        )
         interactions = []
 
-    if interactions:
-        context += "\nRecent CRM interactions with this customer (newest first):\n"
-        for inter in interactions:
-            ts = getattr(inter, "created_at", None)
-            ts_str = ts.isoformat() if ts else "unknown_time"
-            input_text = (inter.input_text or "").strip()
-            ai_resp = (inter.ai_response or "").strip()
-            context += f"\n[Interaction at {ts_str}]\n"
-            if input_text:
-                context += f"Sales/Customer note: {input_text}\n"
-            if ai_resp:
-                context += f"AI response/summary: {ai_resp}\n"
+    context = _build_profile_research_context(
+        relevant_docs=relevant_docs,
+        interactions=interactions,
+        web_context=web_context,
+        linkedin_context=linkedin_context,
+    )
+    logging.info(
+        "Profile context for %s: %s chars (max %s), model=%s",
+        customer.customer_name,
+        len(context),
+        PROFILE_CONTEXT_MAX_CHARS,
+        PROFILE_BUILD_MODEL,
+    )
 
-    # 4c) External web + LinkedIn context
-    if web_context:
-        context += "\nWeb Search Results:\n"
-        context += web_context
-    
-    if linkedin_context:
-        context += "\nLinkedIn Information:\n"
-        context += linkedin_context
-    
     # Step 5: Fetch unique categories from chemical_types table (dynamically)
     try:
         categories_list = get_all_categories()
@@ -583,9 +667,9 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
         }
     ]
     
-    # Step 8: Get AI response
+    # Step 8: Get AI response (gpt-4o-mini — higher TPM limit than gpt-4o)
     try:
-        profile_text = gemini_chat(messages)
+        profile_text = gemini_chat(messages, model=PROFILE_BUILD_MODEL)
         if not profile_text or not profile_text.strip():
             raise RuntimeError("AI service returned empty response. Please check OPENAI_API_KEY configuration.")
     except Exception as e:

@@ -72,19 +72,25 @@ def reset_openai_client() -> None:
     _client = None
 
 
-def ai_chat(messages: List[Dict[str, str]]) -> str:
+def ai_chat(
+    messages: List[Dict[str, str]],
+    *,
+    model: Optional[str] = None,
+) -> str:
     """
     Call OpenAI chat completion.
 
     messages: list of dicts like:
       {"role": "system"|"user"|"assistant", "content": "..."}
+    model: optional override (e.g. gpt-4o-mini for large-context tasks)
 
     Returns:
       The response text from the model (empty string if blocked / no content).
     """
+    chat_model = (model or CHAT_MODEL).strip() or CHAT_MODEL
     try:
         resp = _get_client().chat.completions.create(
-            model=CHAT_MODEL,
+            model=chat_model,
             messages=messages,
             temperature=0.7,
         )
@@ -94,6 +100,8 @@ def ai_chat(messages: List[Dict[str, str]]) -> str:
         hint = ""
         if status == 401 or "invalid_api_key" in str(message).lower():
             hint = " Check OPENAI_API_KEY on your host (Vercel or Render) and create a new key at https://platform.openai.com/api-keys if needed."
+        elif status == 429 or "rate_limit" in str(message).lower():
+            hint = " Try again shortly or use a smaller request; gpt-4o-mini has higher TPM limits than gpt-4o."
         raise AIServiceError(
             f"OpenAI chat error {status}: {message}".strip() + hint
         )
