@@ -82,6 +82,45 @@ a:hover {
   text-decoration: none;
 }
 
+.workspace-dock {
+  background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
+  border-bottom: 1px solid #334155;
+  padding: 0 1rem;
+}
+
+.workspace-dock-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.5rem 0;
+}
+
+.workspace-dock-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.workspace-dock-link:hover {
+  color: #e2e8f0;
+  background: rgba(51, 65, 85, 0.5);
+  text-decoration: none;
+}
+
+.workspace-dock-link.is-active {
+  color: #fff;
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
 .app-build-badge {
   font-size: 0.65rem;
   color: #64748b;
