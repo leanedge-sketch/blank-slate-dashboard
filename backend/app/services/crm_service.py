@@ -12,7 +12,8 @@ Why separate?
 - Easier to test
 """
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 import json
 import re
 import tempfile
@@ -33,6 +34,8 @@ from app.models.crm import (
     InteractionUpdate,
     QuoteDraftRequest,
     DashboardMetrics,
+    QuietCustomerSummary,
+    WeeklyInteractionCount,
     CustomerProfileUpdate,
     CustomerProfileFeedbackCreate,
     CustomerProfileFeedback,
@@ -1142,6 +1145,24 @@ def backfill_sales_stages_for_all_customers() -> Dict[str, Any]:
     return results
 
 
+def _parse_interaction_datetime(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return None
+
+
+def _week_start_label(dt: datetime) -> str:
+    monday = dt - timedelta(days=dt.weekday())
+    return monday.strftime("%Y-%m-%d")
+
+
 def get_dashboard_metrics(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -1158,10 +1179,13 @@ def get_dashboard_metrics(
     """
     supabase: Client = get_supabase_client()
     
-    # Get total customers count
-    total_customers_response = supabase.table("customers").select("customer_id", count="exact").execute()
-    total_customers = total_customers_response.count if getattr(total_customers_response, "count", None) is not None else 0
-    
+    # All customers (for quiet list and totals)
+    customers_response = supabase.table("customers").select(
+        "customer_id, customer_name, display_id, sales_stage"
+    ).execute()
+    customer_rows = customers_response.data or []
+    total_customers = len(customer_rows)
+
     # Get interactions count with date filtering
     interactions_query = supabase.table("interactions").select("id", count="exact")
     if start_date:
@@ -1180,27 +1204,58 @@ def get_dashboard_metrics(
         customers_with_interactions_query = customers_with_interactions_query.lte("created_at", f"{end_date}T23:59:59")
     
     customers_with_interactions_response = customers_with_interactions_query.execute()
-    unique_customer_ids = set(row.get("customer_id") for row in (customers_with_interactions_response.data or []))
+    unique_customer_ids = set(
+        row.get("customer_id")
+        for row in (customers_with_interactions_response.data or [])
+        if row.get("customer_id")
+    )
     customers_with_interactions = len(unique_customer_ids)
-    
-    # Get sales stages distribution
-    customers_query = supabase.table("customers").select("sales_stage")
-    customers_response = customers_query.execute()
-    
+
+    quiet_customers: List[QuietCustomerSummary] = []
+    for row in customer_rows:
+        cid = row.get("customer_id")
+        if cid and cid not in unique_customer_ids:
+            quiet_customers.append(
+                QuietCustomerSummary(
+                    customer_id=cid,
+                    customer_name=(row.get("customer_name") or "Unknown").strip(),
+                    display_id=row.get("display_id"),
+                )
+            )
+    quiet_customers.sort(key=lambda c: c.customer_name.lower())
+
+    # Weekly interaction counts (uses same date filters as metrics)
+    interactions_weekly_query = supabase.table("interactions").select("created_at")
+    if start_date:
+        interactions_weekly_query = interactions_weekly_query.gte("created_at", f"{start_date}T00:00:00")
+    if end_date:
+        interactions_weekly_query = interactions_weekly_query.lte("created_at", f"{end_date}T23:59:59")
+    interactions_weekly_response = interactions_weekly_query.execute()
+    week_counts: Dict[str, int] = defaultdict(int)
+    for row in interactions_weekly_response.data or []:
+        dt = _parse_interaction_datetime(row.get("created_at") or "")
+        if dt:
+            week_counts[_week_start_label(dt)] += 1
+    interactions_by_week = [
+        WeeklyInteractionCount(week_start=week, count=count)
+        for week, count in sorted(week_counts.items())
+    ]
+
     sales_stages_distribution: Dict[str, int] = {
         "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0
     }
-    
-    for row in customers_response.data or []:
+    for row in customer_rows:
         stage = row.get("sales_stage")
         if stage and stage in sales_stages_distribution:
             sales_stages_distribution[stage] = sales_stages_distribution.get(stage, 0) + 1
-    
+
     return DashboardMetrics(
         total_customers=total_customers,
         total_interactions=total_interactions,
         customers_with_interactions=customers_with_interactions,
         sales_stages_distribution=sales_stages_distribution,
+        quiet_customers=quiet_customers,
+        interactions_by_week=interactions_by_week,
     )
 
 

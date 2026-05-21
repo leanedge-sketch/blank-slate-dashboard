@@ -179,12 +179,27 @@ class QuoteDraftRequest(BaseModel):
 # DASHBOARD MODELS
 # =============================
 
+class QuietCustomerSummary(BaseModel):
+    """Customer with no interactions in the selected date range."""
+    customer_id: UUID
+    customer_name: str
+    display_id: Optional[str] = None
+
+
+class WeeklyInteractionCount(BaseModel):
+    """Interaction count grouped by ISO week (Monday start)."""
+    week_start: str  # YYYY-MM-DD
+    count: int
+
+
 class DashboardMetrics(BaseModel):
     """Dashboard metrics response"""
     total_customers: int
     total_interactions: int
     customers_with_interactions: int
     sales_stages_distribution: Dict[str, int]  # {"1": 5, "2": 3, ...}
+    quiet_customers: List[QuietCustomerSummary] = []
+    interactions_by_week: List[WeeklyInteractionCount] = []
 
 
 class CustomerProfileUpdate(BaseModel):

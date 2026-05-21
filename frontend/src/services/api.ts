@@ -678,11 +678,43 @@ export interface CostingPricingCreate {
 }
 
 // Dashboard Models
+export interface QuietCustomerSummary {
+  customer_id: string;
+  customer_name: string;
+  display_id?: string | null;
+}
+
+export interface WeeklyInteractionCount {
+  week_start: string;
+  count: number;
+}
+
 export interface DashboardMetrics {
   total_customers: number;
   total_interactions: number;
   customers_with_interactions: number;
   sales_stages_distribution: Record<string, number>;
+  quiet_customers: QuietCustomerSummary[];
+  interactions_by_week: WeeklyInteractionCount[];
+}
+
+export async function downloadCrmReportPdf(params?: {
+  start_date?: string;
+  end_date?: string;
+  days_back?: number;
+  forecast_days?: number;
+}): Promise<void> {
+  const res = await api.get("/crm/reports/export/pdf", {
+    params,
+    responseType: "blob",
+  });
+  const blob = new Blob([res.data], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `crm-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // =============================

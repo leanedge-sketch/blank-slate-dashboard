@@ -1,9 +1,10 @@
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Response, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.exceptions import RequestValidationError
 from typing import Optional, List
 from pathlib import Path
+from datetime import date
 import logging
 
 from app.models.crm import (
@@ -45,6 +46,7 @@ from app.services.crm_service import (
     add_customer_profile_feedback,
     list_customer_profile_feedback,
 )
+from app.services.crm_report_service import build_crm_report_pdf
 from app.dependencies import get_current_user
 
 # Create a router for CRM endpoints
@@ -623,5 +625,30 @@ async def get_dashboard_metrics_endpoint(
         return get_dashboard_metrics(start_date=start_date, end_date=end_date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching dashboard metrics: {str(e)}")
+
+
+@router.get("/reports/export/pdf")
+async def export_crm_report_pdf(
+    start_date: Optional[str] = Query(None, description="Filter interactions from this date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter interactions up to this date (YYYY-MM-DD)"),
+    days_back: int = Query(90, ge=7, le=365, description="Pipeline insights lookback in days"),
+    forecast_days: int = Query(30, ge=7, le=180, description="Revenue forecast horizon in days"),
+):
+    """Download a PDF summary of CRM reports (coverage, activity, pipeline, forecast)."""
+    try:
+        pdf_bytes = build_crm_report_pdf(
+            start_date=start_date,
+            end_date=end_date,
+            days_back=days_back,
+            forecast_days=forecast_days,
+        )
+        filename = f"crm-report-{date.today().isoformat()}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating CRM report PDF: {str(e)}")
 
 

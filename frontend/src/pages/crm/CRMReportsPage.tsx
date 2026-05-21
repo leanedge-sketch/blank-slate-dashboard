@@ -5,9 +5,11 @@ import {
   DashboardMetrics,
   PipelineForecast,
   PipelineInsights,
+  downloadCrmReportPdf,
   getPipelineForecast,
   getPipelineInsights,
 } from "../../services/api";
+import { InteractionWeeklyChart } from "../../components/InteractionWeeklyChart";
 
 const SALES_STAGES: Record<string, string> = {
   "1": "Prospecting",
@@ -55,6 +57,7 @@ export function CRMReportsPage() {
   const [endDate, setEndDate] = useState("");
   const [daysBack, setDaysBack] = useState(90);
   const [forecastDays, setForecastDays] = useState(30);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   const loadReports = useCallback(async () => {
     try {
@@ -88,15 +91,35 @@ export function CRMReportsPage() {
     loadReports();
   }, [loadReports]);
 
-  const quietCustomers =
-    metrics && metrics.total_customers > metrics.customers_with_interactions
-      ? metrics.total_customers - metrics.customers_with_interactions
-      : 0;
+  const quietCustomers = metrics?.quiet_customers?.length ?? 0;
+  const quietList = metrics?.quiet_customers ?? [];
+  const weeklyInteractions = metrics?.interactions_by_week ?? [];
 
   const avgInteractions =
     metrics && metrics.customers_with_interactions > 0
       ? (metrics.total_interactions / metrics.customers_with_interactions).toFixed(1)
       : "0";
+
+  async function handleExportPdf() {
+    try {
+      setPdfExporting(true);
+      const params: Record<string, string | number> = {
+        days_back: daysBack,
+        forecast_days: forecastDays,
+      };
+      if (startDate.trim()) params.start_date = startDate.trim();
+      if (endDate.trim()) params.end_date = endDate.trim();
+      await downloadCrmReportPdf(params);
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Failed to export PDF";
+      setError(String(detail));
+    } finally {
+      setPdfExporting(false);
+    }
+  }
 
   function handleExportCsv() {
     if (!metrics) return;
@@ -107,10 +130,15 @@ export function CRMReportsPage() {
       ["Total customers", String(metrics.total_customers)],
       ["With interactions", String(metrics.customers_with_interactions)],
       ["Without interactions in range", String(quietCustomers)],
+      ...quietList.map((c) => [
+        "Quiet customer",
+        c.display_id ? `${c.display_id} - ${c.customer_name}` : c.customer_name,
+      ]),
       [],
       ["Interaction volume"],
       ["Total interactions", String(metrics.total_interactions)],
       ["Avg per engaged customer", avgInteractions],
+      ...weeklyInteractions.map((w) => [`Week ${w.week_start}`, String(w.count)]),
     ];
     if (insights) {
       rows.push(
@@ -169,8 +197,26 @@ export function CRMReportsPage() {
             <option value={90}>Pipeline 90d</option>
             <option value={180}>Pipeline 180d</option>
           </select>
+          <select
+            value={forecastDays}
+            onChange={(e) => setForecastDays(Number(e.target.value))}
+            title="Forecast horizon"
+            style={{ padding: "0.45rem 0.6rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
+          >
+            <option value={30}>Forecast 30d</option>
+            <option value={60}>Forecast 60d</option>
+            <option value={90}>Forecast 90d</option>
+          </select>
           <button type="button" className="btn-secondary" onClick={loadReports} disabled={loading}>
             {loading ? "Loading…" : "Refresh"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleExportPdf}
+            disabled={!metrics || loading || pdfExporting}
+          >
+            {pdfExporting ? "Exporting PDF…" : "Export PDF"}
           </button>
           <button
             type="button"
@@ -202,13 +248,16 @@ export function CRMReportsPage() {
             going quiet.
           </li>
           <li>
-            <strong>Interaction volume</strong> – AI and human touchpoints per customer.
+            <strong>Interaction volume</strong> – weekly activity chart and touchpoints per customer.
           </li>
           <li>
             <strong>Opportunity tracking</strong> – sales pipeline deals and stage.
           </li>
           <li>
-            <strong>Export</strong> – download CSV for the team.
+            <strong>Revenue forecast</strong> – expected close value by stage.
+          </li>
+          <li>
+            <strong>Export</strong> – download CSV or PDF for the team.
           </li>
         </ul>
       </section>
@@ -241,11 +290,39 @@ export function CRMReportsPage() {
                 </p>
               </div>
             </div>
-            <p className="section-description" style={{ marginBottom: 0 }}>
+            <p className="section-description" style={{ marginBottom: quietList.length > 0 ? "1rem" : 0 }}>
               {metrics.total_customers > 0
                 ? `${Math.round((metrics.customers_with_interactions / metrics.total_customers) * 100)}% of customers have at least one interaction in the selected date range.`
                 : "No customers in the database yet."}
             </p>
+            {quietList.length > 0 && (
+              <>
+                <h4 style={{ fontSize: "0.95rem", marginTop: 0 }}>Customers going quiet</h4>
+                <table className="data-table" style={{ width: "100%", fontSize: "0.9rem" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "0.5rem" }}>Customer</th>
+                      <th style={{ textAlign: "left", padding: "0.5rem" }}>ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quietList.slice(0, 50).map((c) => (
+                      <tr key={c.customer_id}>
+                        <td style={{ padding: "0.5rem" }}>
+                          <Link to={`/crm/customers/${c.customer_id}`}>{c.customer_name}</Link>
+                        </td>
+                        <td style={{ padding: "0.5rem", color: "#6b7280" }}>{c.display_id || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {quietList.length > 50 && (
+                  <p className="section-description" style={{ marginBottom: 0 }}>
+                    Showing 50 of {quietList.length} quiet customers. Export PDF/CSV for the full list.
+                  </p>
+                )}
+              </>
+            )}
           </section>
 
           <section className="card">
@@ -260,6 +337,8 @@ export function CRMReportsPage() {
                 <p style={{ fontSize: "1.75rem", fontWeight: 700, margin: "0.25rem 0 0" }}>{avgInteractions}</p>
               </div>
             </div>
+            <h4 style={{ fontSize: "0.95rem", marginTop: "1.25rem" }}>Interactions by week</h4>
+            <InteractionWeeklyChart weeks={weeklyInteractions} />
             <h4 style={{ fontSize: "0.95rem", marginTop: "1.25rem" }}>CRM sales stages (customers)</h4>
             <table className="data-table" style={{ width: "100%", fontSize: "0.9rem" }}>
               <thead>
