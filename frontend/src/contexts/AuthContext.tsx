@@ -3,6 +3,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
 import { checkEmployeeStatus as checkEmployeeStatusAPI } from "../services/api";
+import { CANONICAL_PRODUCTION_URL } from "../lib/canonical-host";
 import {
   createDevMockSession,
   createDevMockUser,
@@ -15,15 +16,19 @@ import {
 } from "../lib/dev-mock-auth";
 
 /** Canonical production URL (Vercel production alias). */
-export const PRODUCTION_APP_URL = "https://blank-slate-dashboard-plum.vercel.app";
+export const PRODUCTION_APP_URL = CANONICAL_PRODUCTION_URL;
 
-// Frontend base URL for auth redirects (magic links, password reset, etc.)
-const FRONTEND_URL =
-  import.meta.env.VITE_FRONTEND_URL?.trim() || window.location.origin;
+function authRedirectBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return import.meta.env.VITE_FRONTEND_URL?.trim() || PRODUCTION_APP_URL;
+}
 
 // Debug log to verify which URL is being used
 if (typeof window !== 'undefined') {
-  console.log('🔗 Frontend URL for auth redirects:', FRONTEND_URL);
+  const redirectBase = authRedirectBaseUrl();
+  console.log('🔗 Auth redirect base URL:', redirectBase);
   console.log('🔗 VITE_FRONTEND_URL env var:', import.meta.env.VITE_FRONTEND_URL);
   console.log('🔗 window.location.origin:', window.location.origin);
 }
@@ -252,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${FRONTEND_URL}/auth/callback?type=setup`,
+          emailRedirectTo: `${authRedirectBaseUrl()}/auth/callback?type=setup`,
         },
       });
 
@@ -287,7 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Send password reset email
-      const redirectUrl = `${FRONTEND_URL}/auth/callback?type=reset`;
+      const redirectUrl = `${authRedirectBaseUrl()}/auth/callback?type=reset`;
       console.log('📧 Sending password reset email with redirect URL:', redirectUrl);
       
       const { error } = await supabase.auth.resetPasswordForEmail(email, {

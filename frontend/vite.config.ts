@@ -14,6 +14,24 @@ function pickEnv(
   return process.env[key] ?? fromFrontend[key] ?? fromRoot[key] ?? "";
 }
 
+/** Never bake legacy Vercel/Render URLs into production auth redirects. */
+function sanitizeProductionFrontendUrl(url: string): string {
+  const canonical = "https://blank-slate-dashboard-plum.vercel.app";
+  const trimmed = url.trim();
+  if (!trimmed) return canonical;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.includes("gcsx") ||
+    lower.includes("integrated-deal") ||
+    lower.includes("onrender.com")
+  ) {
+    return canonical;
+  }
+  return trimmed.replace(/\/$/, "");
+}
+
+const CANONICAL_HOST_INLINE_SCRIPT = `<script id="canonical-host-redirect">(function(){var c="blank-slate-dashboard-plum.vercel.app",h=location.hostname;if(h===c)return;if(h==="integrated-deal-and-product-system.vercel.app"||(h.endsWith(".vercel.app")&&h.indexOf("blank-slate-dashboard")===0&&h!==c)){location.replace("https://"+c+location.pathname+location.search+location.hash)}})();</script>`;
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const fromFrontend = loadEnv(mode, __dirname, "");
@@ -27,9 +45,10 @@ export default defineConfig(({ mode }) => {
     pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot) ||
     supabaseAnonKey;
 
-  const productionAppUrl =
-    pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot) ||
-    "https://blank-slate-dashboard-plum.vercel.app";
+  const CANONICAL_PRODUCTION_URL = "https://blank-slate-dashboard-plum.vercel.app";
+  const rawFrontendUrl = pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot);
+  const devFrontendUrl = rawFrontendUrl || "";
+  const productionAppUrl = sanitizeProductionFrontendUrl(rawFrontendUrl);
 
   const rawApiUrl = pickEnv("VITE_API_URL", fromFrontend, fromRoot);
   // Production builds must not bake a Render backend URL.
@@ -48,10 +67,14 @@ export default defineConfig(({ mode }) => {
       {
         name: "html-cache-bust",
         transformIndexHtml(html: string) {
-          return html.replace(
+          let out = html.replace(
             "<html",
             `<html data-build="${buildStamp}"`,
           );
+          if (mode === "production" && !out.includes("canonical-host-redirect")) {
+            out = out.replace("<head>", `<head>${CANONICAL_HOST_INLINE_SCRIPT}`);
+          }
+          return out;
         },
       },
     ],
@@ -61,7 +84,7 @@ export default defineConfig(({ mode }) => {
         mode === "production" ? productionApiUrl : rawApiUrl,
       ),
       "import.meta.env.VITE_FRONTEND_URL": JSON.stringify(
-        mode === "production" ? productionAppUrl : pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot),
+        mode === "production" ? productionAppUrl : devFrontendUrl,
       ),
       "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
       "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(

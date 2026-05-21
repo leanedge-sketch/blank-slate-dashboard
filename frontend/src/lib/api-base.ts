@@ -1,5 +1,7 @@
+import { CANONICAL_PRODUCTION_URL } from "./canonical-host";
+
 /** Canonical production app (Vercel). */
-export const PRODUCTION_APP_URL = "https://blank-slate-dashboard-plum.vercel.app";
+export const PRODUCTION_APP_URL = CANONICAL_PRODUCTION_URL;
 
 /** FastAPI on Vercel — do not use Render in production. */
 export const VERCEL_API_BASE = `${PRODUCTION_APP_URL}/api/v1`;

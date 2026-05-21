@@ -33,6 +33,20 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "blank-slate-dashboard-gcsx.vercel.app" }],
+      "destination": "https://blank-slate-dashboard-plum.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "integrated-deal-and-product-system.vercel.app" }],
+      "destination": "https://blank-slate-dashboard-plum.vercel.app/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
