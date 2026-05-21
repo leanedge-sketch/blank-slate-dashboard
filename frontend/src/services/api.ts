@@ -873,6 +873,7 @@ export async function fetchSalesPipelines(params?: {
   tds_id?: string;
   chemical_type_id?: string;
   stage?: PipelineStage;
+  latest_per_deal?: boolean;
 }) {
   const res = await api.get<SalesPipelineListResponse>("/sales-pipeline", {
     params: {
@@ -882,6 +883,7 @@ export async function fetchSalesPipelines(params?: {
       tds_id: params?.tds_id,
       chemical_type_id: params?.chemical_type_id,
       stage: params?.stage,
+      latest_per_deal: params?.latest_per_deal ?? true,
     },
   });
   return res.data;

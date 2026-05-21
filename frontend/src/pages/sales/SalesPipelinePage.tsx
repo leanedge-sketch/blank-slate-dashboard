@@ -71,6 +71,51 @@ const PIPELINE_STAGES: PipelineStage[] = [
   "Lost",
 ];
 
+function pipelineGroupKey(pipeline: SalesPipeline): string {
+  const productId = pipeline.chemical_type_id || pipeline.tds_id || "none";
+  return `${pipeline.customer_id}-${productId}`;
+}
+
+function pipelineTimestamp(pipeline: SalesPipeline): number {
+  const raw = pipeline.updated_at || pipeline.created_at;
+  return raw ? new Date(raw).getTime() : 0;
+}
+
+function pickBetterPipeline(
+  existing: SalesPipeline,
+  candidate: SalesPipeline
+): SalesPipeline {
+  if (candidate.is_current_version && !existing.is_current_version) {
+    return candidate;
+  }
+  if (!candidate.is_current_version && existing.is_current_version) {
+    return existing;
+  }
+  const vExisting = existing.version_number ?? 0;
+  const vCandidate = candidate.version_number ?? 0;
+  if (vCandidate !== vExisting) {
+    return vCandidate > vExisting ? candidate : existing;
+  }
+  return pipelineTimestamp(candidate) > pipelineTimestamp(existing)
+    ? candidate
+    : existing;
+}
+
+function deduplicatePipelines(rows: SalesPipeline[]): SalesPipeline[] {
+  const grouped = new Map<string, SalesPipeline>();
+  for (const pipeline of rows) {
+    const key = pipelineGroupKey(pipeline);
+    const existing = grouped.get(key);
+    grouped.set(
+      key,
+      existing ? pickBetterPipeline(existing, pipeline) : pipeline
+    );
+  }
+  return Array.from(grouped.values()).sort(
+    (a, b) => pipelineTimestamp(b) - pipelineTimestamp(a)
+  );
+}
+
 // Stages that require business_model, unit, and unit_price
 const STAGES_REQUIRING_BUSINESS_DETAILS: PipelineStage[] = [
   "Validation",
@@ -122,6 +167,7 @@ export function SalesPipelinePage() {
     });
   }, [urlPipelineId]);
   const [pipelines, setPipelines] = useState<SalesPipeline[]>([]);
+  const [stageBoardPipelines, setStageBoardPipelines] = useState<SalesPipeline[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -247,51 +293,27 @@ export function SalesPipelinePage() {
       setLoading(true);
       setError(null);
       const res = await fetchSalesPipelines({
-        limit: 1000, // Get more records for sorting
+        limit: 1000,
         offset: 0,
         customer_id: selectedCustomer || undefined,
         chemical_type_id: selectedChemicalType || undefined,
         stage: selectedStage || undefined,
+        latest_per_deal: true,
       });
-      
-      // Group pipelines by customer_id + chemical_type_id, keep only the latest one per group
-      // This creates a "folder" view where each company-product combo shows only the latest pipeline
-      // When user clicks on a pipeline, they'll see ALL pipelines for that company-product in the detail page
-      const groupedPipelines = new Map<string, SalesPipeline>();
-      
-      res.pipelines.forEach((pipeline) => {
-        // Create key from customer_id and chemical_type_id (or tds_id as fallback)
-        // This groups all pipelines for the same company + product together
-        const productId = pipeline.chemical_type_id || pipeline.tds_id || 'none';
-        const key = `${pipeline.customer_id}-${productId}`;
-        const existing = groupedPipelines.get(key);
-        
-        if (!existing) {
-          groupedPipelines.set(key, pipeline);
-        } else {
-          // Compare dates - keep the newest one (latest pipeline by creation date)
-          // This ensures we show the most recent pipeline in the list view
-          const existingDate = existing.created_at ? new Date(existing.created_at).getTime() : 0;
-          const currentDate = pipeline.created_at ? new Date(pipeline.created_at).getTime() : 0;
-          
-          if (currentDate > existingDate) {
-            groupedPipelines.set(key, pipeline);
-          }
-        }
-      });
-      
-      // Convert map to array and sort by latest created_at
-      const uniquePipelines = Array.from(groupedPipelines.values()).sort((a, b) => {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return dateB - dateA; // Newest first
-      });
-      
-      // Apply pagination
+
+      const uniquePipelines = deduplicatePipelines(res.pipelines);
       const paginatedPipelines = uniquePipelines.slice(offset, offset + limit);
-      
+
+      setStageBoardPipelines(uniquePipelines);
       setPipelines(paginatedPipelines);
-      setTotal(uniquePipelines.length);
+      setTotal(res.total ?? uniquePipelines.length);
+      setExpandedCustomers(
+        new Set(
+          uniquePipelines
+            .map((p) => p.customer_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
     } catch (err: any) {
       console.error(err);
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load pipelines");
@@ -886,9 +908,12 @@ export function SalesPipelinePage() {
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="">All products</option>
-                {chemicalTypes.map((ct) => (
-                  <option key={ct.id} value={ct.id}>
-                    {ct.name}
+                {chemicalFullData.map((c) => (
+                  <option
+                    key={c.uuid_id || String(c.id)}
+                    value={c.uuid_id || String(c.id)}
+                  >
+                    {c.product_name || `Product ${c.id}`}
                   </option>
                 ))}
               </select>
@@ -1594,6 +1619,63 @@ export function SalesPipelinePage() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2 text-red-800">
             <AlertCircle className="w-5 h-5" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Stage board — one card per active deal in each pipeline stage */}
+        {!loading && stageBoardPipelines.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-slate-200">
+              <h2 className="text-lg font-semibold text-slate-900">Pipeline by stage</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Current deal per customer and product. Discovery and Sample are stages 2 and 3.
+              </p>
+            </div>
+            <div className="overflow-x-auto p-4 sm:p-6">
+              <div className="flex gap-4 min-w-max">
+                {PIPELINE_STAGES.filter((s) => s !== "Lost").map((stage) => {
+                  const stageDeals = stageBoardPipelines.filter((p) => p.stage === stage);
+                  return (
+                    <div
+                      key={stage}
+                      className="w-56 flex-shrink-0 rounded-xl border border-slate-200 bg-slate-50/80"
+                    >
+                      <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
+                        <span
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${STAGE_COLORS[stage]}`}
+                        >
+                          {stage}
+                        </span>
+                        <span className="text-xs font-medium text-slate-500">
+                          {stageDeals.length}
+                        </span>
+                      </div>
+                      <div className="p-2 space-y-2 max-h-72 overflow-y-auto">
+                        {stageDeals.length === 0 ? (
+                          <p className="text-xs text-slate-400 px-2 py-4 text-center">—</p>
+                        ) : (
+                          stageDeals.map((pipeline) => (
+                            <button
+                              key={pipeline.id}
+                              type="button"
+                              onClick={() => handlePipelineClick(pipeline.id)}
+                              className="w-full text-left rounded-lg border border-slate-200 bg-white p-2.5 hover:border-emerald-400 hover:shadow-sm transition-all"
+                            >
+                              <p className="text-xs font-semibold text-slate-900 truncate">
+                                {getCustomerName(pipeline.customer_id)}
+                              </p>
+                              <p className="text-xs text-slate-500 truncate mt-0.5">
+                                {getChemicalTypeName(pipeline)}
+                              </p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 

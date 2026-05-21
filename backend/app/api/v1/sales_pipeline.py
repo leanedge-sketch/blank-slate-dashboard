@@ -190,6 +190,10 @@ async def list_pipelines(
     tds_id: Optional[str] = Query(None, description="Filter by TDS/product ID"),
     chemical_type_id: Optional[str] = Query(None, description="Filter by chemical type ID"),
     stage: Optional[str] = Query(None, description="Filter by pipeline stage"),
+    latest_per_deal: bool = Query(
+        True,
+        description="Return one current/latest pipeline per customer+product",
+    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """List sales pipeline records with optional filters and pagination."""
@@ -201,12 +205,14 @@ async def list_pipelines(
             tds_id=tds_id,
             chemical_type_id=chemical_type_id,
             stage=stage,
+            latest_per_deal=latest_per_deal,
         )
         total = count_sales_pipelines(
             customer_id=customer_id,
             tds_id=tds_id,
             chemical_type_id=chemical_type_id,
             stage=stage,
+            latest_per_deal=latest_per_deal,
         )
         return SalesPipelineListResponse(pipelines=pipelines, total=total)
     except Exception as e:

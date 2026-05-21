@@ -199,6 +199,65 @@ def normalize_pipeline_row_from_db(row: dict) -> dict:
     return row
 
 
+def _pipeline_group_key(pipeline: SalesPipeline) -> str:
+    product_id = pipeline.chemical_type_id or pipeline.tds_id or "none"
+    return f"{pipeline.customer_id}-{product_id}"
+
+
+def _pipeline_sort_timestamp(pipeline: SalesPipeline) -> float:
+    raw = pipeline.updated_at or pipeline.created_at
+    if not raw:
+        return 0.0
+    try:
+        return raw.timestamp() if hasattr(raw, "timestamp") else 0.0
+    except (TypeError, ValueError):
+        if isinstance(raw, str):
+            from datetime import datetime
+
+            try:
+                return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return 0.0
+        return 0.0
+
+
+def _pick_better_pipeline(
+    existing: SalesPipeline, candidate: SalesPipeline
+) -> SalesPipeline:
+    """Prefer current version, then highest version_number, then newest timestamp."""
+    if candidate.is_current_version and not existing.is_current_version:
+        return candidate
+    if not candidate.is_current_version and existing.is_current_version:
+        return existing
+    v_existing = existing.version_number or 0
+    v_candidate = candidate.version_number or 0
+    if v_candidate != v_existing:
+        return candidate if v_candidate > v_existing else existing
+    return (
+        candidate
+        if _pipeline_sort_timestamp(candidate) > _pipeline_sort_timestamp(existing)
+        else existing
+    )
+
+
+def deduplicate_sales_pipelines(
+    pipelines: List[SalesPipeline],
+) -> List[SalesPipeline]:
+    """One row per customer + product: the best current/latest pipeline version."""
+    grouped: dict[str, SalesPipeline] = {}
+    for pipeline in pipelines:
+        key = _pipeline_group_key(pipeline)
+        prev = grouped.get(key)
+        grouped[key] = (
+            _pick_better_pipeline(prev, pipeline) if prev else pipeline
+        )
+    return sorted(
+        grouped.values(),
+        key=_pipeline_sort_timestamp,
+        reverse=True,
+    )
+
+
 # =============================
 # CRUD OPERATIONS
 # =============================
@@ -211,6 +270,7 @@ def list_sales_pipelines(
     tds_id: Optional[str] = None,
     chemical_type_id: Optional[str] = None,
     stage: Optional[str] = None,
+    latest_per_deal: bool = False,
 ) -> List[SalesPipeline]:
     """
     List sales pipeline records with optional filters.
@@ -222,6 +282,7 @@ def list_sales_pipelines(
         tds_id: Filter by TDS/product ID
         chemical_type_id: Filter by chemical type ID
         stage: Filter by pipeline stage
+        latest_per_deal: When True, return one current/latest row per customer+product
     
     Returns:
         List of SalesPipeline records
@@ -238,11 +299,14 @@ def list_sales_pipelines(
         query = query.eq("chemical_type_id", _resolve_chemical_type_id(chemical_type_id))
     if stage:
         query = query.eq("stage", stage)
-    
+
+    fetch_limit = 1000 if latest_per_deal else limit
+    fetch_offset = 0 if latest_per_deal else offset
+
     response = (
         query.order("created_at", desc=True)
-        .limit(limit)
-        .offset(offset)
+        .limit(fetch_limit)
+        .offset(fetch_offset)
         .execute()
     )
     
@@ -255,7 +319,11 @@ def list_sales_pipelines(
         normalized_row = normalize_pipeline_row_from_db(row)
         normalized_rows.append(normalized_row)
     
-    return [SalesPipeline(**row) for row in normalized_rows]
+    pipelines = [SalesPipeline(**row) for row in normalized_rows]
+    if latest_per_deal:
+        pipelines = deduplicate_sales_pipelines(pipelines)
+        return pipelines[offset : offset + limit]
+    return pipelines
 
 
 def count_sales_pipelines(
@@ -263,6 +331,7 @@ def count_sales_pipelines(
     tds_id: Optional[str] = None,
     chemical_type_id: Optional[str] = None,
     stage: Optional[str] = None,
+    latest_per_deal: bool = False,
 ) -> int:
     """
     Count total sales pipeline records with optional filters.
@@ -288,7 +357,19 @@ def count_sales_pipelines(
         query = query.eq("chemical_type_id", _resolve_chemical_type_id(chemical_type_id))
     if stage:
         query = query.eq("stage", stage)
-    
+
+    if latest_per_deal:
+        rows = list_sales_pipelines(
+            limit=1000,
+            offset=0,
+            customer_id=customer_id,
+            tds_id=tds_id,
+            chemical_type_id=chemical_type_id,
+            stage=stage,
+            latest_per_deal=True,
+        )
+        return len(rows)
+
     response = query.execute()
     return response.count or 0
 
