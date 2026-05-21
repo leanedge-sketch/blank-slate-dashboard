@@ -39,14 +39,14 @@ Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) — sends a **confirmation
 
 | Name | Value |
 |------|--------|
-| `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as anon key |
-| `VITE_FRONTEND_URL` | `https://blank-slate-dashboard-plum.vercel.app` |
+| `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` (optional — runtime bootstrap from `/api` works too) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as anon key (optional if bootstrap works) |
 
-### Do not set
+### Do not set on Vercel
 
 | Name | Why |
 |------|-----|
+| `VITE_FRONTEND_URL` | **Not needed.** Production builds hardcode `https://blank-slate-dashboard-plum.vercel.app`. Delete this var on Vercel if present (especially if it points at an old URL). |
 | `VITE_API_URL` → Render | Causes AI/auth to hit an old Render backend. Leave unset. |
 
 ## Supabase Auth
@@ -116,7 +116,7 @@ You do **not** need a new Vercel project. You have **multiple URLs** pointing at
    - Ensure `blank-slate-dashboard-plum.vercel.app` is listed.
    - Click **⋯** → **Set as Production Domain** (or mark as primary).
 3. **Settings → Environment Variables** (Production)
-   - Set `VITE_FRONTEND_URL` = `https://blank-slate-dashboard-plum.vercel.app`
+   - **Remove** `VITE_FRONTEND_URL` if it exists (old URLs break auth; the app no longer uses it in production).
    - Remove `VITE_API_URL` if it contains `onrender.com`.
 4. **Redeploy** the latest `main` commit (Deployments → … → Redeploy).
 5. **Supabase** → Authentication → URL configuration:
