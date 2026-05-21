@@ -44,15 +44,16 @@ from app.services.ai_service import (
     search_documents,
 )
 
-# Profile builds use ai_chat cascade: gpt-4o → gpt-4o-mini → Gemini.
-# ~100k chars ≈ safe ceiling under 30k TPM on gpt-4o; mini allows more headroom.
-PROFILE_CONTEXT_MAX_CHARS = 100_000
-PROFILE_MAX_RAG_DOCS = 3
-PROFILE_MAX_INTERACTIONS = 8
-PROFILE_MAX_CHARS_PER_RAG_DOC = 3_000
-PROFILE_MAX_CHARS_PER_INTERACTION = 2_500
-PROFILE_MAX_WEB_CHARS = 12_000
-PROFILE_MAX_LINKEDIN_CHARS = 8_000
+# Profile builds use ai_chat cascade: gpt-4o → Gemini → gpt-4o-mini.
+# Research context capped at 91k chars (~9k buffer for system prompt formatting).
+PROFILE_CONTEXT_MAX_CHARS = 91_000
+PROFILE_SYSTEM_PROMPT_BUFFER_CHARS = 9_000
+PROFILE_MAX_RAG_DOCS = 5
+PROFILE_MAX_CHARS_PER_RAG_DOC = 4_000
+PROFILE_MAX_INTERACTIONS = 20
+PROFILE_MAX_CHARS_PER_INTERACTION = 3_000
+PROFILE_MAX_WEB_CHARS = 20_000
+PROFILE_MAX_LINKEDIN_CHARS = 15_000
 
 def _truncate_text(text: str, max_chars: int, label: str = "content") -> str:
     """Slice oversized text so profile prompts stay under token limits."""
@@ -65,18 +66,19 @@ def _truncate_text(text: str, max_chars: int, label: str = "content") -> str:
 
 def _truncate_profile_context(context: str, max_chars: int = PROFILE_CONTEXT_MAX_CHARS) -> str:
     """
-    Final safety cap on assembled research context (~100k chars / ~25k tokens).
+    Final safety cap on assembled research context (91k chars max).
     Keeps the start (section headers) and end (most recent interactions).
     """
     if len(context) <= max_chars:
         return context
-    head = max_chars // 2
-    tail = max_chars - head - 80
-    return (
-        context[:head]
-        + "\n\n...[context truncated to stay within token limits]...\n\n"
-        + context[-tail:]
+    marker = (
+        f"\n\n...[context truncated to {max_chars:,} char budget "
+        f"({PROFILE_SYSTEM_PROMPT_BUFFER_CHARS:,} reserved for system prompt)]...\n\n"
     )
+    usable = max_chars - len(marker)
+    head = usable // 3
+    tail = usable - head
+    return context[:head] + marker + context[-tail:]
 
 
 def _build_profile_research_context(
@@ -105,14 +107,16 @@ def _build_profile_research_context(
         for inter in interactions[:PROFILE_MAX_INTERACTIONS]:
             ts = getattr(inter, "created_at", None)
             ts_str = ts.isoformat() if ts else "unknown_time"
+            note_budget = PROFILE_MAX_CHARS_PER_INTERACTION // 2
+            resp_budget = PROFILE_MAX_CHARS_PER_INTERACTION - note_budget
             input_text = _truncate_text(
                 (inter.input_text or "").strip(),
-                PROFILE_MAX_CHARS_PER_INTERACTION // 2,
+                note_budget,
                 "interaction note",
             )
             ai_resp = _truncate_text(
                 (inter.ai_response or "").strip(),
-                PROFILE_MAX_CHARS_PER_INTERACTION // 2,
+                resp_budget,
                 "interaction response",
             )
             block = f"\n[Interaction at {ts_str}]\n"
@@ -120,7 +124,9 @@ def _build_profile_research_context(
                 block += f"Sales/Customer note: {input_text}\n"
             if ai_resp:
                 block += f"AI response/summary: {ai_resp}\n"
-            parts.append(block)
+            parts.append(
+                _truncate_text(block, PROFILE_MAX_CHARS_PER_INTERACTION, "interaction log")
+            )
 
     if web_context:
         parts.append("\nWeb Search Results:\n")
@@ -457,7 +463,9 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     
     # Step 1: Search relevant documents and memories (RAG)
     try:
-        relevant_docs = search_documents(customer.customer_name, user_id=user_id, limit=3)
+        relevant_docs = search_documents(
+            customer.customer_name, user_id=user_id, limit=PROFILE_MAX_RAG_DOCS
+        )
     except Exception as e:
         logging.warning(f"Document search failed: {str(e)}")
         relevant_docs = []
@@ -500,7 +508,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         customer.customer_name,
         len(context),
         PROFILE_CONTEXT_MAX_CHARS,
-        "cascade gpt-4o→mini→gemini",
+        "cascade gpt-4o→gemini→mini",
     )
 
     # Step 5: Fetch unique categories from chemical_types table (dynamically)

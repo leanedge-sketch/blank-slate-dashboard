@@ -4,8 +4,8 @@ AI Service - OpenAI + Gemini fallback and RAG helpers
 
 Chat completion cascade (ai_chat / gemini_chat):
   1. OpenAI gpt-4o
-  2. OpenAI gpt-4o-mini (on rate limit / connection errors)
-  3. Google Gemini gemini-2.5-flash (GEMINI_API_KEY)
+  2. Google Gemini (GEMINI_API_KEY) — on OpenAI rate limit / connection errors
+  3. OpenAI gpt-4o-mini — if Gemini also fails or rate limits
 
 Embeddings remain OpenAI-only (ai_embed / gemini_embed).
 
@@ -43,7 +43,10 @@ EMBED_MODEL = settings.OPENAI_EMBED_MODEL or "text-embedding-3-small"
 EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
 PRIMARY_OPENAI_MODEL = "gpt-4o"
-FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
+ULTIMATE_OPENAI_MODEL = "gpt-4o-mini"
+# Tier-2 Gemini model (override via GEMINI_CHAT_MODEL). Google API id is typically
+# gemini-2.5-flash; set env if you use a newer alias.
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 class AIServiceError(Exception):
@@ -70,7 +73,7 @@ def _gemini_model_name() -> str:
     return (
         os.getenv("GEMINI_CHAT_MODEL")
         or settings.GEMINI_CHAT_MODEL
-        or "gemini-2.5-flash"
+        or DEFAULT_GEMINI_MODEL
     ).strip()
 
 
@@ -107,8 +110,8 @@ def reset_gemini_client() -> None:
     _gemini_configured = False
 
 
-def _openai_fallback_eligible(exc: BaseException) -> bool:
-    """True when we should retry with gpt-4o-mini or Gemini."""
+def _provider_fallback_eligible(exc: BaseException) -> bool:
+    """True when we should try the next tier (rate limit, timeout, connection)."""
     if isinstance(exc, (RateLimitError, APIConnectionError, APITimeoutError)):
         return True
     status = getattr(exc, "status_code", None)
@@ -139,7 +142,7 @@ def _format_openai_error(exc: BaseException, model: str) -> str:
             "https://platform.openai.com/api-keys if needed."
         )
     elif status == 429 or "rate_limit" in str(message).lower():
-        hint = " Rate limit hit; cascade should retry with gpt-4o-mini or Gemini."
+        hint = " Rate limit hit; cascade retries with Gemini then gpt-4o-mini."
     return f"OpenAI chat error ({model}) {status}: {message}".strip() + hint
 
 
@@ -207,7 +210,7 @@ def _configure_gemini() -> None:
 
 
 def _chat_gemini(messages: List[Dict[str, str]]) -> str:
-    """Tertiary fallback: Google Generative AI (Gemini)."""
+    """Tier 2: Google Generative AI (Gemini) via GEMINI_API_KEY."""
     import google.generativeai as genai
 
     _configure_gemini()
@@ -257,9 +260,12 @@ def ai_chat(
     Chat completion with three-tier fallback (signature unchanged).
 
     messages: [{"role": "system"|"user"|"assistant", "content": "..."}, ...]
-    model: optional — kept for backward compatibility. When set, it is tried
-           before the default cascade only if it differs from gpt-4o; the
-           standard path is always gpt-4o → gpt-4o-mini → Gemini.
+    model: optional — kept for backward compatibility (ignored; cascade is fixed).
+
+    Cascade:
+      1. OpenAI gpt-4o
+      2. Google Gemini (GEMINI_API_KEY)
+      3. OpenAI gpt-4o-mini
 
     Returns:
       Response text, or "" if the model returned no content.
@@ -269,46 +275,49 @@ def ai_chat(
             "ai_chat: explicit model=%s ignored; using cascade %s → %s → %s",
             model,
             PRIMARY_OPENAI_MODEL,
-            FALLBACK_OPENAI_MODEL,
             _gemini_model_name(),
+            ULTIMATE_OPENAI_MODEL,
         )
 
-    # --- Tier 1: gpt-4o ---
+    # --- Tier 1: OpenAI gpt-4o ---
     try:
         logger.debug("ai_chat: attempting OpenAI model=%s", PRIMARY_OPENAI_MODEL)
         return _chat_openai(messages, PRIMARY_OPENAI_MODEL)
     except Exception as primary_exc:
-        if not _openai_fallback_eligible(primary_exc):
-            raise AIServiceError(_format_openai_error(primary_exc, PRIMARY_OPENAI_MODEL)) from primary_exc
-        logger.warning(
-            "ai_chat: OpenAI %s failed (%s); falling back to %s",
-            PRIMARY_OPENAI_MODEL,
-            primary_exc,
-            FALLBACK_OPENAI_MODEL,
-        )
-
-    # --- Tier 2: gpt-4o-mini ---
-    try:
-        return _chat_openai(messages, FALLBACK_OPENAI_MODEL)
-    except Exception as secondary_exc:
-        if not _openai_fallback_eligible(secondary_exc):
+        if not _provider_fallback_eligible(primary_exc):
             raise AIServiceError(
-                _format_openai_error(secondary_exc, FALLBACK_OPENAI_MODEL)
-            ) from secondary_exc
+                _format_openai_error(primary_exc, PRIMARY_OPENAI_MODEL)
+            ) from primary_exc
         logger.warning(
             "ai_chat: OpenAI %s failed (%s); falling back to Gemini %s",
-            FALLBACK_OPENAI_MODEL,
-            secondary_exc,
+            PRIMARY_OPENAI_MODEL,
+            primary_exc,
             _gemini_model_name(),
         )
 
-    # --- Tier 3: Gemini ---
+    # --- Tier 2: Google Gemini ---
     try:
         return _chat_gemini(messages)
     except Exception as gemini_exc:
+        if not _provider_fallback_eligible(gemini_exc):
+            raise AIServiceError(
+                f"Gemini chat error ({_gemini_model_name()}): {gemini_exc}"
+            ) from gemini_exc
+        logger.warning(
+            "ai_chat: Gemini %s failed (%s); falling back to OpenAI %s",
+            _gemini_model_name(),
+            gemini_exc,
+            ULTIMATE_OPENAI_MODEL,
+        )
+
+    # --- Tier 3: OpenAI gpt-4o-mini ---
+    try:
+        return _chat_openai(messages, ULTIMATE_OPENAI_MODEL)
+    except Exception as ultimate_exc:
         raise AIServiceError(
-            f"All chat providers failed. Last error (Gemini): {gemini_exc}"
-        ) from gemini_exc
+            f"All chat providers failed. Last error (OpenAI {ULTIMATE_OPENAI_MODEL}): "
+            f"{_format_openai_error(ultimate_exc, ULTIMATE_OPENAI_MODEL)}"
+        ) from ultimate_exc
 
 
 def ai_embed(text: str) -> List[float]:
