@@ -93,7 +93,19 @@ def main() -> int:
     try:
         from app.services.crm_service import get_dashboard_metrics
         from app.services.stock_service import list_products, get_stock_availability_summary
+        from app.services.stock_service import (
+            list_products,
+            list_stock_movements,
+            get_stock_availability_summary,
+        )
         from app.services.sales_pipeline_service import generate_pipeline_insights, get_pipeline_forecast
+
+        products = list_products(limit=5)
+        movements = list_stock_movements(limit=5)
+        availability = get_stock_availability_summary(limit=5)
+        print(f"OK   list_products               returned={len(products)}")
+        print(f"OK   list_stock_movements        returned={len(movements)}")
+        print(f"OK   get_stock_availability      returned={len(availability)}")
 
         m = get_dashboard_metrics()
         print(

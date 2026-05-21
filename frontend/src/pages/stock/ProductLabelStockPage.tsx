@@ -17,7 +17,7 @@ import {
   fetchChemicalTypes,
   fetchTDS,
   fetchCustomers,
-  fetchPartnerChemicals,
+  fetchPartners,
   fetchStockMovements,
   createStockMovement,
   updateStockMovement,
@@ -32,7 +32,7 @@ import {
   ChemicalType,
   Tds,
   Customer,
-  PartnerChemical,
+  Partner,
 } from "../../services/api";
 
 export function ProductLabelStockPage() {
@@ -42,8 +42,8 @@ export function ProductLabelStockPage() {
   const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  // Use partner_chemicals as suppliers/vendors
-  const [partners, setPartners] = useState<PartnerChemical[]>([]);
+  // Suppliers from partner_data (matches stock_movements.supplier_id FK)
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<ChemicalType | null>(null);
   const [selectedTds, setSelectedTds] = useState<Tds | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -248,11 +248,11 @@ export function ProductLabelStockPage() {
       const [chemicalTypesRes, customersRes, partnersRes] = await Promise.all([
         fetchChemicalTypes({ limit: 1000 }),
         fetchCustomers({ limit: 1000 }),
-        fetchPartnerChemicals({ limit: 1000 }),
+        fetchPartners({ limit: 1000 }),
       ]);
       setChemicalTypes(chemicalTypesRes.chemicals || []);
       setCustomers(customersRes.customers);
-      setPartners(partnersRes.partner_chemicals);
+      setPartners(partnersRes.partners);
     } catch (err: any) {
       console.error(err);
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load data");
@@ -511,14 +511,18 @@ export function ProductLabelStockPage() {
       
       if (!productId) {
         // Create product from Chemical Type
+        const displayBrand = selectedTds?.brand || selectedProduct.name || "Unknown";
+        const fullBrand = selectedTds?.grade
+          ? `${displayBrand} -- ${selectedTds.grade}`
+          : displayBrand;
         const productData: ProductCreate = {
           chemical: selectedProduct.name || "Unknown",
           chemical_type: selectedProduct.name || "Unknown",
-          brand: selectedProduct.name || "Unknown",
+          brand: fullBrand,
           packaging: "",
-          kg_per_unit: 1.0, // Default
+          kg_per_unit: 1.0,
           use_case: "sales",
-          tds_id: null, // Chemical type doesn't have a direct TDS link
+          tds_id: selectedTds?.id || null,
           tds_link: null,
         };
         const createdProduct = await createStockProduct(productData);
@@ -998,7 +1002,7 @@ export function ProductLabelStockPage() {
                         setFormData({
                           ...formData,
                           supplier_id: supplier?.id || null,
-                          supplier_name: supplier?.vendor || null,
+                          supplier_name: supplier?.partner || null,
                         });
                       }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -1007,7 +1011,8 @@ export function ProductLabelStockPage() {
                       <option value="">-- Select Supplier --</option>
                       {partners.map((partner) => (
                         <option key={partner.id} value={partner.id}>
-                          {partner.vendor || "Unknown"} {partner.country ? `(${partner.country})` : ""}
+                          {partner.partner || "Unknown"}{" "}
+                          {partner.partner_country ? `(${partner.partner_country})` : ""}
                         </option>
                       ))}
                     </select>

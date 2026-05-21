@@ -5,9 +5,9 @@ const modules = [
   {
     icon: Package,
     title: "Product Label Stock",
-    subtitle: "Product Labels · Movements",
+    subtitle: "products · stock_movements",
     description:
-      "Monitor product label stock and detailed stock movements. Track inventory flow and movement history in real time.",
+      "Record movements per product label; ledger in stock_movements with balances by warehouse.",
     href: "/stock/product-label",
     cta: "View product labels",
     accent: "from-indigo-600 via-indigo-500 to-purple-500",
@@ -16,9 +16,9 @@ const modules = [
   {
     icon: Warehouse,
     title: "General Stock Availability",
-    subtitle: "Warehouses · Overview",
+    subtitle: "products · stock_movements",
     description:
-      "Comprehensive stock availability across Addis Ababa, SEZ Kenya, and Nairobi Partner locations.",
+      "Availability rollup from the movement ledger — Addis Ababa, SEZ Kenya, and Nairobi Partner.",
     href: "/stock/general-availability",
     cta: "View availability",
     accent: "from-amber-600 via-orange-500 to-yellow-500",
