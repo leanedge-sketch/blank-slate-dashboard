@@ -7,8 +7,8 @@ import {
   updatePartnerChemical,
   deletePartnerChemical,
   fetchVendors,
-  fetchProductCategories,
-  fetchSubCategories,
+  fetchProductCategoriesFullData,
+  fetchSubCategoriesFullData,
   fetchTDS,
   PartnerChemical,
   PartnerChemicalCreate,
@@ -64,8 +64,8 @@ export function PartnerChemicalsPage() {
       const [chemicalsRes, vendorsRes, categoriesRes, subCategoriesRes] = await Promise.all([
         fetchPartnerChemicals({ limit: 1000 }),
         fetchVendors(),
-        fetchProductCategories(),
-        fetchSubCategories(),
+        fetchProductCategoriesFullData(),
+        fetchSubCategoriesFullData(),
       ]);
       
       setPartnerChemicals(chemicalsRes.partner_chemicals);

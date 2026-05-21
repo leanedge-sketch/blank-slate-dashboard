@@ -765,10 +765,17 @@ export function SalesPipelinePage() {
       }
     }
     
-    // Fallback: try to find in old chemicalTypes (for backward compatibility)
-    const chemicalType = chemicalTypes.find((ct) => ct.id === chemicalTypeId);
+    // Catalog integer id stored as string
+    const chemicalType = chemicalTypes.find(
+      (ct) => String(ct.id) === String(chemicalTypeId)
+    );
     if (chemicalType?.name) {
       return chemicalType.name;
+    }
+
+    const metaName = (pipeline.metadata as Record<string, unknown> | null)?.product_name;
+    if (typeof metaName === "string" && metaName.trim()) {
+      return metaName.trim();
     }
     
     // Debug log if not found

@@ -526,7 +526,18 @@ def count_leanchem_products() -> int:
 
 def create_leanchem_product(body: LeanchemProductCreate) -> LeanchemProduct:
     supabase: Client = get_supabase_client()
-    payload = body.model_dump(exclude_unset=True)
+    from uuid import UUID
+
+    def _uuidify(obj: Any) -> Any:
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {k: _uuidify(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_uuidify(i) for i in obj]
+        return obj
+
+    payload = _uuidify(body.model_dump(exclude_unset=True))
     response = supabase.table("leanchem_products").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create LeanChem product")

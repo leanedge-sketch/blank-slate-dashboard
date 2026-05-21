@@ -40,6 +40,40 @@ from app.services.ai_service import gemini_chat, GeminiError
 
 _CLOSED_STAGES = {"Closed", "Lost"}
 
+# Legacy Supabase columns (Title Case) → canonical snake_case
+_LEGACY_PIPELINE_COLUMNS = {
+    "Business Model": "business_model",
+    "Contact per lead": "contact_per_lead",
+    "Lead source": "lead_source",
+}
+
+_PIPELINE_WRITE_COLUMNS = frozenset({
+    "customer_id",
+    "tds_id",
+    "chemical_type_id",
+    "stage",
+    "amount",
+    "currency",
+    "expected_close_date",
+    "close_reason",
+    "lead_source",
+    "contact_per_lead",
+    "business_model",
+    "unit",
+    "unit_price",
+    "forex",
+    "business_unit",
+    "incoterm",
+    "metadata",
+    "ai_interactions",
+    "parent_pipeline_id",
+    "version_number",
+    "reason_for_stage_change",
+    "reason_for_amount_change",
+    "is_current_version",
+    "source",
+})
+
 
 def _coerce_datetime(value: Any) -> Optional[datetime]:
     """Parse Supabase/Pydantic timestamps for analytics comparisons."""
@@ -85,27 +119,44 @@ def convert_uuids(obj: Any) -> Any:
     return obj
 
 
+def _resolve_chemical_type_id(value: Any) -> Optional[str]:
+    """
+    Persist pipeline product links as UUID (chemical_full_data.uuid_id).
+    Accepts legacy integer chemical_full_data.id from the UI.
+    """
+    if value is None or value == "":
+        return None
+    s = str(value).strip()
+    if len(s) >= 32 and "-" in s:
+        return s
+    try:
+        int_id = int(s)
+        supabase: Client = get_supabase_client()
+        response = (
+            supabase.table("chemical_full_data")
+            .select("uuid_id")
+            .eq("id", int_id)
+            .limit(1)
+            .execute()
+        )
+        if response.data and response.data[0].get("uuid_id"):
+            return str(response.data[0]["uuid_id"])
+    except (TypeError, ValueError):
+        pass
+    return s
+
+
 def normalize_pipeline_payload_to_db(payload: dict) -> dict:
-    """
-    Normalize a payload from the API model to match the database column names.
-    Maps 'amount' to 'deal_value_usd' or 'amount' depending on database schema.
-    """
+    """Map legacy column names and restrict to writable sales_pipeline fields."""
     payload = dict(payload)
-    
-    # Map 'amount' to database column name
-    # Check if database has 'amount' column, otherwise use 'deal_value_usd'
-    # For now, we'll try 'amount' first, and if that fails, the database will tell us
-    # But to be safe, we'll check what columns exist by trying both
-    # Since user said they changed it to 'amount', we'll use 'amount'
-    # But if the database still has 'deal_value_usd', we need to map it
-    
-    # For now, keep 'amount' as is - if database column is 'amount', it will work
-    # If database column is still 'deal_value_usd', we need to map it
-    # Let's check: if payload has 'amount' and we want to be compatible with both,
-    # we can try to detect, but for now, let's assume database has 'amount' column
-    # If it doesn't work, we'll need to map 'amount' -> 'deal_value_usd'
-    
-    return payload
+    for legacy, canonical in _LEGACY_PIPELINE_COLUMNS.items():
+        if legacy in payload and payload[legacy] not in (None, ""):
+            if payload.get(canonical) in (None, ""):
+                payload[canonical] = payload[legacy]
+        payload.pop(legacy, None)
+    if payload.get("chemical_type_id") is not None:
+        payload["chemical_type_id"] = _resolve_chemical_type_id(payload["chemical_type_id"])
+    return {k: v for k, v in payload.items() if k in _PIPELINE_WRITE_COLUMNS}
 
 
 def normalize_pipeline_row_from_db(row: dict) -> dict:
@@ -138,7 +189,13 @@ def normalize_pipeline_row_from_db(row: dict) -> dict:
             row["ai_interactions"] = []
     elif ai_interactions_val is None:
         row["ai_interactions"] = []
-    
+
+    for legacy, canonical in _LEGACY_PIPELINE_COLUMNS.items():
+        if legacy in row:
+            if row.get(canonical) in (None, "") and row.get(legacy) not in (None, ""):
+                row[canonical] = row[legacy]
+            row.pop(legacy, None)
+
     return row
 
 
@@ -178,7 +235,7 @@ def list_sales_pipelines(
     if tds_id:
         query = query.eq("tds_id", tds_id)
     if chemical_type_id:
-        query = query.eq("chemical_type_id", chemical_type_id)
+        query = query.eq("chemical_type_id", _resolve_chemical_type_id(chemical_type_id))
     if stage:
         query = query.eq("stage", stage)
     
@@ -228,7 +285,7 @@ def count_sales_pipelines(
     if tds_id:
         query = query.eq("tds_id", tds_id)
     if chemical_type_id:
-        query = query.eq("chemical_type_id", chemical_type_id)
+        query = query.eq("chemical_type_id", _resolve_chemical_type_id(chemical_type_id))
     if stage:
         query = query.eq("stage", stage)
     
@@ -404,7 +461,7 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     # The database might have 'amount', 'deal_value', or 'deal_value_usd'
     # Since user said they changed it to 'amount', we'll try that first
     # But to be safe, we'll also check for the other column names
-    db_payload = dict(payload)
+    db_payload = normalize_pipeline_payload_to_db(payload)
     
     # Log the payload for debugging
     import logging
@@ -584,8 +641,8 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         new_pipeline_data["version_number"] = next_version
         new_pipeline_data["is_current_version"] = True
         
-        # Convert UUIDs and dates
-        new_pipeline_data = convert_uuids(new_pipeline_data)
+        # Convert UUIDs and dates, map legacy columns
+        new_pipeline_data = convert_uuids(normalize_pipeline_payload_to_db(new_pipeline_data))
         
         # Create new pipeline record
         import logging
@@ -631,7 +688,7 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         return SalesPipeline(**row)
     
     # Regular update (no stage/amount change) - just update existing record
-    update_data = convert_uuids(update_data)
+    update_data = convert_uuids(normalize_pipeline_payload_to_db(update_data))
     
     import logging
     logger = logging.getLogger(__name__)
