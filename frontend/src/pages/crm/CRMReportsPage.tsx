@@ -174,7 +174,7 @@ export function CRMReportsPage() {
   const hasDateFilter = Boolean(startDate.trim() || endDate.trim());
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
+    <div className="page min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
       <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-slate-50 shadow-lg">
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10 space-y-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -187,8 +187,8 @@ export function CRMReportsPage() {
                 CRM Reports
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
-                Live coverage, interaction volume, sales pipeline opportunities, and forecast — loaded
-                from your Supabase data.
+                Design space for pipeline, activity, and interaction reports driven by your Supabase
+                data — with live metrics below.
               </p>
               {lastLoadedAt && (
                 <p className="text-xs text-slate-500">Last updated: {lastLoadedAt}</p>
@@ -276,6 +276,33 @@ export function CRMReportsPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        <section className="card">
+          <p className="section-description">
+            This page covers the report sections you need. Use the filters in the header, then
+            review the live data tables and charts below.
+          </p>
+          <ul className="report-list">
+            <li>
+              <strong>Customer coverage</strong> – who has recent interactions and who might be
+              going quiet.
+            </li>
+            <li>
+              <strong>Interaction volume</strong> – AI and human touchpoints per customer, per week
+              / month.
+            </li>
+            <li>
+              <strong>Opportunity tracking</strong> – deals in the sales pipeline and their stage.
+            </li>
+            <li>
+              <strong>Export</strong> – download structured CSV for sharing with the team.
+            </li>
+          </ul>
+          <p className="section-description">
+            Backend endpoints are connected; metrics refresh when you open this page or click
+            Refresh.
+          </p>
+        </section>
+
         {error && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
