@@ -434,10 +434,12 @@ async def list_customer_interactions(
 
     try:
         if include_conversation:
-            merged, table_total, archive_added, pipeline_added = merge_customer_interaction_history(
-                customer_id,
-                start_date=start_date,
-                end_date=end_date,
+            merged, table_total, archive_added, pipeline_added, chatgpt_added = (
+                merge_customer_interaction_history(
+                    customer_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
             )
             page = merged[offset : offset + limit]
             return InteractionListResponse(
@@ -446,6 +448,7 @@ async def list_customer_interactions(
                 interactions_table_total=table_total,
                 conversation_total=archive_added,
                 pipeline_total=pipeline_added,
+                chatgpt_export_total=chatgpt_added,
                 conversation_logs=None,
             )
 

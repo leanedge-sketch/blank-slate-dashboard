@@ -31,4 +31,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.local.bak
 .vercel
+
+# Telegram Desktop exports (private)
+data/telegram-imports/*.json
+data/telegram-imports/**/*.json

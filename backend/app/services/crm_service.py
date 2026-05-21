@@ -46,11 +46,16 @@ from app.services.ai_service import (
     gemini_embed,
     log_conversation_to_rag,
 )
+from app.services.conversation_archive_service import (
+    _parse_chatgpt_export_row,
+    get_chatgpt_export_archives_for_customer,
+)
 from app.services.profile_research_service import (
     PROFILE_CONTEXT_MAX_CHARS,
     build_profile_research_context,
     gather_profile_research_inputs,
 )
+from app.services.telegram_service import notify_interaction_saved
 
 # Sales stage definitions (Brian Tracy 7-stage process)
 SALES_STAGES = {
@@ -372,16 +377,17 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     
     # Unified CRM history: interactions table + conversation archive
     try:
-        interactions, table_total, archive_added, pipeline_added = merge_customer_interaction_history(
-            str(customer.customer_id),
+        interactions, table_total, archive_added, pipeline_added, chatgpt_added = (
+            merge_customer_interaction_history(str(customer.customer_id))
         )
         logging.info(
-            "Profile build for %s: %s merged history (%s interactions + %s conversation + %s pipeline-only)",
+            "Profile build for %s: %s merged history (%s interactions + %s conversation + %s pipeline + %s ChatGPT export)",
             customer.customer_name,
             len(interactions),
             table_total,
             archive_added,
             pipeline_added,
+            chatgpt_added,
         )
     except Exception as e:
         logging.warning(
@@ -391,6 +397,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         table_total = 0
         archive_added = 0
         pipeline_added = 0
+        chatgpt_added = 0
 
     research_inputs = gather_profile_research_inputs(
         customer, interactions, user_id=user_id
@@ -593,6 +600,7 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     update_payload["latest_profile_updated_at"] = datetime.utcnow().isoformat()
     research_meta["conversation_archive_count"] = archive_added
     research_meta["pipeline_archive_count"] = pipeline_added
+    research_meta["chatgpt_export_count"] = chatgpt_added
     research_meta["interactions_table_count"] = table_total
     update_payload["latest_profile_research_meta"] = research_meta
 
@@ -895,11 +903,14 @@ def merge_customer_interaction_history(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     max_rows: int = INTERACTIONS_MAX_FETCH,
-) -> tuple[List[Interaction], int, int, int]:
+) -> tuple[List[Interaction], int, int, int, int]:
     """
-    Unified timeline: public.interactions + public.conversation + pipeline JSON (deduped).
-    Returns (merged newest-first, table_count, conversation-only count, pipeline-only count).
+    Unified timeline: interactions + conversation + pipeline JSON + ChatGPT exports (deduped).
+    Returns (merged, table_count, conversation-only, pipeline-only, chatgpt_export-only).
     """
+    customer_row = get_customer_by_id(customer_id)
+    customer_name = customer_row.customer_name if customer_row else ""
+
     table_rows = get_all_interactions_for_customer(
         customer_id,
         max_rows=max_rows,
@@ -959,13 +970,50 @@ def merge_customer_interaction_history(
         merged.append(it)
         pipeline_added += 1
 
+    chatgpt_added = 0
+    if customer_name:
+        for row in get_chatgpt_export_archives_for_customer(
+            customer_id, customer_name, max_rows=30
+        ):
+            if not _row_in_date_range(row.get("created_at"), start_date, end_date):
+                continue
+            input_text, ai_response, parsed_time = _parse_chatgpt_export_row(
+                row.get("content") or ""
+            )
+            fp = _interaction_fingerprint(input_text, ai_response)
+            if fp in fingerprints:
+                continue
+            fingerprints.add(fp)
+
+            conv_id = row.get("id")
+            try:
+                synthetic_id = (
+                    UUIDType(str(conv_id))
+                    if conv_id
+                    else uuid5(NAMESPACE_URL, "chatgpt-export-empty")
+                )
+            except (ValueError, TypeError):
+                synthetic_id = uuid5(NAMESPACE_URL, f"chatgpt-export-{conv_id}")
+
+            merged.append(
+                Interaction(
+                    id=synthetic_id,
+                    customer_id=UUIDType(str(customer_id)),
+                    input_text=input_text or None,
+                    ai_response=ai_response or None,
+                    created_at=parsed_time or row.get("created_at"),
+                    history_source="chatgpt_export",
+                )
+            )
+            chatgpt_added += 1
+
     merged.sort(
         key=lambda r: str(r.created_at or ""),
         reverse=True,
     )
     if len(merged) > max_rows:
         merged = merged[:max_rows]
-    return merged, len(table_rows), archive_added, pipeline_added
+    return merged, len(table_rows), archive_added, pipeline_added, chatgpt_added
 
 
 def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
@@ -989,7 +1037,7 @@ def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
             if date_fn(r) and str(date_fn(r))[5:7] == "05"
         )
 
-    merged, table_n, conv_n, pipe_n = merge_customer_interaction_history(customer_id)
+    merged, table_n, conv_n, pipe_n, gpt_n = merge_customer_interaction_history(customer_id)
 
     return {
         "customer_id": customer_id,
@@ -1016,6 +1064,8 @@ def audit_customer_interaction_sources(customer_id: str) -> Dict[str, Any]:
         "merged_table_rows": table_n,
         "merged_conversation_only": conv_n,
         "merged_pipeline_only": pipe_n,
+        "chatgpt_export_total": gpt_n,
+        "merged_chatgpt_export_only": gpt_n,
     }
 
 
@@ -1185,6 +1235,22 @@ def create_interaction(
         logging.warning(
             f"Failed to enqueue profile_update_jobs for customer {customer_id}: {e}"
         )
+
+    try:
+        customer = get_customer_by_id(customer_id)
+        if customer and not (interaction_in.input_text or "").strip().startswith(
+            "[telegram_backfill]"
+        ):
+            notify_interaction_saved(
+                customer_name=customer.customer_name,
+                customer_id=str(customer_id),
+                input_text=interaction_in.input_text or "",
+                ai_response=interaction_in.ai_response or "",
+                created_at=str(interaction_row.get("created_at") or ""),
+                source="crm",
+            )
+    except Exception as e:
+        logging.warning("Telegram notify skipped for %s: %s", customer_id, e)
 
     return Interaction(**interaction_row)
 
@@ -1678,7 +1744,7 @@ def chat_with_customer(
         raise RuntimeError("Customer not found")
 
     # 2) Fetch recent interactions to give the AI richer CRM context
-    recent_interactions, _, _, _ = merge_customer_interaction_history(
+    recent_interactions, _, _, _, _ = merge_customer_interaction_history(
         customer_id, max_rows=100
     )
     # Oldest first in the prompt so the story reads naturally

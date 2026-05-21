@@ -96,14 +96,17 @@ def audit_interactions_table(customer_id: str | None) -> None:
 
 def audit_conversation_table(customer_id: str | None) -> None:
     sb = get_supabase_service_client()
+    # Omit `content` — exports can be 60k+ chars per row and cause MemoryError.
+    select_cols = "id, metadata, created_at"
     rows: list[dict] = []
     if customer_id:
         offset = 0
         page = 500
-        while True:
+        max_pages = 20
+        for _ in range(max_pages):
             resp = (
                 sb.table("conversation")
-                .select("id, content, metadata, created_at")
+                .select(select_cols, count="exact")
                 .eq("metadata->>customer_id", str(customer_id))
                 .order("created_at", desc=True)
                 .range(offset, offset + page - 1)
@@ -117,24 +120,19 @@ def audit_conversation_table(customer_id: str | None) -> None:
     else:
         resp = (
             sb.table("conversation")
-            .select("id, content, metadata, created_at")
+            .select(select_cols)
             .order("created_at", desc=True)
             .limit(2000)
             .execute()
         )
         rows = resp.data or []
 
-    matched: list[dict] = rows if customer_id else []
+    matched: list[dict] = []
     by_month: dict[str, int] = defaultdict(int)
-    if not customer_id:
-        for r in rows:
-            meta = r.get("metadata") or {}
-            cid = meta.get("customer_id") if isinstance(meta, dict) else None
-            if cid:
-                matched.append(r)
-                by_month[month_key(r.get("created_at"))] += 1
-    else:
-        for r in rows:
+    for r in rows:
+        meta = r.get("metadata") or {}
+        cid = meta.get("customer_id") if isinstance(meta, dict) else None
+        if customer_id or cid:
             matched.append(r)
             by_month[month_key(r.get("created_at"))] += 1
 
@@ -148,8 +146,9 @@ def audit_conversation_table(customer_id: str | None) -> None:
     print(f"May rows (any year, *-05): {len(may_rows)}")
     for r in may_rows[:5]:
         meta = r.get("metadata") or {}
-        preview = (r.get("content") or "")[:80].replace("\n", " ")
-        print(f"  - {r.get('created_at')} | meta.customer_id={meta.get('customer_id')} | {preview}...")
+        print(
+            f"  - {r.get('created_at')} | meta.customer_id={meta.get('customer_id')} | id={r.get('id')}"
+        )
 
 
 def main() -> None:

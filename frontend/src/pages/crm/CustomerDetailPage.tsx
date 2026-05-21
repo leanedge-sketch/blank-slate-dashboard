@@ -16,6 +16,7 @@ import {
   fetchAllCustomerInteractions,
   isConversationArchiveRow,
   isPipelineArchiveRow,
+  isChatgptExportRow,
 } from "../../utils/interactions";
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package, DollarSign } from "lucide-react";
 
@@ -25,6 +26,7 @@ export function CustomerDetailPage() {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [archiveCount, setArchiveCount] = useState(0);
   const [pipelineCount, setPipelineCount] = useState(0);
+  const [chatgptCount, setChatgptCount] = useState(0);
   const [tableCount, setTableCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function CustomerDetailPage() {
       setInteractions(allInteractions.interactions);
       setArchiveCount(allInteractions.conversationArchiveTotal);
       setPipelineCount(allInteractions.pipelineArchiveTotal);
+      setChatgptCount(allInteractions.chatgptExportTotal);
       setTableCount(allInteractions.interactionsTableTotal);
     } catch (err: any) {
       console.error(err);
@@ -574,6 +577,7 @@ export function CustomerDetailPage() {
                     const isDeleting = deleting === it.id;
                     const fromArchive = isConversationArchiveRow(it);
                     const fromPipeline = isPipelineArchiveRow(it);
+                    const fromChatgpt = isChatgptExportRow(it);
 
                     return (
                       <div
@@ -643,7 +647,7 @@ export function CustomerDetailPage() {
                             className="flex items-center gap-1 ml-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {!isEditing && !fromArchive && !fromPipeline && (
+                            {!isEditing && !fromArchive && !fromPipeline && !fromChatgpt && (
                               <>
                                 <button
                                   type="button"

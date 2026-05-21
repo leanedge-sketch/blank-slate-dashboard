@@ -16,6 +16,7 @@ export interface CustomerInteractionBundle {
   interactionsTableTotal: number;
   conversationArchiveTotal: number;
   pipelineArchiveTotal: number;
+  chatgptExportTotal: number;
 }
 
 /** Fetch unified history (interactions table + conversation archive, merged). */
@@ -28,6 +29,8 @@ export async function fetchAllCustomerInteractions(
   let total = 0;
   let interactionsTableTotal = 0;
   let conversationArchiveTotal = 0;
+  let pipelineArchiveTotal = 0;
+  let chatgptExportTotal = 0;
 
   while (all.length < MAX_INTERACTIONS) {
     const params: Record<string, string | number | boolean> = {
@@ -49,6 +52,7 @@ export async function fetchAllCustomerInteractions(
     conversationArchiveTotal =
       res.data.conversation_total ?? conversationArchiveTotal;
     pipelineArchiveTotal = res.data.pipeline_total ?? pipelineArchiveTotal;
+    chatgptExportTotal = res.data.chatgpt_export_total ?? chatgptExportTotal;
     all.push(...page);
 
     if (page.length < PAGE_SIZE || all.length >= total) {
@@ -63,6 +67,7 @@ export async function fetchAllCustomerInteractions(
     interactionsTableTotal,
     conversationArchiveTotal,
     pipelineArchiveTotal,
+    chatgptExportTotal,
   };
 }
 
@@ -74,6 +79,10 @@ export function isPipelineArchiveRow(interaction: Interaction): boolean {
   return interaction.history_source === "pipeline";
 }
 
+export function isChatgptExportRow(interaction: Interaction): boolean {
+  return interaction.history_source === "chatgpt_export";
+}
+
 /** Format unified CRM history for Deep Dive tab. */
 export function formatInteractionsForCrmTab(
   interactions: Interaction[],
@@ -81,20 +90,25 @@ export function formatInteractionsForCrmTab(
 ): string {
   const count = total ?? interactions.length;
   const tableCount = interactions.filter(
-    (it) => !isConversationArchiveRow(it),
+    (it) =>
+      !isConversationArchiveRow(it) &&
+      !isPipelineArchiveRow(it) &&
+      !isChatgptExportRow(it),
   ).length;
   const archiveCount = interactions.filter((it) =>
     isConversationArchiveRow(it),
   ).length;
+  const pipelineCount = interactions.filter((it) => isPipelineArchiveRow(it)).length;
+  const chatgptCount = interactions.filter((it) => isChatgptExportRow(it)).length;
 
   if (!interactions.length) {
     return (
-      "No CRM history found in public.interactions or public.conversation for this customer."
+      "No CRM history found in public.interactions, public.conversation, pipeline, or ChatGPT export for this customer."
     );
   }
 
   const lines: string[] = [
-    `Source: Supabase merged timeline (${count} row${count === 1 ? "" : "s"}: ${tableCount} from interactions table, ${archiveCount} from conversation archive)`,
+    `Source: Supabase merged timeline (${count} row${count === 1 ? "" : "s"}: ${tableCount} CRM, ${archiveCount} RAG, ${pipelineCount} pipeline, ${chatgptCount} ChatGPT export)`,
     "",
     "Complete history index:",
   ];
@@ -103,7 +117,13 @@ export function formatInteractionsForCrmTab(
     const ts = it.created_at
       ? new Date(it.created_at).toLocaleString()
       : "unknown time";
-    const src = isConversationArchiveRow(it) ? " [RAG archive]" : "";
+    const src = isConversationArchiveRow(it)
+      ? " [RAG archive]"
+      : isPipelineArchiveRow(it)
+        ? " [pipeline]"
+        : isChatgptExportRow(it)
+          ? " [ChatGPT export]"
+          : "";
     const preview =
       (it.input_text || "").trim() ||
       (it.ai_response || "").trim() ||
@@ -123,7 +143,9 @@ export function formatInteractionsForCrmTab(
       ? "RAG conversation archive"
       : isPipelineArchiveRow(it)
         ? "Pipeline chat (sales_pipeline.ai_interactions)"
-        : "CRM interaction";
+        : isChatgptExportRow(it)
+          ? "ChatGPT export (conversations.json)"
+          : "CRM interaction";
     lines.push(`--- ${label} at ${ts} ---`);
     if (it.input_text?.trim()) {
       lines.push(`Sales/Customer note: ${it.input_text.trim()}`);

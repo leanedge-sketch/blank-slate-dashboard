@@ -84,7 +84,7 @@ def _fetch_recent_interactions(
     limit: int = 2000,
 ) -> List[Dict[str, Any]]:
     """Merged CRM history: interactions + conversation archive + pipeline JSON."""
-    merged, _, _, _ = merge_customer_interaction_history(
+    merged, _, _, _, _ = merge_customer_interaction_history(
         customer_id, max_rows=limit
     )
     rows = [it.model_dump(mode="json") for it in merged]

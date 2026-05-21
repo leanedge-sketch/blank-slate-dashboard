@@ -118,6 +118,7 @@ class InteractionListResponse(BaseModel):
     interactions_table_total: Optional[int] = None
     conversation_total: Optional[int] = None
     pipeline_total: Optional[int] = None
+    chatgpt_export_total: Optional[int] = None
     conversation_logs: Optional[List[Dict[str, Any]]] = None
 
 
