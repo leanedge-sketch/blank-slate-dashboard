@@ -21,8 +21,9 @@ PROFILE_SYSTEM_PROMPT_BUFFER_CHARS = 10_000
 
 PROFILE_MAX_RAG_DOCS = 16
 PROFILE_MAX_CHARS_PER_RAG_DOC = 12_000
-PROFILE_MAX_INTERACTIONS = 60
-PROFILE_MAX_CHARS_PER_INTERACTION = 10_000
+# No cap on how many rows we load from DB; formatting uses index + full text within budget
+PROFILE_MAX_CHARS_PER_INTERACTION = 12_000
+PROFILE_INTERACTION_PREVIEW_CHARS = 160
 PROFILE_MAX_WEB_CHARS = 60_000
 PROFILE_MAX_LINKEDIN_CHARS = 50_000
 
@@ -159,6 +160,35 @@ def _format_rag_section(docs: List[Dict[str, Any]], char_budget: int) -> Tuple[s
     }
 
 
+def _interaction_preview(inter: Interaction) -> str:
+    raw = ((inter.input_text or "").strip() or (inter.ai_response or "").strip())
+    one_line = " ".join(raw.split())
+    if len(one_line) <= PROFILE_INTERACTION_PREVIEW_CHARS:
+        return one_line or "[empty interaction]"
+    return one_line[:PROFILE_INTERACTION_PREVIEW_CHARS] + "…"
+
+
+def _format_interaction_block(inter: Interaction, note_budget: int, resp_budget: int) -> str:
+    ts = getattr(inter, "created_at", None)
+    ts_str = ts.isoformat() if ts else "unknown_time"
+    input_text = _truncate_text(
+        (inter.input_text or "").strip(),
+        note_budget,
+        "interaction note",
+    )
+    ai_resp = _truncate_text(
+        (inter.ai_response or "").strip(),
+        resp_budget,
+        "interaction response",
+    )
+    block = f"\n[Interaction at {ts_str}]\n"
+    if input_text:
+        block += f"Sales/Customer note: {input_text}\n"
+    if ai_resp:
+        block += f"AI response/summary: {ai_resp}\n"
+    return block
+
+
 def _format_crm_section(
     interactions: List[Interaction], char_budget: int
 ) -> Tuple[str, Dict[str, Any]]:
@@ -166,46 +196,70 @@ def _format_crm_section(
         body = "No CRM interactions recorded for this customer yet.\n"
         return (
             "=== CRM INTERACTIONS (0) ===\n" + body,
-            {"crm_interaction_count": 0, "crm_chars": len(body), "crm_truncated": False},
+            {
+                "crm_interaction_count": 0,
+                "crm_interaction_count_full_text": 0,
+                "crm_chars": len(body),
+                "crm_truncated": False,
+            },
         )
 
-    count = min(len(interactions), PROFILE_MAX_INTERACTIONS)
-    parts: List[str] = [f"=== CRM INTERACTIONS ({count} logs, newest first) ===\n"]
-    per_item = max(800, char_budget // max(1, count))
-    truncated_any = False
-
-    for inter in interactions[:PROFILE_MAX_INTERACTIONS]:
+    total = len(interactions)
+    parts: List[str] = [
+        f"=== CRM INTERACTIONS ({total} logs in database, newest first) ===\n",
+        f"Complete interaction index ({total} entries — every CRM log):\n",
+    ]
+    for idx, inter in enumerate(interactions, start=1):
         ts = getattr(inter, "created_at", None)
         ts_str = ts.isoformat() if ts else "unknown_time"
-        note_budget = per_item // 2
-        resp_budget = per_item - note_budget
-        input_text = _truncate_text(
-            (inter.input_text or "").strip(),
-            note_budget,
-            "interaction note",
-        )
-        ai_resp = _truncate_text(
-            (inter.ai_response or "").strip(),
-            resp_budget,
-            "interaction response",
-        )
-        if len((inter.input_text or "")) > len(input_text) or len(
-            (inter.ai_response or "")
-        ) > len(ai_resp):
-            truncated_any = True
-        block = f"\n[Interaction at {ts_str}]\n"
-        if input_text:
-            block += f"Sales/Customer note: {input_text}\n"
-        if ai_resp:
-            block += f"AI response/summary: {ai_resp}\n"
-        parts.append(_truncate_text(block, per_item, "interaction log"))
+        parts.append(f"{idx}. [{ts_str}] {_interaction_preview(inter)}")
 
-    body = "\n".join(parts)
-    body = _truncate_text(body, char_budget, "CRM section")
+    index_body = "\n".join(parts) + "\n"
+    remaining = max(5_000, char_budget - len(index_body))
+    per_item = max(
+        600,
+        min(
+            PROFILE_MAX_CHARS_PER_INTERACTION,
+            remaining // max(1, min(total, 80)),
+        ),
+    )
+    note_budget = per_item // 2
+    resp_budget = per_item - note_budget
+
+    full_text_parts: List[str] = ["\nFull interaction transcripts (newest first):\n"]
+    truncated_any = False
+    full_count = 0
+    used = len(index_body)
+
+    for inter in interactions:
+        block = _format_interaction_block(inter, note_budget, resp_budget)
+        capped = _truncate_text(block, per_item, "interaction log")
+        if used + len(capped) > char_budget:
+            truncated_any = True
+            break
+        if len(block) > len(capped):
+            truncated_any = True
+        full_text_parts.append(capped)
+        used += len(capped)
+        full_count += 1
+
+    if full_count < total:
+        full_text_parts.insert(
+            1,
+            f"(Showing full text for {full_count} of {total} interactions; "
+            f"older entries appear in the index above.)\n",
+        )
+
+    body = index_body + "\n".join(full_text_parts)
+    if len(body) > char_budget:
+        body = _truncate_text(body, char_budget, "CRM section")
+        truncated_any = True
+
     return body, {
-        "crm_interaction_count": count,
+        "crm_interaction_count": total,
+        "crm_interaction_count_full_text": full_count,
         "crm_chars": len(body),
-        "crm_truncated": truncated_any or len(body) >= char_budget - 50,
+        "crm_truncated": truncated_any or full_count < total,
     }
 
 

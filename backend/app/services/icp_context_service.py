@@ -78,22 +78,37 @@ def _fetch_customer_row(customer_id: str) -> Optional[Dict[str, Any]]:
 
 
 def _fetch_recent_interactions(
-    customer_id: str, pipeline_id: Optional[str] = None, limit: int = 50
+    customer_id: str,
+    pipeline_id: Optional[str] = None,
+    limit: int = 2000,
 ) -> List[Dict[str, Any]]:
+    """Load all interactions for a customer (paginated)."""
     supabase = _get_supabase()
-    query = (
-        supabase.table("interactions")
-        .select("*")
-        .eq("customer_id", customer_id)
-        .order("created_at", desc=True)
-        .limit(limit)
-    )
+    page_size = 500
+    collected: List[Dict[str, Any]] = []
+    offset = 0
 
-    if pipeline_id:
-        query = query.eq("pipeline_id", pipeline_id)
+    while len(collected) < limit:
+        query = (
+            supabase.table("interactions")
+            .select("*")
+            .eq("customer_id", customer_id)
+            .order("created_at", desc=True)
+            .range(offset, offset + min(page_size, limit - len(collected)) - 1)
+        )
+        if pipeline_id:
+            query = query.eq("pipeline_id", pipeline_id)
 
-    resp = query.execute()
-    return resp.data or []
+        resp = query.execute()
+        page = resp.data or []
+        if not page:
+            break
+        collected.extend(page)
+        if len(page) < page_size:
+            break
+        offset += len(page)
+
+    return collected
 
 
 def _fetch_pipelines_for_customer(

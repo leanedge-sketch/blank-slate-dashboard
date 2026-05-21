@@ -62,10 +62,12 @@ export function ProfileICPLayout({
   text,
   strategicFitItems,
   researchMeta,
+  liveCrmHistory,
 }: {
   text: string;
   strategicFitItems: StrategicFitItem[];
   researchMeta?: ProfileResearchMeta | null;
+  liveCrmHistory?: string;
 }) {
   const parsed = parseICPProfile(text);
   const fitNarrative = parsed.strategicFit?.body
@@ -141,6 +143,7 @@ export function ProfileICPLayout({
         deepDive={parsed.deepDive}
         meta={researchMeta}
         fallbackBody={parsed.researchSummary?.body}
+        liveCrmHistory={liveCrmHistory}
       />
 
       {/* Legacy profiles without numbered sections */}

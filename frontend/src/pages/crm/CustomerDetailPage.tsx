@@ -4,7 +4,6 @@ import {
   api,
   Customer,
   Interaction,
-  InteractionListResponse,
   CustomerChatRequest,
   InteractionUpdate,
   fetchSalesPipelines,
@@ -13,6 +12,7 @@ import {
   fetchTDS,
   Tds,
 } from "../../services/api";
+import { fetchAllCustomerInteractions } from "../../utils/interactions";
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package, DollarSign } from "lucide-react";
 
 export function CustomerDetailPage() {
@@ -52,24 +52,16 @@ export function CustomerDetailPage() {
       setLoading(true);
       setError(null);
 
-      const interactionParams: Record<string, string | number> = { limit: 50, offset: 0 };
-      if (startDate) {
-        interactionParams.start_date = startDate;
-      }
-      if (endDate) {
-        interactionParams.end_date = endDate;
-      }
-
-      const [customerRes, interactionsRes] = await Promise.all([
+      const [customerRes, allInteractions] = await Promise.all([
         api.get<Customer>(`/crm/customers/${customerId}`),
-        api.get<InteractionListResponse>(
-          `/crm/customers/${customerId}/interactions`,
-          { params: interactionParams }
-        ),
+        fetchAllCustomerInteractions(customerId, {
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+        }),
       ]);
 
       setCustomer(customerRes.data);
-      setInteractions(interactionsRes.data.interactions);
+      setInteractions(allInteractions.interactions);
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to load customer");

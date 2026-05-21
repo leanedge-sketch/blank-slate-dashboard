@@ -1,4 +1,5 @@
 export interface ProfileResearchMeta {
+  crm_interaction_count_full_text?: number;
   rag_document_count?: number;
   rag_chars?: number;
   rag_truncated?: boolean;
@@ -106,9 +107,16 @@ export function ProfileResearchContext({ meta }: { meta?: ProfileResearchMeta | 
           label="CRM interactions"
           value={String(crmCount)}
           detail={
-            meta.crm_chars
-              ? `${meta.crm_chars.toLocaleString()} chars${meta.crm_truncated ? " (truncated)" : ""}`
-              : undefined
+            [
+              meta.crm_chars
+                ? `${meta.crm_chars.toLocaleString()} chars${meta.crm_truncated ? " (truncated in prompt)" : ""}`
+                : undefined,
+              meta.crm_interaction_count_full_text != null && crmCount > 0
+                ? `${meta.crm_interaction_count_full_text} of ${crmCount} with full text in last build`
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
           }
           ok={crmCount > 0}
         />

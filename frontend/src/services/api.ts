@@ -53,6 +53,7 @@ export interface Customer {
 }
 
 export interface ProfileResearchMeta {
+  crm_interaction_count_full_text?: number;
   rag_document_count?: number;
   rag_chars?: number;
   rag_truncated?: boolean;

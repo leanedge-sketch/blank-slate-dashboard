@@ -47,7 +47,6 @@ from app.services.ai_service import (
 )
 from app.services.profile_research_service import (
     PROFILE_CONTEXT_MAX_CHARS,
-    PROFILE_MAX_INTERACTIONS,
     build_profile_research_context,
     gather_profile_research_inputs,
 )
@@ -370,12 +369,15 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     if not customer:
         raise RuntimeError("Customer not found")
     
-    # CRM interactions (newest first)
+    # CRM interactions — fetch every row from DB (paginated), newest first
     try:
-        interactions = get_interactions_for_customer(
-            customer_id=str(customer.customer_id),
-            limit=PROFILE_MAX_INTERACTIONS,
-            offset=0,
+        interactions = get_all_interactions_for_customer(
+            str(customer.customer_id),
+        )
+        logging.info(
+            "Profile build for %s: loaded %s interactions from database",
+            customer.customer_name,
+            len(interactions),
         )
     except Exception as e:
         logging.warning(
@@ -458,7 +460,7 @@ OUTPUT FORMAT (CRITICAL):
 0. Research Context Summary
 Digest of all inputs before analysis. Use these subsection titles on their own lines (no # symbols), each followed by bullet lines (- item):
 RAG documents — at least 5 bullets when RAG data exists; otherwise one bullet "No RAG matches".
-CRM interactions — chronological timeline (meetings, quotes, objections, follow-ups) when CRM data exists.
+CRM interactions — use the COMPLETE interaction index in the CRM INTERACTIONS block (every log is listed); summarize and cite specific dates, quotes, and objections from those logs. Do not skip older interactions.
 Web search — company facts, sites, news, investments from the WEB SEARCH block.
 LinkedIn — people found: Name, Position, full LinkedIn URL per bullet.
 End with: Total research context: [N] RAG docs, [N] CRM interactions, web=[yes/no], LinkedIn=[yes/no].
@@ -642,6 +644,39 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
 # =============================
 # INTERACTION SERVICES
 # =============================
+
+
+# Pagination when loading full CRM history for ICP / analysis
+INTERACTIONS_PAGE_SIZE = 500
+INTERACTIONS_MAX_FETCH = 2000
+
+
+def get_all_interactions_for_customer(
+    customer_id: str,
+    *,
+    max_rows: int = INTERACTIONS_MAX_FETCH,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> List[Interaction]:
+    """Load every interaction for a customer (paginated Supabase reads)."""
+    collected: List[Interaction] = []
+    offset = 0
+    while len(collected) < max_rows:
+        page_size = min(INTERACTIONS_PAGE_SIZE, max_rows - len(collected))
+        page = get_interactions_for_customer(
+            customer_id,
+            limit=page_size,
+            offset=offset,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if not page:
+            break
+        collected.extend(page)
+        if len(page) < page_size:
+            break
+        offset += len(page)
+    return collected
 
 
 def get_interactions_for_customer(
@@ -972,7 +1007,7 @@ def auto_fill_sales_stage_for_customer(customer_id: str) -> Optional[str]:
     
     try:
         # Get all interactions for this customer
-        interactions = get_interactions_for_customer(customer_id, limit=50, offset=0)
+        interactions = get_all_interactions_for_customer(customer_id, max_rows=200)
         
         if not interactions:
             # No interactions = Stage 1 (Prospecting)
@@ -1040,7 +1075,7 @@ def backfill_sales_stages_for_all_customers() -> Dict[str, Any]:
         
         try:
             # Get all interactions for this customer
-            interactions = get_interactions_for_customer(customer_id, limit=50, offset=0)
+            interactions = get_all_interactions_for_customer(customer_id, max_rows=200)
             
             if not interactions:
                 # No interactions = Stage 1 (Prospecting)
@@ -1275,8 +1310,8 @@ def chat_with_customer(
         raise RuntimeError("Customer not found")
 
     # 2) Fetch recent interactions to give the AI richer CRM context
-    recent_interactions = get_interactions_for_customer(
-        customer_id, limit=10, offset=0
+    recent_interactions = get_all_interactions_for_customer(
+        customer_id, max_rows=100
     )
     # Oldest first in the prompt so the story reads naturally
     recent_interactions = list(reversed(recent_interactions))

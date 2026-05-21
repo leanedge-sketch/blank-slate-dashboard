@@ -9,6 +9,11 @@ import {
   InteractionListResponse,
 } from "../../services/api";
 import { ProfileICPLayout } from "../../components/ProfileICPLayout";
+import { ProfileResearchContext } from "../../components/ProfileResearchContext";
+import {
+  fetchAllCustomerInteractions,
+  formatInteractionsForCrmTab,
+} from "../../utils/interactions";
 import { mergeStrategicFitItems } from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
 import "./profile-icp.css";
@@ -27,6 +32,8 @@ export function CustomerProfilePage() {
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [creatingICP, setCreatingICP] = useState(false);
   const [latestInteraction, setLatestInteraction] = useState<string | null>(null);
+  const [liveCrmHistory, setLiveCrmHistory] = useState<string>("");
+  const [interactionTotal, setInteractionTotal] = useState<number>(0);
 
   async function handleGenerateICP() {
     if (!customerId) return;
@@ -42,7 +49,14 @@ export function CustomerProfilePage() {
 
       setCustomer(refreshed.data);
       setEditedProfile(refreshed.data.latest_profile_text || "");
-      setLatestInteraction(null); // Clear fallback since we now have a profile
+      setLatestInteraction(null);
+      try {
+        const { interactions, total } = await fetchAllCustomerInteractions(customerId);
+        setInteractionTotal(total);
+        setLiveCrmHistory(formatInteractionsForCrmTab(interactions, total));
+      } catch {
+        /* keep prior live history */
+      }
     } catch (err: any) {
       console.error("Failed to create/regenerate ICP profile:", err);
       const errorMsg = err?.response?.data?.detail ?? err?.message ?? "Failed to create/regenerate ICP profile";
@@ -82,6 +96,16 @@ export function CustomerProfilePage() {
         } catch (err: any) {
           console.warn("Could not fetch interactions:", err?.response?.data || err?.message);
         }
+      }
+
+      try {
+        const { interactions, total } = await fetchAllCustomerInteractions(customerId);
+        setInteractionTotal(total);
+        setLiveCrmHistory(formatInteractionsForCrmTab(interactions, total));
+      } catch (err: any) {
+        console.warn("Could not fetch all interactions for profile:", err?.response?.data || err?.message);
+        setLiveCrmHistory("");
+        setInteractionTotal(0);
       }
 
       // Fetch recent feedback (optional - fails gracefully if table doesn't exist)
@@ -457,11 +481,32 @@ export function CustomerProfilePage() {
           </p>
         </section>
       ) : (
-        <ProfileICPLayout
-          text={effectiveProfileText}
-          strategicFitItems={strategicFitItems}
-          researchMeta={customer.latest_profile_research_meta}
-        />
+        <>
+          <ProfileResearchContext meta={customer.latest_profile_research_meta} />
+          {interactionTotal > 0 ? (
+            <p
+              style={{
+                margin: "0 0 1rem",
+                fontSize: "0.9rem",
+                color: "#059669",
+                fontWeight: 500,
+              }}
+            >
+              Connected to database — {interactionTotal} CRM interaction
+              {interactionTotal === 1 ? "" : "s"} loaded for this customer
+              {customer.latest_profile_research_meta?.crm_interaction_count != null
+                ? ` (${customer.latest_profile_research_meta.crm_interaction_count} used in last ICP build)`
+                : ""}
+              . Regenerate ICP to refresh analysis with the latest logs.
+            </p>
+          ) : null}
+          <ProfileICPLayout
+            text={effectiveProfileText}
+            strategicFitItems={strategicFitItems}
+            researchMeta={customer.latest_profile_research_meta}
+            liveCrmHistory={liveCrmHistory}
+          />
+        </>
       )}
 
       {/* Download and Feedback Section */}

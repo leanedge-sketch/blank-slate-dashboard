@@ -38,15 +38,19 @@ export function ProfileDeepDiveTabs({
   deepDive,
   meta,
   fallbackBody,
+  liveCrmHistory,
 }: {
   deepDive: Record<DeepDiveTabId, string>;
   meta?: ProfileResearchMeta | null;
   /** Full section 0 body when subsections could not be parsed */
   fallbackBody?: string;
+  /** All interactions loaded from the database (preferred for CRM History tab) */
+  liveCrmHistory?: string;
 }) {
   const [active, setActive] = useState<DeepDiveTabId>("crm");
 
   const content =
+    (active === "crm" && liveCrmHistory?.trim()) ||
     deepDive[active]?.trim() ||
     (active === "crm" && fallbackBody?.trim() ? fallbackBody : "");
 
@@ -93,7 +97,10 @@ export function ProfileDeepDiveTabs({
         {TABS.map((tab) => {
           const isActive = active === tab.id;
           const hint = tabMetaHint(tab.id, meta);
-          const size = deepDive[tab.id]?.length ?? 0;
+          const size =
+            tab.id === "crm" && liveCrmHistory
+              ? liveCrmHistory.length
+              : deepDive[tab.id]?.length ?? 0;
           return (
             <button
               key={tab.id}
