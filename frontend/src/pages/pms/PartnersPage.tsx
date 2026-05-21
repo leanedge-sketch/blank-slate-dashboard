@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  fetchPartnerChemicals,
-  createPartnerChemical,
-  PartnerChemical,
-  PartnerChemicalCreate,
+  fetchPartners,
+  createPartner,
+  Partner,
+  PartnerCreate,
 } from "../../services/api";
 import {
   Handshake,
@@ -13,12 +13,11 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  Package,
   Globe,
 } from "lucide-react";
 
 export function PartnersPage() {
-  const [partners, setPartners] = useState<PartnerChemical[]>([]);
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,28 +25,30 @@ export function PartnersPage() {
   const [offset, setOffset] = useState(0);
   const limit = 50;
 
-  // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [formData, setFormData] = useState<PartnerChemicalCreate>({
-    vendor: "",
-    country: "",
+  const [formData, setFormData] = useState<PartnerCreate>({
+    partner: "",
+    partner_country: "",
   });
 
   async function loadPartners() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetchPartnerChemicals({
+      const res = await fetchPartners({
         limit,
         offset,
-        vendor: search || undefined,
+        partner_name: search || undefined,
       });
-      setPartners(res.partner_chemicals);
+      setPartners(res.partners);
       setTotal(res.total);
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load partners");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Failed to load partners";
+      setError(String(message));
     } finally {
       setLoading(false);
     }
@@ -60,20 +61,26 @@ export function PartnersPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!formData.vendor?.trim()) {
-      alert("Vendor name is required");
+    if (!formData.partner?.trim()) {
+      alert("Partner name is required");
       return;
     }
 
     try {
       setCreating(true);
-      await createPartnerChemical(formData);
+      await createPartner({
+        partner: formData.partner.trim(),
+        partner_country: formData.partner_country?.trim() || undefined,
+      });
       setShowCreateForm(false);
-      setFormData({ vendor: "", country: "" });
+      setFormData({ partner: "", partner_country: "" });
       await loadPartners();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create partner");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Failed to create partner";
+      alert(String(message));
     } finally {
       setCreating(false);
     }
@@ -84,7 +91,6 @@ export function PartnersPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
-      {/* Header */}
       <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-slate-50 shadow-lg">
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -105,7 +111,8 @@ export function PartnersPage() {
                 Partner Master Data
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
-                Manage vendor partners. Track vendor information and country details.
+                Manage business partners in <code className="text-purple-200">partner_data</code> — used
+                for chemical catalog links and pricing.
               </p>
             </div>
 
@@ -120,197 +127,129 @@ export function PartnersPage() {
         </main>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10 space-y-6">
-        {/* Create Form */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {showCreateForm && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h2 className="text-xl font-bold text-slate-900 mb-4">Create New Partner</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Vendor <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.vendor || ""}
-                    onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Country
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.country || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, country: e.target.value })
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="e.g., Ethiopia, Kenya"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    "Create Partner"
-                  )}
-                </button>
-                <button
-                  type="button"
-                onClick={() => {
-                  setShowCreateForm(false);
-                  setFormData({ vendor: "", country: "" });
-                }}
-                  className="px-6 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setOffset(0);
-              loadPartners();
-            }}
-            className="flex gap-3"
+            onSubmit={handleCreate}
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4"
           >
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search vendors by name..."
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+            <h2 className="text-lg font-bold text-slate-900">New partner</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="block space-y-1">
+                <span className="text-sm font-medium text-slate-700">Partner name *</span>
+                <input
+                  type="text"
+                  value={formData.partner || ""}
+                  onChange={(e) => setFormData({ ...formData, partner: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  required
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-sm font-medium text-slate-700">Country</span>
+                <input
+                  type="text"
+                  value={formData.partner_country || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, partner_country: e.target.value })
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+              </label>
             </div>
             <button
               type="submit"
-              className="px-6 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold hover:shadow-lg transition-all"
+              disabled={creating}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-600 text-white font-semibold disabled:opacity-50"
             >
-              Search
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Save partner
             </button>
-            {search && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setOffset(0);
-                  loadPartners();
-                }}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                Clear
-              </button>
-            )}
           </form>
+        )}
+
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search partners..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setOffset(0);
+              }}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 bg-white"
+            />
+          </div>
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 text-sm">
             {error}
           </div>
         )}
 
-        {/* Results */}
-        {loading && partners.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
-          </div>
-        ) : partners.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-            <Package className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-slate-600 font-medium">No vendors found</p>
-            <p className="text-slate-500 text-sm mt-1">
-              {search ? "Try a different search term" : "Create your first vendor to get started"}
-            </p>
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
           </div>
         ) : (
-          <>
-            {/* Stats */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-              <p className="text-sm text-slate-600">
-                Showing <span className="font-semibold">{partners.length}</span> of{" "}
-                <span className="font-semibold">{total}</span> vendors
-              </p>
-            </div>
-
-            {/* Partners List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {partners.map((partner) => (
-                <div
-                  key={partner.id}
-                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-lg font-bold text-slate-900">
-                      {partner.vendor || "Unnamed Vendor"}
-                    </h3>
-                    <Handshake className="w-5 h-5 text-purple-500 flex-shrink-0" />
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    {partner.country && (
-                      <div className="flex items-center gap-2">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Partner</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Country</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partners.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="px-4 py-12 text-center text-slate-500">
+                      No partners found. Add one to use in chemicals and pricing.
+                    </td>
+                  </tr>
+                ) : (
+                  partners.map((p) => (
+                    <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-medium text-slate-900">{p.partner}</td>
+                      <td className="px-4 py-3 text-slate-600 flex items-center gap-1">
                         <Globe className="w-4 h-4 text-slate-400" />
-                        <span className="text-slate-500">Country:</span>{" "}
-                        <span className="font-medium text-slate-700">
-                          {partner.country}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                        {p.partner_country || "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                <button
-                  onClick={() => setOffset(Math.max(0, offset - limit))}
-                  disabled={offset === 0}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Previous
-                </button>
-                <span className="text-sm text-slate-600">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setOffset(offset + limit)}
-                  disabled={offset + limit >= total}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Page {currentPage} of {totalPages} ({total} partners)
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - limit))}
+                className="px-4 py-2 rounded-lg border border-slate-300 disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                disabled={offset + limit >= total}
+                onClick={() => setOffset(offset + limit)}
+                className="px-4 py-2 rounded-lg border border-slate-300 disabled:opacity-40"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         )}
       </main>
     </div>

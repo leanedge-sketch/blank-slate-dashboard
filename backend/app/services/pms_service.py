@@ -4,7 +4,7 @@ PMS Service - Business Logic Layer
 
 This file contains the "business logic" for Product Management System (PMS)
 operations on top of Supabase:
-- chemical_types
+- chemical_full_data (catalog; legacy name chemical_types in API)
 - tds_data
 - partner_data
 - leanchem_products
@@ -292,13 +292,12 @@ def list_tds(
         query = query.ilike("grade", f"%{grade}%")
     if owner:
         query = query.ilike("owner", f"%{owner}%")
-    # NOTE:
-    # The original schema used a `chemical_type_id` UUID column on `tds_data`.
-    # After migrating to `chemical_full_data`, this column is no longer
-    # reliable and may not exist in the current database, which was causing
-    # 500 errors when filtering by `chemical_type_id`.
-    # For now we ignore this filter to keep the endpoint stable. Later we can
-    # re-introduce a proper link (e.g. chemical_full_id) if needed.
+    # chemical_full_data.id (int) is passed as chemical_type_id from the UI.
+    # Filter TDS by brand/grade matching the catalog product name when possible.
+    if chemical_type_id:
+        chem = get_chemical_type_by_id(str(chemical_type_id))
+        if chem and chem.name:
+            query = query.ilike("brand", f"%{chem.name}%")
 
     response = (
         query.order("created_at", desc=True)
@@ -843,30 +842,90 @@ def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: s
  
  
 def get_all_categories() -> List[str]:
-     """
-     Fetch all unique, non-empty categories from the `chemical_types` table.
- 
-     This is used by the CRM module when building AI customer profiles so that
-     the Strategic-Fit Matrix is always aligned with the actual product
-     taxonomy defined in PMS, instead of hard-coding category names.
-     """
-     supabase: Client = get_supabase_client()
-     try:
-         response = supabase.table("chemical_types").select("category").execute()
-         categories_set = set()
-         for row in response.data or []:
-             cat = (row.get("category") or "").strip()
-             if cat:
-                 categories_set.add(cat)
-         return sorted(list(categories_set))
-     except Exception:
-         # Safe fallback to the original default categories used in the MVP
-         return ["Cement", "Dry-Mix", "Admixtures", "Paint & Coatings"]
+    """
+    Unique product categories from `chemical_full_data` (master PMS catalog).
+
+    The legacy `chemical_types` table is not present in Supabase; categories
+    live on chemical_full_data.product_category.
+    """
+    return get_all_product_categories_from_full_data()
 
 
 # =============================
 # PARTNER CHEMICALS
 # =============================
+
+_PARTNER_CHEMICAL_META_KEYS = (
+    "product_category",
+    "sub_category",
+    "product_name",
+    "brand",
+    "packing",
+    "price",
+    "competitive_price",
+    "cost",
+    "tds_id",
+)
+
+
+def _parse_metadata(raw: Any) -> Dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return dict(parsed) if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _partner_chemical_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Map DB row (vendor/country/metadata) to API shape with legacy flat fields."""
+    out = dict(row)
+    meta = _parse_metadata(out.get("metadata"))
+    for key in _PARTNER_CHEMICAL_META_KEYS:
+        if out.get(key) is None and meta.get(key) is not None:
+            out[key] = meta.get(key)
+    return out
+
+
+def _partner_chemical_insert_payload(body: PartnerChemicalCreate | PartnerChemicalUpdate) -> Dict[str, Any]:
+    """Only columns that exist on partner_chemicals; extras go into metadata JSON."""
+    data = body.model_dump(exclude_unset=True)
+    meta = _parse_metadata(data.pop("metadata", None))
+    for key in _PARTNER_CHEMICAL_META_KEYS:
+        if key in data and data[key] is not None:
+            meta[key] = data.pop(key)
+    payload: Dict[str, Any] = {}
+    if "vendor" in data:
+        payload["vendor"] = data["vendor"]
+    if "country" in data:
+        payload["country"] = data["country"]
+    if meta:
+        payload["metadata"] = meta
+    return payload
+
+
+def find_or_create_partner(partner_name: str, partner_country: Optional[str] = None) -> Partner:
+    """Resolve vendor name to a partner_data row (create if missing)."""
+    name = (partner_name or "").strip()
+    if not name:
+        raise ValueError("Partner name is required")
+    supabase: Client = get_supabase_client()
+    existing = (
+        supabase.table("partner_data")
+        .select("*")
+        .ilike("partner", name)
+        .limit(20)
+        .execute()
+    )
+    for row in existing.data or []:
+        if (row.get("partner") or "").strip().lower() == name.lower():
+            return Partner(**row)
+    return create_partner(PartnerCreate(partner=name, partner_country=partner_country))
 
 
 def list_partner_chemicals(
@@ -881,10 +940,6 @@ def list_partner_chemicals(
 
     if vendor:
         query = query.ilike("vendor", f"%{vendor}%")
-    if product_category:
-        query = query.ilike("product_category", f"%{product_category}%")
-    if sub_category:
-        query = query.ilike("sub_category", f"%{sub_category}%")
 
     response = (
         query.order("created_at", desc=True)
@@ -892,7 +947,22 @@ def list_partner_chemicals(
         .offset(offset)
         .execute()
     )
-    return [PartnerChemical(**row) for row in (response.data or [])]
+    rows = [_partner_chemical_row_to_api(dict(row)) for row in (response.data or [])]
+    if product_category:
+        needle = product_category.lower()
+        rows = [
+            r
+            for r in rows
+            if needle in ((r.get("product_category") or "")).lower()
+        ]
+    if sub_category:
+        needle = sub_category.lower()
+        rows = [
+            r
+            for r in rows
+            if needle in ((r.get("sub_category") or "")).lower()
+        ]
+    return [PartnerChemical(**row) for row in rows]
 
 
 def count_partner_chemicals() -> int:
@@ -903,25 +973,14 @@ def count_partner_chemicals() -> int:
 
 def create_partner_chemical(body: PartnerChemicalCreate) -> PartnerChemical:
     supabase: Client = get_supabase_client()
-    payload = body.model_dump(exclude_unset=True)
-    
-    # Convert UUIDs to strings
-    from uuid import UUID
-    def convert_uuids(obj):
-        if isinstance(obj, UUID):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {k: convert_uuids(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_uuids(item) for item in obj]
-        return obj
-    
-    payload = convert_uuids(payload)
-    
+    payload = _partner_chemical_insert_payload(body)
+    if not payload.get("vendor"):
+        raise ValueError("vendor is required")
+
     response = supabase.table("partner_chemicals").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create partner chemical")
-    return PartnerChemical(**response.data[0])
+    return PartnerChemical(**_partner_chemical_row_to_api(response.data[0]))
 
 
 def get_partner_chemical_by_id(partner_chemical_id: str) -> Optional[PartnerChemical]:
@@ -934,7 +993,7 @@ def get_partner_chemical_by_id(partner_chemical_id: str) -> Optional[PartnerChem
         .execute()
     )
     if response.data:
-        return PartnerChemical(**response.data)
+        return PartnerChemical(**_partner_chemical_row_to_api(response.data))
     return None
 
 
@@ -943,33 +1002,30 @@ def update_partner_chemical(partner_chemical_id: str, body: PartnerChemicalUpdat
     existing = get_partner_chemical_by_id(partner_chemical_id)
     if not existing:
         raise ValueError("Partner chemical not found")
-    
-    update_data = body.model_dump(exclude_unset=True)
-    if not update_data:
+
+    merged_meta = _parse_metadata(existing.metadata)
+    incoming = _partner_chemical_insert_payload(body)
+    if incoming.get("metadata"):
+        merged_meta.update(incoming["metadata"])
+    update_payload: Dict[str, Any] = {}
+    if "vendor" in incoming:
+        update_payload["vendor"] = incoming["vendor"]
+    if "country" in incoming:
+        update_payload["country"] = incoming["country"]
+    if merged_meta:
+        update_payload["metadata"] = merged_meta
+    if not update_payload:
         return existing
-    
-    # Convert UUIDs to strings
-    from uuid import UUID
-    def convert_uuids(obj):
-        if isinstance(obj, UUID):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {k: convert_uuids(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_uuids(item) for item in obj]
-        return obj
-    
-    update_data = convert_uuids(update_data)
-    
+
     response = (
         supabase.table("partner_chemicals")
-        .update(update_data)
+        .update(update_payload)
         .eq("id", partner_chemical_id)
         .execute()
     )
     if not response.data:
         raise RuntimeError("Failed to update partner chemical")
-    return PartnerChemical(**response.data[0])
+    return PartnerChemical(**_partner_chemical_row_to_api(response.data[0]))
 
 
 def delete_partner_chemical(partner_chemical_id: str) -> bool:
@@ -999,33 +1055,13 @@ def get_all_vendors() -> List[str]:
 
 
 def get_all_product_categories() -> List[str]:
-    """Fetch all unique product categories from partner_chemicals table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("partner_chemicals").select("product_category").execute()
-        categories_set = set()
-        for row in response.data or []:
-            cat = (row.get("product_category") or "").strip()
-            if cat:
-                categories_set.add(cat)
-        return sorted(list(categories_set))
-    except Exception:
-        return []
+    """Product categories from chemical_full_data (partner_chemicals has no category column)."""
+    return get_all_product_categories_from_full_data()
 
 
 def get_all_sub_categories() -> List[str]:
-    """Fetch all unique sub categories from partner_chemicals table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("partner_chemicals").select("sub_category").execute()
-        sub_categories_set = set()
-        for row in response.data or []:
-            sub_cat = (row.get("sub_category") or "").strip()
-            if sub_cat:
-                sub_categories_set.add(sub_cat)
-        return sorted(list(sub_categories_set))
-    except Exception:
-        return []
+    """Sub-categories from chemical_full_data."""
+    return get_all_sub_categories_from_full_data()
 
 
 # =============================

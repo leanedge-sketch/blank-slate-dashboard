@@ -498,6 +498,8 @@ export interface ChemicalFullDataCreate {
   partner_id?: string | null;
 }
 
+export type ChemicalFullDataUpdate = Partial<ChemicalFullDataCreate>;
+
 export async function fetchChemicalFullData(params?: {
   limit?: number;
   offset?: number;

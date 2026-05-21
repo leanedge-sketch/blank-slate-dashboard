@@ -7,12 +7,11 @@ import {
   ChemicalFullDataCreate,
   fetchSectors,
   fetchIndustries,
-  fetchPartnerChemicals,
+  fetchPartners,
+  createPartner,
   fetchProductCategoriesFullData,
   fetchSubCategoriesFullData,
   fetchProductNames,
-  createPartnerChemical,
-  PartnerChemicalCreate,
 } from "../../services/api";
 import {
   Building2,
@@ -82,7 +81,7 @@ export function ProductsPage() {
         await Promise.all([
           fetchSectors(),
           fetchIndustries(),
-          fetchPartnerChemicals({ limit: 1000 }),
+          fetchPartners({ limit: 1000 }),
           fetchProductCategoriesFullData(),
           fetchSubCategoriesFullData(),
           fetchProductNames(),
@@ -90,9 +89,9 @@ export function ProductsPage() {
       setSectors(sectorsRes);
       setIndustries(industriesRes);
       setVendors(
-        vendorsRes.partner_chemicals.map((pc) => ({
-          id: pc.id,
-          vendor: pc.vendor,
+        vendorsRes.partners.map((p) => ({
+          id: p.id,
+          vendor: p.partner || "",
         }))
       );
       setProductCategories(categoriesRes);
@@ -170,16 +169,13 @@ export function ProductsPage() {
 
     try {
       if (type === "vendor") {
-        // Create a new partner_chemical
-        const newPartner: PartnerChemicalCreate = {
-          vendor: newValue.trim(),
-          product_category: "",
-          product_name: "",
-          packing: "",
-        };
-        await createPartnerChemical(newPartner);
+        const newPartner = await createPartner({ partner: newValue.trim() });
         await loadOptions();
-        setFormData({ ...formData, vendor: newValue.trim() });
+        setFormData({
+          ...formData,
+          vendor: newPartner.partner || newValue.trim(),
+          partner_id: newPartner.id,
+        });
       } else {
         // For other fields, just add to the local list and use it
         if (type === "sector") {

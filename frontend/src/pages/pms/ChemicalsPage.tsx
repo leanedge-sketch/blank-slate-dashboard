@@ -10,8 +10,8 @@ import {
   ChemicalFullDataUpdate,
   fetchSectors,
   fetchIndustries,
-  fetchPartnerChemicals,
-  createPartnerChemical,
+  fetchPartners,
+  createPartner,
   fetchProductCategoriesFullData,
   fetchSubCategoriesFullData,
   fetchProductNames,
@@ -147,30 +147,26 @@ export function ChemicalsPage() {
       });
       setFormData((prev) => ({ ...prev, sub_category: value }));
     } else if (addOptionType === "vendor") {
-      // Create a new partner_chemicals record
       try {
-        const newPartner = await createPartnerChemical({
-          vendor: value,
-          product_category: formData.product_category || "",
-          product_name: "",
-          packing: "",
-        });
-        // Add to vendors list and update form
+        const newPartner = await createPartner({ partner: value });
         setVendors((prev) => {
           if (prev.some((v) => v.id === newPartner.id)) return prev;
-          return [...prev, { id: newPartner.id, vendor: newPartner.vendor }].sort((a, b) =>
-            a.vendor.localeCompare(b.vendor)
+          return [...prev, { id: newPartner.id, vendor: newPartner.partner || value }].sort(
+            (a, b) => a.vendor.localeCompare(b.vendor)
           );
         });
         setFormData((prev) => ({
           ...prev,
-          vendor: newPartner.vendor,
+          vendor: newPartner.partner || value,
           partner_id: newPartner.id,
         }));
-      } catch (err: any) {
-        console.error("Failed to create partner chemical:", err);
-        alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create vendor");
-        return; // Don't close modal on error
+      } catch (err: unknown) {
+        const message =
+          (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+          (err as Error)?.message ||
+          "Failed to create partner";
+        alert(String(message));
+        return;
       }
     }
 
@@ -207,15 +203,14 @@ export function ChemicalsPage() {
       }
 
       try {
-        const vendorsRes = await fetchPartnerChemicals({ limit: 1000 });
-        options.vendors = (vendorsRes?.partner_chemicals || []).map((pc) => ({
-          id: pc.id,
-          vendor: pc.vendor,
+        const partnersRes = await fetchPartners({ limit: 1000 });
+        options.vendors = (partnersRes?.partners || []).map((p) => ({
+          id: p.id,
+          vendor: p.partner || "",
         }));
-        console.log("Loaded vendors:", options.vendors.length);
-      } catch (err: any) {
-        console.error("Failed to load vendors:", err);
-        console.error("Error details:", err?.response?.data || err?.message);
+        console.log("Loaded partners (vendors):", options.vendors.length);
+      } catch (err: unknown) {
+        console.error("Failed to load partners:", err);
       }
 
       try {

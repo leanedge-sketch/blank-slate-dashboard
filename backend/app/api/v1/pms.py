@@ -3,7 +3,7 @@ PMS API Routes
 ==============
 
 HTTP endpoints for Product Management System functionality:
-- /pms/chemicals   → chemical_types
+- /pms/chemicals   → chemical_full_data (catalog)
 - /pms/tds         → tds_data
 - /pms/partners    → partner_data
 - /pms/products    → leanchem_products
