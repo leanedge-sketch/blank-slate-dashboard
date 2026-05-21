@@ -186,11 +186,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Keep callback synchronous — async work here causes Supabase auth lock AbortErrors.
       setSession(session);
       setUser(session?.user ?? null);
-      await applyEmployeeFromSession(session?.user?.email, event);
       setLoading(false);
+
+      const email = session?.user?.email;
+      if (!email) {
+        setIsEmployee(false);
+        setEmployeeRole(null);
+        setEmployeeData(null);
+        lastEmployeeEmail.current = null;
+        return;
+      }
+
+      void applyEmployeeFromSession(email, event).catch((err) => {
+        if (!isRequestAborted(err)) {
+          console.error("Employee status check failed:", err);
+        }
+      });
     });
 
     return () => {

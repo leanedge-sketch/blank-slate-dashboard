@@ -1,7 +1,30 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
+import { isRequestAborted } from "../../lib/request-errors";
 import { AlertCircle } from "lucide-react";
+
+function readCallbackType(
+  searchParams: URLSearchParams,
+): string | null {
+  const fromQuery = searchParams.get("type");
+  if (fromQuery) return fromQuery;
+  const hashParams = new URLSearchParams(
+    window.location.hash.substring(1),
+  );
+  return hashParams.get("type");
+}
+
+function shouldSetPassword(
+  user: Session["user"],
+  type: string | null,
+): boolean {
+  const passwordSet =
+    user.user_metadata?.password_set === true ||
+    user.app_metadata?.password_set === true;
+  return type === "setup" || type === "reset" || !passwordSet;
+}
 
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -10,82 +33,88 @@ export function AuthCallbackPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      // Check for error in URL
-      const errorCode = searchParams.get("error_code") || 
-                       new URLSearchParams(window.location.hash.substring(1)).get("error_code");
-      const errorDescription = searchParams.get("error_description") || 
-                               new URLSearchParams(window.location.hash.substring(1)).get("error_description");
+    let finished = false;
 
-      if (errorCode) {
-        let errorMessage = "Authentication failed";
-        if (errorCode === "otp_expired") {
-          errorMessage = "The magic link has expired. Please request a new one.";
-        } else if (errorDescription) {
-          errorMessage = decodeURIComponent(errorDescription.replace(/\+/g, " "));
-        }
-        setError(errorMessage);
-        setLoading(false);
+    const finish = (session: Session | null) => {
+      if (finished) return;
+      finished = true;
+      setLoading(false);
+
+      const user = session?.user;
+      if (!user) {
+        navigate("/login", { replace: true });
         return;
       }
 
-      // Handle the hash fragment from the magic link
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      const type = searchParams.get("type") || hashParams.get("type"); // setup or reset
-
-      if (accessToken && refreshToken) {
-        // Set the session
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (error) {
-          console.error("Error setting session:", error);
-          setError("Failed to complete authentication. Please try again.");
-          setLoading(false);
-        } else {
-          // Session is set, now check if user needs to set password
-          const { data: { user } } = await supabase.auth.getUser();
-          
-          if (user) {
-            // Check if password is set (first-time user or password reset)
-            const passwordSet = user.user_metadata?.password_set === true || 
-                              user.app_metadata?.password_set === true;
-            
-            // If it's a setup/reset flow or password is not set, redirect to set password
-            if (type === "setup" || type === "reset" || !passwordSet) {
-              navigate("/auth/set-password");
-            } else {
-              // Password already set, normal login
-              navigate("/");
-            }
-          } else {
-            navigate("/login");
-          }
-        }
+      const type = readCallbackType(searchParams);
+      if (shouldSetPassword(user, type)) {
+        navigate("/auth/set-password", { replace: true });
       } else {
-        // Check if already authenticated
-        const { data: { session, user } } = await supabase.auth.getSession();
-        if (session && user) {
-          // Check if user needs to set password
-          const passwordSet = user.user_metadata?.password_set === true || 
-                            user.app_metadata?.password_set === true;
-          
-          if (!passwordSet) {
-            navigate("/auth/set-password");
-          } else {
-            navigate("/");
-          }
-        } else {
-          navigate("/login");
-        }
+        navigate("/", { replace: true });
       }
     };
 
-    handleAuthCallback();
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const errorCode =
+      searchParams.get("error_code") || hashParams.get("error_code");
+    const errorDescription =
+      searchParams.get("error_description") ||
+      hashParams.get("error_description");
+
+    if (errorCode) {
+      let errorMessage = "Authentication failed";
+      if (errorCode === "otp_expired") {
+        errorMessage = "The magic link has expired. Please request a new one.";
+      } else if (errorDescription) {
+        errorMessage = decodeURIComponent(
+          errorDescription.replace(/\+/g, " "),
+        );
+      }
+      finished = true;
+      setError(errorMessage);
+      setLoading(false);
+      return;
+    }
+
+    // detectSessionInUrl parses the hash — do not call setSession() again here.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        event === "SIGNED_IN" ||
+        event === "INITIAL_SESSION" ||
+        event === "PASSWORD_RECOVERY"
+      ) {
+        finish(session);
+      }
+    });
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          finish(session);
+        }
+      })
+      .catch((err) => {
+        if (!isRequestAborted(err)) {
+          console.error("Auth callback session read failed:", err);
+        }
+      });
+
+    const timeout = window.setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        setLoading(false);
+        navigate("/login", { replace: true });
+      }
+    }, 12000);
+
+    return () => {
+      finished = true;
+      subscription.unsubscribe();
+      window.clearTimeout(timeout);
+    };
   }, [navigate, searchParams]);
 
   if (error) {
@@ -116,4 +145,3 @@ export function AuthCallbackPage() {
     </div>
   );
 }
-

@@ -1,7 +1,7 @@
 import axios from "axios";
+import { getAuthAccessToken } from "../lib/auth-session";
 import { getApiBaseUrl } from "../lib/api-base";
 import { isDevMockSessionActive } from "../lib/dev-mock-auth";
-import { supabase } from "../lib/supabase";
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -23,11 +23,9 @@ api.interceptors.request.use(async (config) => {
     return config;
   }
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`;
+    const token = await getAuthAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
   } catch {
     // Session read failed during auth churn — proceed without Authorization.

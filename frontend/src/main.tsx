@@ -8,6 +8,14 @@ import App from "./App";
 
 import "./styles.css";
 import "./pages/crm/crm-home.css";
+import { isRequestAborted } from "./lib/request-errors";
+
+// Supabase auth can abort overlapping session reads during login — not a user-facing error.
+window.addEventListener("unhandledrejection", (event) => {
+  if (isRequestAborted(event.reason)) {
+    event.preventDefault();
+  }
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
