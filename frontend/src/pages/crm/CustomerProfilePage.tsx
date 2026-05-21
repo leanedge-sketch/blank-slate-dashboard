@@ -8,6 +8,7 @@ import {
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
 } from "../../services/api";
+import { stripProfileMarkdown } from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
 
 export function CustomerProfilePage() {
@@ -184,54 +185,10 @@ export function CustomerProfilePage() {
 
   // Clean and format profile text for beautiful display
   function formatProfileForDisplay(text: string): JSX.Element {
-    // Remove JSON block at the end if present
-    let cleanText = text
-      .replace(/```json[\s\S]*?```/g, "")
-      .replace(/```[\s\S]*?```/g, "")
-      .replace(/\{[\s\S]*"strategic_fit_matrix"[\s\S]*\}/g, "");
-    
-    // Remove markdown tables more aggressively - find all table blocks
-    cleanText = cleanText.replace(/\n\|[\s\S]*?\|\n/g, (match) => {
-      const lines = match.split("\n").filter(l => l.trim() && l.includes("|"));
-      if (lines.length < 2) return "";
-      
-      // Skip header separator lines (---)
-      const dataLines = lines.filter(l => !l.match(/^\|[\s\s]*:?-+:?[\s\s]*\|/));
-      
-      if (dataLines.length === 0) return "";
-      
-      // Convert first line to headers if it looks like headers
-      const headers = dataLines[0].split("|").filter(c => c.trim()).map(c => c.trim());
-      const rows = dataLines.slice(1);
-      
-      // Convert to readable format
-      const converted = rows.map(row => {
-        const cells = row.split("|").filter(c => c.trim()).map(c => c.trim());
-        if (cells.length === 0) return "";
-        // Format as "Header: Value" pairs
-        return cells.map((cell, i) => {
-          if (i < headers.length && headers[i] && cell && cell !== "N/A") {
-            return `${headers[i]}: ${cell}`;
-          }
-          return cell;
-        }).filter(c => c && !c.includes(":---")).join(" • ");
-      }).filter(r => r && !r.match(/^N\/A/)).join("\n");
-      
-      return converted ? "\n" + converted + "\n" : "";
-    });
-    
-    // Remove markdown bold/italic (**text**, *text*)
-    cleanText = cleanText.replace(/\*\*([^*]+)\*\*/g, "$1");
-    cleanText = cleanText.replace(/\*([^*]+)\*/g, "$1");
-    
-    // Remove markdown links [text](url) -> text (url)
-    cleanText = cleanText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
-    
-    // Remove citations [1], [2], etc.
-    cleanText = cleanText.replace(/\[\d+\]/g, "");
-    
-    // Split into sections by ## headers OR numbered headings
-    const sectionPattern = /\n(?:##\s+|(\d+\.\s+))([^\n]+)/g;
+    const cleanText = stripProfileMarkdown(text);
+
+    // Split into sections: numbered headings (1. Title), markdown headers, or title lines
+    const sectionPattern = /\n(?:#{1,6}\s+|(\d+\.\s+))([^\n]+)/g;
     const sections: Array<{ title: string; content: string }> = [];
     let lastIndex = 0;
     let match;
@@ -305,6 +262,31 @@ export function CustomerProfilePage() {
                 {lines.map((line, lineIdx) => {
                   const trimmed = line.trim();
                   
+                  // Subsection titles (plain text, no markdown)
+                  if (
+                    /^(Strategic-Fit Matrix|Score Rationale|Key Contacts|Company Snapshot|Construction Footprint)/i.test(
+                      trimmed
+                    ) ||
+                    (/^[A-Z][A-Za-z0-9\s\-&,()]+$/.test(trimmed) &&
+                      trimmed.length < 60 &&
+                      !trimmed.includes(":"))
+                  ) {
+                    return (
+                      <h4
+                        key={lineIdx}
+                        style={{
+                          fontSize: "1.15rem",
+                          fontWeight: "700",
+                          color: "#1e40af",
+                          marginTop: lineIdx > 0 ? "1.25rem" : 0,
+                          marginBottom: "0.75rem",
+                        }}
+                      >
+                        {trimmed}
+                      </h4>
+                    );
+                  }
+
                   // Format numbered lists (1., 2., etc.)
                   if (trimmed.match(/^\d+\.\s+/)) {
                     const content = trimmed.replace(/^\d+\.\s+/, "");

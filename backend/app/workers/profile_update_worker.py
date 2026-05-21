@@ -32,6 +32,7 @@ from app.services.ai_service import (
     log_conversation_to_rag,
 )
 from app.services.icp_context_service import build_customer_context
+from app.utils.profile_text import sanitize_profile_plain_text
 
 
 class ProfileUpdateWorker:
@@ -195,7 +196,7 @@ class ProfileUpdateWorker:
         ]
 
         # 3) Call Gemini for profile text
-        profile_text = gemini_chat(messages)
+        profile_text = sanitize_profile_plain_text(gemini_chat(messages))
         if not profile_text or not profile_text.strip():
             raise RuntimeError("Gemini returned empty profile text")
 

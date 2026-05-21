@@ -155,6 +155,7 @@ SALES_STAGES = {
 }
 from app.services.web_search_service import search_web_for_company, search_linkedin_profiles_ethiopia
 from app.services.pms_service import get_all_categories
+from app.utils.profile_text import sanitize_profile_plain_text
 
 
 # =============================
@@ -603,17 +604,8 @@ Segment by subsector ({', '.join(categories_list)}) and recommend clear engageme
 
 Key Contacts for Engagement
 
-List up to 10 decision-makers or influencers in operations, procurement, or technical roles.
-
-Columns:
-
-Name
-
-Position
-
-LinkedIn Profile (full clickable URL)
-
-Source
+List up to 10 decision-makers (plain text lines only, never a table):
+- Name: [Name], Position: [Title], LinkedIn: [full URL], Source: [source]
 
 Extract only real individuals verified via LinkedIn or company websites.
 
@@ -650,10 +642,10 @@ Use numbered citations [1], [2], etc. only when they truly help.
 Provide honest results—if a construction vertical is not present, list as "N/A" or "0" in the fit matrix.
 
 STYLE REQUIREMENTS (CRITICAL - FOLLOW EXACTLY):
-- ABSOLUTELY NO MARKDOWN: No tables (| ... |), no asterisks (* or **), no code fences (```), no emojis, no markdown links [text](url).
+- ABSOLUTELY NO MARKDOWN: Never use the pipe character | for tables. No ### or ## headers. No asterisks (* or **), no code fences (```), no emojis, no markdown links [text](url).
 - Use ONLY plain text with simple line breaks.
 - Use exactly 4 numbered sections: "1. Company Snapshot", "2. Construction Footprint in Ethiopia", "3. Strategic Fit Assessment", "4. Recommended Next Steps".
-- For Strategic-Fit Matrix: Write one simple line per category like "Admixtures: 0/3 - No manufacturing presence in Ethiopia" or "Paint & Coatings: 2/3 - Potential for raw material supply".
+- Inside section 3, add a subsection title line "Strategic-Fit Matrix" (plain text, no # symbols), then one line per category like "Admixtures: 0/3 - No manufacturing presence in Ethiopia" or "Paint & Coatings: 2/3 - Potential for raw material supply".
 - For business units: Use simple bullet points with dashes, one per line, like "- Unit Name: Products - Location - Scale".
 - For contacts: List as simple lines like "Name: [Name], Position: [Title], LinkedIn: [URL]".
 - Keep sentences short. Maximum 2-3 sentences per paragraph.
@@ -684,39 +676,35 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
         logging.error(error_msg)
         raise RuntimeError(error_msg)
     
-    # Step 8.5: Post-process to remove any markdown that slipped through
-    # Remove markdown tables (aggressive cleanup)
-    # Remove table blocks - find multi-line tables
-    table_pattern = r'\n\|[^\n]*\|(?:\n\|[^\n]*\|)*'
-    profile_text = re.sub(table_pattern, '', profile_text)
-    # Remove any remaining single-line table rows
-    profile_text = re.sub(r'\|[^\n]*\|', lambda m: m.group(0).replace('|', ' • ').strip(' • '), profile_text)
-    # Remove markdown formatting
-    profile_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', profile_text)
-    profile_text = re.sub(r'\*([^*]+)\*', r'\1', profile_text)
-    profile_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', profile_text)
-    profile_text = re.sub(r'\[(\d+)\]', '', profile_text)
-    profile_text = re.sub(r'^#{1,6}\s+', '', profile_text, flags=re.MULTILINE)
-    
-    # Parse the Strategic-Fit Matrix from the AI response
+    raw_profile_text = profile_text
+
+    # Parse JSON matrix from raw response before plain-text sanitization removes it
     json_match = None
     json_patterns = [
         r'\{[^{}]*"strategic_fit_matrix"[^{}]*\{[^{}]*\}[^{}]*\}',  # Nested
         r'\{[^}]*"strategic_fit_matrix"[^}]*\}',  # Simple
     ]
     for pattern in json_patterns:
-        json_match = re.search(pattern, profile_text, re.IGNORECASE | re.DOTALL)
+        json_match = re.search(pattern, raw_profile_text, re.IGNORECASE | re.DOTALL)
         if json_match:
             break
     
     # If no match, try to find any JSON block at the end of the response
     if not json_match:
-        json_candidates = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', profile_text, re.IGNORECASE | re.DOTALL)
+        json_candidates = re.findall(
+            r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
+            raw_profile_text,
+            re.IGNORECASE | re.DOTALL,
+        )
         for candidate in reversed(json_candidates):
             if "strategic_fit_matrix" in candidate.lower():
-                json_match = re.search(re.escape(candidate), profile_text, re.IGNORECASE | re.DOTALL)
+                json_match = re.search(
+                    re.escape(candidate), raw_profile_text, re.IGNORECASE | re.DOTALL
+                )
                 break
-    
+
+    profile_text = sanitize_profile_plain_text(raw_profile_text)
+
     if json_match:
         try:
             json_str = json_match.group(0)
