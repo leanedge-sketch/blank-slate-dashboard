@@ -205,34 +205,57 @@ export type DeepDiveTabId = "crm" | "rag" | "web" | "linkedin";
 
 const DEEP_DIVE_ALIASES: Record<DeepDiveTabId, string[]> = {
   crm: ["crm interactions", "crm history"],
-  rag: ["rag documents"],
-  web: ["web search"],
-  linkedin: ["linkedin"],
+  rag: ["rag documents", "rag", "past-case snippets"],
+  web: ["web search", "web research", "verified company facts"],
+  linkedin: ["linkedin", "linkedin profiles", "linkedin contacts"],
 };
 
-/** Pull RAG / CRM / Web / LinkedIn bodies from section 0 research summary. */
-export function extractResearchSubsections(section0Body: string): Record<DeepDiveTabId, string> {
-  const buffers: Record<DeepDiveTabId, string[]> = {
-    crm: [],
-    rag: [],
-    web: [],
-    linkedin: [],
-  };
-  let current: DeepDiveTabId | null = null;
+const NEXT_STEPS_SUBSECTION_ALIASES: Record<string, string[]> = {
+  "key contacts": ["key contacts", "key contacts for engagement"],
+  "interaction review": ["interaction review", "interaction review (from crm)"],
+};
 
-  for (const line of section0Body.split("\n")) {
+function normalizeSubsectionKey(line: string): string {
+  return line
+    .trim()
+    .replace(/^[-•]\s+/, "")
+    .replace(/:$/, "")
+    .toLowerCase();
+}
+
+function matchesAnyAlias(key: string, aliases: string[]): boolean {
+  return aliases.some(
+    (a) =>
+      key === a ||
+      key.startsWith(`${a} `) ||
+      key.startsWith(`${a}:`) ||
+      key.startsWith(`${a}—`) ||
+      key.startsWith(`${a} -`),
+  );
+}
+
+/** Pull labeled subsections from any profile section body. */
+export function extractLabeledSubsections(
+  body: string,
+  aliasMap: Record<string, string[]>,
+): Record<string, string> {
+  const buffers: Record<string, string[]> = {};
+  let current: string | null = null;
+
+  for (const line of body.split("\n")) {
     const trimmed = line.trim();
-    const key = trimmed.replace(/:$/, "").toLowerCase();
+    const key = normalizeSubsectionKey(trimmed);
 
-    let matched: DeepDiveTabId | null = null;
-    for (const [id, aliases] of Object.entries(DEEP_DIVE_ALIASES) as [DeepDiveTabId, string[]][]) {
-      if (aliases.some((a) => key === a || key.startsWith(`${a} `))) {
+    let matched: string | null = null;
+    for (const [id, aliases] of Object.entries(aliasMap)) {
+      if (matchesAnyAlias(key, aliases)) {
         matched = id;
         break;
       }
     }
     if (matched) {
       current = matched;
+      if (!buffers[current]) buffers[current] = [];
       continue;
     }
     if (/^total research context:/i.test(trimmed)) {
@@ -240,15 +263,102 @@ export function extractResearchSubsections(section0Body: string): Record<DeepDiv
       continue;
     }
     if (current) {
+      if (!buffers[current]) buffers[current] = [];
       buffers[current].push(line);
     }
   }
 
+  const out: Record<string, string> = {};
+  for (const [id, lines] of Object.entries(buffers)) {
+    out[id] = lines.join("\n").trim();
+  }
+  return out;
+}
+
+/** Pull RAG / CRM / Web / LinkedIn bodies from section 0 research summary. */
+export function extractResearchSubsections(section0Body: string): Record<DeepDiveTabId, string> {
+  const raw = extractLabeledSubsections(section0Body, DEEP_DIVE_ALIASES);
   return {
-    crm: buffers.crm.join("\n").trim(),
-    rag: buffers.rag.join("\n").trim(),
-    web: buffers.web.join("\n").trim(),
-    linkedin: buffers.linkedin.join("\n").trim(),
+    crm: raw.crm ?? "",
+    rag: raw.rag ?? "",
+    web: raw.web ?? "",
+    linkedin: raw.linkedin ?? "",
+  };
+}
+
+/** Collect LinkedIn URLs and contact blocks from anywhere in the profile. */
+export function extractLinkedInMentions(fullText: string): string {
+  const lines = fullText.split("\n");
+  const blocks: string[] = [];
+  let contactBlock: string[] = [];
+
+  const flushContact = () => {
+    if (contactBlock.some((l) => /linkedin\.com/i.test(l))) {
+      blocks.push(contactBlock.join("\n").trim());
+    }
+    contactBlock = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^name:/i.test(trimmed)) {
+      flushContact();
+      contactBlock = [line];
+    } else if (contactBlock.length > 0) {
+      contactBlock.push(line);
+      if (/^source:/i.test(trimmed)) {
+        flushContact();
+      }
+    } else if (/linkedin\.com/i.test(trimmed)) {
+      blocks.push(trimmed);
+    }
+  }
+  flushContact();
+
+  const unique = [...new Set(blocks.filter(Boolean))];
+  return unique.join("\n\n");
+}
+
+function buildDeepDiveWithFallbacks(
+  section0Body: string,
+  nextStepsBody: string,
+  fullText: string,
+): Record<DeepDiveTabId, string> {
+  const fromResearch = extractResearchSubsections(section0Body);
+  const fromNextSteps = extractLabeledSubsections(nextStepsBody, NEXT_STEPS_SUBSECTION_ALIASES);
+
+  const linkedinFallback =
+    fromNextSteps["key contacts"] || extractLinkedInMentions(fullText);
+
+  const crmFallback = fromNextSteps["interaction review"] || "";
+
+  const webFromProfile = extractLabeledSubsections(fullText, {
+    web: DEEP_DIVE_ALIASES.web,
+  }).web;
+
+  const ragFromProfile = extractLabeledSubsections(fullText, {
+    rag: DEEP_DIVE_ALIASES.rag,
+  }).rag;
+
+  const withNote = (primary: string, fallback: string, note: string) => {
+    if (primary.trim()) return primary.trim();
+    if (!fallback.trim()) return "";
+    return `${note}\n\n${fallback.trim()}`;
+  };
+
+  return {
+    crm: withNote(
+      fromResearch.crm,
+      crmFallback,
+      "— From Interaction Review (profile section 4)",
+    ),
+    rag: withNote(fromResearch.rag, ragFromProfile ?? "", "— From RAG mentions in profile"),
+    web: withNote(fromResearch.web, webFromProfile ?? "", "— From web mentions in profile"),
+    linkedin: withNote(
+      fromResearch.linkedin,
+      linkedinFallback,
+      "— From Key Contacts / LinkedIn URLs in profile",
+    ),
   };
 }
 
@@ -283,13 +393,22 @@ export function parseICPProfile(text: string): ParsedICPProfile {
     0,
     "research context",
   );
+  const nextSteps = findProfileSection(
+    sections,
+    4,
+    "recommended next steps",
+    "next steps",
+  );
+  const section0Body = researchSummary?.body ?? "";
+  const nextStepsBody = nextSteps?.body ?? "";
+
   return {
     sections,
     snapshot: findProfileSection(sections, 1, "company snapshot"),
     footprint: findProfileSection(sections, 2, "construction footprint"),
     strategicFit: findProfileSection(sections, 3, "strategic fit"),
-    nextSteps: findProfileSection(sections, 4, "recommended next steps", "next steps"),
+    nextSteps,
     researchSummary,
-    deepDive: extractResearchSubsections(researchSummary?.body ?? ""),
+    deepDive: buildDeepDiveWithFallbacks(section0Body, nextStepsBody, text),
   };
 }
