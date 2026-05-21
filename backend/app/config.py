@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     MODEL_CHOICE: str = ""  # Legacy alias; maps to OPENAI_CHAT_MODEL when set
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBED_DIM: int = 768  # Match existing pgvector(768) schema
-    # Legacy / fallback keys (unused — kept so older .env files don't break)
+    # Gemini — tertiary chat fallback after gpt-4o and gpt-4o-mini
     GEMINI_API_KEY: str = ""
     GEMINI_CHAT_MODEL: str = "gemini-2.5-flash"
     GEMINI_EMBED_MODEL: str = "text-embedding-004"

@@ -4,8 +4,8 @@ AI Service - OpenAI + Gemini fallback and RAG helpers
 
 Chat completion cascade (ai_chat / gemini_chat):
   1. OpenAI gpt-4o
-  2. Google Gemini (GEMINI_API_KEY) — on OpenAI rate limit / connection errors
-  3. OpenAI gpt-4o-mini — if Gemini also fails or rate limits
+  2. OpenAI gpt-4o-mini — on OpenAI rate limit / connection errors
+  3. Google Gemini (GEMINI_API_KEY) — if both OpenAI tiers fail or rate limit
 
 Embeddings remain OpenAI-only (ai_embed / gemini_embed).
 
@@ -43,7 +43,7 @@ EMBED_MODEL = settings.OPENAI_EMBED_MODEL or "text-embedding-3-small"
 EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
 PRIMARY_OPENAI_MODEL = "gpt-4o"
-ULTIMATE_OPENAI_MODEL = "gpt-4o-mini"
+FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
 # Tier-2 Gemini model (override via GEMINI_CHAT_MODEL). Google API id is typically
 # gemini-2.5-flash; set env if you use a newer alias.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
@@ -142,7 +142,7 @@ def _format_openai_error(exc: BaseException, model: str) -> str:
             "https://platform.openai.com/api-keys if needed."
         )
     elif status == 429 or "rate_limit" in str(message).lower():
-        hint = " Rate limit hit; cascade retries with Gemini then gpt-4o-mini."
+        hint = " Rate limit hit; cascade retries with gpt-4o-mini then Gemini."
     return f"OpenAI chat error ({model}) {status}: {message}".strip() + hint
 
 
@@ -264,8 +264,8 @@ def ai_chat(
 
     Cascade:
       1. OpenAI gpt-4o
-      2. Google Gemini (GEMINI_API_KEY)
-      3. OpenAI gpt-4o-mini
+      2. OpenAI gpt-4o-mini
+      3. Google Gemini (GEMINI_API_KEY)
 
     Returns:
       Response text, or "" if the model returned no content.
@@ -275,8 +275,8 @@ def ai_chat(
             "ai_chat: explicit model=%s ignored; using cascade %s → %s → %s",
             model,
             PRIMARY_OPENAI_MODEL,
+            FALLBACK_OPENAI_MODEL,
             _gemini_model_name(),
-            ULTIMATE_OPENAI_MODEL,
         )
 
     # --- Tier 1: OpenAI gpt-4o ---
@@ -289,35 +289,35 @@ def ai_chat(
                 _format_openai_error(primary_exc, PRIMARY_OPENAI_MODEL)
             ) from primary_exc
         logger.warning(
-            "ai_chat: OpenAI %s failed (%s); falling back to Gemini %s",
+            "ai_chat: OpenAI %s failed (%s); falling back to OpenAI %s",
             PRIMARY_OPENAI_MODEL,
             primary_exc,
+            FALLBACK_OPENAI_MODEL,
+        )
+
+    # --- Tier 2: OpenAI gpt-4o-mini ---
+    try:
+        return _chat_openai(messages, FALLBACK_OPENAI_MODEL)
+    except Exception as fallback_exc:
+        if not _provider_fallback_eligible(fallback_exc):
+            raise AIServiceError(
+                _format_openai_error(fallback_exc, FALLBACK_OPENAI_MODEL)
+            ) from fallback_exc
+        logger.warning(
+            "ai_chat: OpenAI %s failed (%s); falling back to Gemini %s",
+            FALLBACK_OPENAI_MODEL,
+            fallback_exc,
             _gemini_model_name(),
         )
 
-    # --- Tier 2: Google Gemini ---
+    # --- Tier 3: Google Gemini ---
     try:
         return _chat_gemini(messages)
     except Exception as gemini_exc:
-        if not _provider_fallback_eligible(gemini_exc):
-            raise AIServiceError(
-                f"Gemini chat error ({_gemini_model_name()}): {gemini_exc}"
-            ) from gemini_exc
-        logger.warning(
-            "ai_chat: Gemini %s failed (%s); falling back to OpenAI %s",
-            _gemini_model_name(),
-            gemini_exc,
-            ULTIMATE_OPENAI_MODEL,
-        )
-
-    # --- Tier 3: OpenAI gpt-4o-mini ---
-    try:
-        return _chat_openai(messages, ULTIMATE_OPENAI_MODEL)
-    except Exception as ultimate_exc:
         raise AIServiceError(
-            f"All chat providers failed. Last error (OpenAI {ULTIMATE_OPENAI_MODEL}): "
-            f"{_format_openai_error(ultimate_exc, ULTIMATE_OPENAI_MODEL)}"
-        ) from ultimate_exc
+            f"All chat providers failed. Last error (Gemini {_gemini_model_name()}): "
+            f"{gemini_exc}"
+        ) from gemini_exc
 
 
 def ai_embed(text: str) -> List[float]:
