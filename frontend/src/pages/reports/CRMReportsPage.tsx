@@ -558,8 +558,8 @@ export function CRMReportsPage() {
 
             <p className="text-sm text-slate-500 text-center pb-8">
               Need more detail? Open the{" "}
-              <Link to="/reports/analytics" className="text-emerald-700 font-medium hover:underline">
-                Analytics Dashboard
+              <Link to="/crm/dashboard" className="text-emerald-700 font-medium hover:underline">
+                CRM Dashboard
               </Link>{" "}
               or{" "}
               <Link to="/sales/pipeline" className="text-emerald-700 font-medium hover:underline">

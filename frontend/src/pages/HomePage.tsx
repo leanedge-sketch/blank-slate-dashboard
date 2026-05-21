@@ -112,7 +112,7 @@ export function HomePage() {
                       CRM Workspace
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 font-medium">
-                      Customers · AI interactions · Profiles · ICP
+                      Customers · AI interactions · Profiles · Dashboard
                     </p>
                   </div>
                 </div>
@@ -125,7 +125,7 @@ export function HomePage() {
                 <ul className="text-slate-300 text-sm space-y-2 list-disc list-inside">
                   <li>Customer list &amp; rich interaction history</li>
                   <li>Per-customer AI copilot for deals and product fit</li>
-                  <li>ICP profiles and customer relationship tracking</li>
+                  <li>CRM dashboard and ICP profiles</li>
                 </ul>
 
                 <div className="pt-2">

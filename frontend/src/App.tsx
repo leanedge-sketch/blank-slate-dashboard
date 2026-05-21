@@ -10,6 +10,7 @@ import { CustomerProfilePage } from "./pages/crm/CustomerProfilePage";
 import { ManageCustomersPage } from "./pages/crm/ManageCustomersPage";
 import { AddCustomerPage } from "./pages/crm/AddCustomerPage";
 import { CreateQuotePage } from "./pages/crm/CreateQuotePage";
+import { CRMDashboardPage } from "./pages/crm/CRMDashboardPage";
 import { ReportsHomePage } from "./pages/reports/ReportsHomePage";
 import { CRMReportsPage } from "./pages/reports/CRMReportsPage";
 import { AnalyticsDashboardPage } from "./pages/reports/AnalyticsDashboardPage";
@@ -188,7 +189,14 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/crm/dashboard" element={<Navigate to="/reports/analytics" replace />} />
+          <Route
+            path="/crm/dashboard"
+            element={
+              <ProtectedRoute>
+                <CRMDashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/crm/reports" element={<Navigate to="/reports/crm" replace />} />
 
           {/* Reports & Analysis routes */}

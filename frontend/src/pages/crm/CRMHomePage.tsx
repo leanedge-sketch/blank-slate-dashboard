@@ -3,6 +3,7 @@ import {
   Users,
   MessageSquare,
   FileText,
+  BarChart3,
   Zap,
   ArrowRight,
   Sparkles,
@@ -43,6 +44,17 @@ const features = [
       accent: "from-emerald-600 via-emerald-500 to-teal-500",
       accentHover: "group-hover:shadow-emerald-500/40",
       bgAccent: "bg-emerald-500/20",
+    },
+    {
+      icon: BarChart3,
+      title: "CRM dashboard & AI questions",
+      description:
+        "See high-level CRM metrics and ask natural language questions. Answers use RAG over your interactions.",
+      href: "/crm/dashboard",
+      cta: "Open dashboard",
+      accent: "from-indigo-600 via-indigo-500 to-blue-500",
+      accentHover: "group-hover:shadow-indigo-500/40",
+      bgAccent: "bg-indigo-500/20",
     },
   ];
 
@@ -103,10 +115,10 @@ export function CRMHomePage() {
                   <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <Link
-                  to="/crm/customers/manage"
+                  to="/crm/dashboard"
                   className="inline-flex items-center justify-center px-8 py-4 rounded-xl border-2 border-slate-600 text-white font-bold text-lg transition-all duration-300 hover:border-slate-400 hover:bg-slate-800/30 backdrop-blur-sm"
                 >
-                  View Interactions
+                  Explore Dashboard
                 </Link>
                 <Link
                   to="/crm/customers"
