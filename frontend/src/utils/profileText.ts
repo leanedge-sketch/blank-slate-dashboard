@@ -200,3 +200,96 @@ export function parseProfileSections(text: string): ProfileSection[] {
 
   return sections.sort((a, b) => a.index - b.index);
 }
+
+export type DeepDiveTabId = "crm" | "rag" | "web" | "linkedin";
+
+const DEEP_DIVE_ALIASES: Record<DeepDiveTabId, string[]> = {
+  crm: ["crm interactions", "crm history"],
+  rag: ["rag documents"],
+  web: ["web search"],
+  linkedin: ["linkedin"],
+};
+
+/** Pull RAG / CRM / Web / LinkedIn bodies from section 0 research summary. */
+export function extractResearchSubsections(section0Body: string): Record<DeepDiveTabId, string> {
+  const buffers: Record<DeepDiveTabId, string[]> = {
+    crm: [],
+    rag: [],
+    web: [],
+    linkedin: [],
+  };
+  let current: DeepDiveTabId | null = null;
+
+  for (const line of section0Body.split("\n")) {
+    const trimmed = line.trim();
+    const key = trimmed.replace(/:$/, "").toLowerCase();
+
+    let matched: DeepDiveTabId | null = null;
+    for (const [id, aliases] of Object.entries(DEEP_DIVE_ALIASES) as [DeepDiveTabId, string[]][]) {
+      if (aliases.some((a) => key === a || key.startsWith(`${a} `))) {
+        matched = id;
+        break;
+      }
+    }
+    if (matched) {
+      current = matched;
+      continue;
+    }
+    if (/^total research context:/i.test(trimmed)) {
+      current = null;
+      continue;
+    }
+    if (current) {
+      buffers[current].push(line);
+    }
+  }
+
+  return {
+    crm: buffers.crm.join("\n").trim(),
+    rag: buffers.rag.join("\n").trim(),
+    web: buffers.web.join("\n").trim(),
+    linkedin: buffers.linkedin.join("\n").trim(),
+  };
+}
+
+/** Locate a numbered section by index or fuzzy title match. */
+export function findProfileSection(
+  sections: ProfileSection[],
+  index: number,
+  ...titleIncludes: string[]
+): ProfileSection | undefined {
+  const byIndex = sections.find((s) => s.index === index);
+  if (byIndex) return byIndex;
+  const lower = titleIncludes.map((t) => t.toLowerCase());
+  return sections.find((s) =>
+    lower.some((k) => s.title.toLowerCase().includes(k)),
+  );
+}
+
+export interface ParsedICPProfile {
+  sections: ProfileSection[];
+  snapshot: ProfileSection | undefined;
+  footprint: ProfileSection | undefined;
+  strategicFit: ProfileSection | undefined;
+  nextSteps: ProfileSection | undefined;
+  researchSummary: ProfileSection | undefined;
+  deepDive: Record<DeepDiveTabId, string>;
+}
+
+export function parseICPProfile(text: string): ParsedICPProfile {
+  const sections = parseProfileSections(text);
+  const researchSummary = findProfileSection(
+    sections,
+    0,
+    "research context",
+  );
+  return {
+    sections,
+    snapshot: findProfileSection(sections, 1, "company snapshot"),
+    footprint: findProfileSection(sections, 2, "construction footprint"),
+    strategicFit: findProfileSection(sections, 3, "strategic fit"),
+    nextSteps: findProfileSection(sections, 4, "recommended next steps", "next steps"),
+    researchSummary,
+    deepDive: extractResearchSubsections(researchSummary?.body ?? ""),
+  };
+}

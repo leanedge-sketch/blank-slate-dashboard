@@ -8,11 +8,10 @@ import {
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
 } from "../../services/api";
-import { ProfileResearchContext } from "../../components/ProfileResearchContext";
-import { ProfileSections } from "../../components/ProfileSections";
-import { StrategicFitAssessment } from "../../components/StrategicFitAssessment";
+import { ProfileICPLayout } from "../../components/ProfileICPLayout";
 import { mergeStrategicFitItems } from "../../utils/profileText";
 import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
+import "./profile-icp.css";
 
 export function CustomerProfilePage() {
   const { customerId } = useParams<{ customerId: string }>();
@@ -411,20 +410,17 @@ export function CustomerProfilePage() {
         </div>
       </div>
 
-      <ProfileResearchContext meta={customer.latest_profile_research_meta} />
-
-      {/* Profile Content */}
-      <section className="card" style={{ position: "relative" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <h3>AI-Generated Profile</h3>
-          {!isEditing && (
+      {isEditing ? (
+        <section className="card" style={{ position: "relative" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <h3>Edit Ideal Customer Profile</h3>
             <span
               style={{
                 display: "flex",
@@ -435,45 +431,38 @@ export function CustomerProfilePage() {
               }}
             >
               <Eye size={16} />
-              View Mode
+              Raw text editor
             </span>
-          )}
-        </div>
-
-        {isEditing ? (
-          <div>
-            <textarea
-              value={editedProfile}
-              onChange={(e) => setEditedProfile(e.target.value)}
-              style={{
-                width: "100%",
-                minHeight: "600px",
-                padding: "1.5rem",
-                fontSize: "1rem",
-                lineHeight: "1.75",
-                fontFamily: "monospace",
-                border: "2px solid #e5e7eb",
-                borderRadius: "0.5rem",
-                resize: "vertical",
-              }}
-              placeholder="Edit the profile content..."
-            />
-            <p style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "#6b7280" }}>
-              Make your edits above, then click "Save Changes" to update the profile.
-            </p>
           </div>
-        ) : (
-          <div
+          <textarea
+            value={editedProfile}
+            onChange={(e) => setEditedProfile(e.target.value)}
             style={{
-              padding: "0",
+              width: "100%",
+              minHeight: "min(70vh, 800px)",
+              maxHeight: "800px",
+              padding: "1.5rem",
+              fontSize: "0.95rem",
+              lineHeight: 1.75,
+              fontFamily: "ui-monospace, monospace",
+              border: "2px solid #e5e7eb",
+              borderRadius: "0.5rem",
+              resize: "vertical",
+              overflowY: "auto",
             }}
-          >
-            <ProfileSections text={effectiveProfileText} />
-          </div>
-        )}
-      </section>
-
-      <StrategicFitAssessment items={strategicFitItems} />
+            placeholder="Edit the profile content..."
+          />
+          <p style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "#6b7280" }}>
+            Supports large profiles (100k+ characters). Save to update the structured view.
+          </p>
+        </section>
+      ) : (
+        <ProfileICPLayout
+          text={effectiveProfileText}
+          strategicFitItems={strategicFitItems}
+          researchMeta={customer.latest_profile_research_meta}
+        />
+      )}
 
       {/* Download and Feedback Section */}
       <section className="card" style={{ marginTop: "2rem" }}>

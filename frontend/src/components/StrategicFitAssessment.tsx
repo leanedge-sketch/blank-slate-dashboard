@@ -40,7 +40,7 @@ export function StrategicFitAssessment({ items }: { items: StrategicFitItem[] })
     <section
       className="card"
       style={{
-        marginBottom: "2rem",
+        marginBottom: 0,
         padding: "2rem",
         backgroundColor: "#ffffff",
       }}
