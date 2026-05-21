@@ -24,6 +24,10 @@ import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
 import { WorkspaceDock } from "./components/WorkspaceDock";
+import {
+  CRMReportAnalysisDock,
+  isCrmReportAnalysisPath,
+} from "./components/CRMReportAnalysisDock";
 import { useCanView } from "./hooks/usePermissions";
 import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabilityPage";
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
@@ -91,11 +95,13 @@ function AppChrome() {
   const location = useLocation();
   const showDock =
     !location.pathname.startsWith("/login") && !location.pathname.startsWith("/auth/");
+  const showCrmReportDock = showDock && isCrmReportAnalysisPath(location.pathname);
 
   return (
     <>
       <AppHeader />
       {showDock && <WorkspaceDock />}
+      {showCrmReportDock && <CRMReportAnalysisDock />}
     </>
   );
 }

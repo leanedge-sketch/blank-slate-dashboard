@@ -121,6 +121,67 @@ a:hover {
   border: 1px solid rgba(245, 158, 11, 0.45);
 }
 
+.crm-report-analysis-dock {
+  background: linear-gradient(180deg, #0c4a6e 0%, #082f49 100%);
+  border-bottom: 1px solid #155e75;
+  padding: 0 1rem;
+}
+
+.crm-report-analysis-dock-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.55rem 0;
+}
+
+.crm-report-analysis-dock-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #67e8f9;
+  white-space: nowrap;
+}
+
+.crm-report-analysis-dock-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.crm-report-analysis-dock-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #a5f3fc;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.crm-report-analysis-dock-link:hover {
+  color: #ecfeff;
+  background: rgba(14, 116, 144, 0.55);
+  text-decoration: none;
+}
+
+.crm-report-analysis-dock-link.is-active {
+  color: #fff;
+  background: rgba(16, 185, 129, 0.35);
+  border: 1px solid rgba(52, 211, 153, 0.55);
+}
+
+.crm-report-analysis-dock-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
 .app-build-badge {
   font-size: 0.65rem;
   color: #64748b;

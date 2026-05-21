@@ -59,10 +59,10 @@ const features = [
     },
     {
       icon: Download,
-      title: "Reports & exports",
-      description: "Generate summary views of your CRM activity. Filter and export to CSV / PDF.",
+      title: "Reports & Analysis",
+      description: "Live coverage, interaction volume, pipeline opportunities, forecast, and CSV / PDF export.",
       href: "/crm/reports",
-      cta: "View reports",
+      cta: "Open reports",
       accent: "from-green-600 via-green-500 to-emerald-500",
       accentHover: "group-hover:shadow-green-500/40",
       bgAccent: "bg-green-500/20",
