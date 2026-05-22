@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Interaction } from "../../services/api";
-import { isConversationArchiveRow } from "../../utils/interactions";
+import { isPipelineArchiveRow } from "../../utils/interactions";
 import { ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 
 function displayBody(it: Interaction): string {
@@ -61,7 +61,7 @@ export function ProfileCrmHistoryTimeline({
         const isOpen = expanded.has(id);
         const body = displayBody(it);
         const clamp = needsClamp(body) && !isOpen;
-        const fromArchive = isConversationArchiveRow(it);
+        const fromPipeline = isPipelineArchiveRow(it);
         const ts = it.created_at
           ? new Date(it.created_at).toLocaleString()
           : "Unknown date";
@@ -81,9 +81,9 @@ export function ProfileCrmHistoryTimeline({
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <time className="text-xs font-medium text-slate-500">{ts}</time>
-                  {fromArchive ? (
-                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
-                      RAG archive
+                  {fromPipeline ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      Pipeline chat
                     </span>
                   ) : (
                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">

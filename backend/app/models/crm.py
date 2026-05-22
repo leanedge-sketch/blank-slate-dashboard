@@ -107,7 +107,7 @@ class Interaction(InteractionBase):
     user_id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    # Present on merged history rows sourced from public.conversation (RAG archive)
+    # Present on merged history rows sourced from sales_pipeline.ai_interactions
     history_source: Optional[str] = None
 
 

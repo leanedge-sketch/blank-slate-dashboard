@@ -18,6 +18,33 @@ _CHATGPT_ARCHIVED_FLAG_RE = re.compile(
     re.IGNORECASE,
 )
 _CHATGPT_STUB_AI_MARKER = "Archived ChatGPT conversation (imported from conversations.json)"
+_RAW_EXPORT_MARKERS = (
+    re.compile(r"title:\s*.+", re.IGNORECASE),
+    re.compile(r"create_time:\s*[\d.]+", re.IGNORECASE),
+    re.compile(r"""['"]mapping['"]\s*:""", re.IGNORECASE),
+)
+_PERSONAL_CHATGPT_TITLE_RE = re.compile(
+    r"relationship|dating|marriage|love\s*life|breakup|soulmate|ex\b|intimacy",
+    re.IGNORECASE,
+)
+
+
+def is_raw_chatgpt_export_blob(text: str) -> bool:
+    """Detect unparsed conversations.json rows dumped into CRM history."""
+    sample = (text or "")[:12000]
+    if len(sample) < 120:
+        return False
+    hits = sum(1 for pat in _RAW_EXPORT_MARKERS if pat.search(sample))
+    if hits >= 2:
+        return True
+    if "children" in sample and "'message':" in sample and "author" in sample:
+        return True
+    return False
+
+
+def chatgpt_export_title_is_personal(title: str) -> bool:
+    """Personal ChatGPT threads should not appear on business CRM timelines."""
+    return bool(_PERSONAL_CHATGPT_TITLE_RE.search((title or "").strip()))
 
 
 def chatgpt_export_content_is_archived(content: str) -> bool:
@@ -56,10 +83,16 @@ def _name_search_variants(customer_name: str) -> List[str]:
 
 def _parse_chatgpt_export_row(content: str) -> tuple[str, str, Optional[str]]:
     """Best-effort parse of imported ChatGPT export text."""
+    if is_raw_chatgpt_export_blob(content):
+        return "", "", None
+
     title = "ChatGPT archive"
     m = re.search(r"title:\s*(.+?)(?:\n|$)", content or "")
     if m:
         title = m.group(1).strip()
+
+    if chatgpt_export_title_is_personal(title):
+        return "", "", None
 
     create_time = None
     ct = re.search(r"create_time:\s*([\d.]+)", content or "")
@@ -132,8 +165,14 @@ def get_chatgpt_export_archives_for_customer(
             row_id = str(row.get("id") or "")
             if not row_id or row_id in seen_ids:
                 continue
+            raw = row.get("content") or ""
+            if is_raw_chatgpt_export_blob(raw):
+                continue
             meta = row.get("metadata") or {}
             if isinstance(meta, dict) and str(meta.get("customer_id") or "") == cid:
+                continue
+            title_m = re.search(r"title:\s*(.+?)(?:\n|$)", raw)
+            if title_m and chatgpt_export_title_is_personal(title_m.group(1).strip()):
                 continue
             seen_ids.add(row_id)
             collected.append(row)

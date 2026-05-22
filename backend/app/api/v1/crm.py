@@ -424,18 +424,6 @@ async def list_customer_interactions(
     offset: int = Query(0, ge=0, description="Number of interactions to skip"),
     start_date: Optional[str] = Query(None, description="Filter interactions from this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter interactions up to this date (YYYY-MM-DD)"),
-    include_conversation: bool = Query(
-        True,
-        description="Include RAG conversation archive rows for this customer (legacy/historical chats)",
-    ),
-    include_chatgpt_exports: bool = Query(
-        True,
-        description="Include imported ChatGPT conversations (conversations.json) in the timeline",
-    ),
-    exclude_archived_chatgpt: bool = Query(
-        True,
-        description="Hide archived ChatGPT chats and empty import stubs from the timeline (UI only)",
-    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """List interactions for a specific customer with optional date filtering."""
@@ -445,44 +433,19 @@ async def list_customer_interactions(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     try:
-        if include_conversation:
-            merged, table_total, archive_added, pipeline_added, chatgpt_added = (
-                merge_customer_interaction_history(
-                    customer_id,
-                    start_date=start_date,
-                    end_date=end_date,
-                    include_chatgpt_exports=include_chatgpt_exports,
-                    exclude_archived_chatgpt=exclude_archived_chatgpt,
-                )
-            )
-            page = merged[offset : offset + limit]
-            return InteractionListResponse(
-                interactions=page,
-                total=len(merged),
-                interactions_table_total=table_total,
-                conversation_total=archive_added,
-                pipeline_total=pipeline_added,
-                chatgpt_export_total=chatgpt_added,
-                conversation_logs=None,
-            )
-
-        interactions = get_interactions_for_customer(
-            customer_id,
-            limit=limit,
-            offset=offset,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        total = get_interactions_count_for_customer(
+        merged, table_total, _, pipeline_added, _ = merge_customer_interaction_history(
             customer_id,
             start_date=start_date,
             end_date=end_date,
         )
+        page = merged[offset : offset + limit]
         return InteractionListResponse(
-            interactions=interactions,
-            total=total,
-            interactions_table_total=total,
+            interactions=page,
+            total=len(merged),
+            interactions_table_total=table_total,
             conversation_total=0,
+            pipeline_total=pipeline_added,
+            chatgpt_export_total=0,
             conversation_logs=None,
         )
     except Exception as e:

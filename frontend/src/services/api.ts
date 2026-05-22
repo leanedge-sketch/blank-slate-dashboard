@@ -82,8 +82,8 @@ export interface Interaction {
   pipeline_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  /** interactions = public.interactions; conversation = public.conversation (RAG archive) */
-  history_source?: "interactions" | "conversation" | "pipeline" | "chatgpt_export" | null;
+  /** interactions = public.interactions; pipeline = sales_pipeline.ai_interactions */
+  history_source?: "interactions" | "pipeline" | "chatgpt_export" | "conversation" | null;
 }
 
 export interface CustomerListResponse {

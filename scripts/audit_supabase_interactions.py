@@ -159,7 +159,7 @@ def main() -> None:
     audit_interactions_table(args.customer_id)
     audit_conversation_table(args.customer_id)
     print(
-        "\nNote: The CRM UI merges public.interactions + public.conversation "
+        "\nNote: The CRM UI merges public.interactions + sales_pipeline only (not public.conversation). "
         "+ sales_pipeline.ai_interactions. Clear date filters on the customer page to see May rows."
     )
 

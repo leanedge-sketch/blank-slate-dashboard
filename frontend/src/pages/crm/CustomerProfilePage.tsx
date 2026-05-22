@@ -79,14 +79,10 @@ export function CustomerProfilePage() {
       // If no profile text, try to fetch latest interaction as fallback
       if (!profileText) {
         try {
-          const interactionsRes = await api.get<InteractionListResponse>(`/crm/customers/${customerId}/interactions`, {
-            params: {
-              limit: 1,
-              offset: 0,
-              include_chatgpt_exports: true,
-              exclude_archived_chatgpt: true,
-            },
-          });
+          const interactionsRes = await api.get<InteractionListResponse>(
+            `/crm/customers/${customerId}/interactions`,
+            { params: { limit: 1, offset: 0 } },
+          );
           // Handle InteractionListResponse format
           const interactions = interactionsRes.data?.interactions || [];
           if (interactions.length > 0) {
@@ -496,7 +492,7 @@ export function CustomerProfilePage() {
               }}
             >
               Connected to Supabase — {interactionTotal} merged history row
-              {interactionTotal === 1 ? "" : "s"} (interactions table + conversation archive)
+              {interactionTotal === 1 ? "" : "s"} (interactions table + pipeline)
               {customer.latest_profile_research_meta?.crm_interaction_count != null
                 ? ` · ${customer.latest_profile_research_meta.crm_interaction_count} in interactions table for last ICP build`
                 : ""}
