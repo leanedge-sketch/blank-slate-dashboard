@@ -42,6 +42,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  /** True while verifying the signed-in user against the employees table. */
+  employeeLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
@@ -60,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [employeeLoading, setEmployeeLoading] = useState(false);
   const [isEmployee, setIsEmployee] = useState(false);
   const [employeeRole, setEmployeeRole] = useState<EmployeeRole | null>(null);
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
@@ -107,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setEmployeeRole(null);
       setEmployeeData(null);
       lastEmployeeEmail.current = null;
+      setEmployeeLoading(false);
       return;
     }
 
@@ -159,14 +163,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setEmployeeRole(null);
         setEmployeeData(null);
         lastEmployeeEmail.current = null;
+        setEmployeeLoading(false);
         return;
       }
 
-      void applyEmployeeFromSession(email, event).catch((err) => {
-        if (!isRequestAborted(err)) {
-          console.error("Employee status check failed:", err);
-        }
-      });
+      const generation = ++employeeCheckGeneration.current;
+      setEmployeeLoading(true);
+      void applyEmployeeFromSession(email, event)
+        .catch((err) => {
+          if (!isRequestAborted(err)) {
+            console.error("Employee status check failed:", err);
+          }
+        })
+        .finally(() => {
+          if (generation === employeeCheckGeneration.current) {
+            setEmployeeLoading(false);
+          }
+        });
     });
 
     return () => {
@@ -196,23 +209,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check if user is an employee
       if (data.user?.email) {
+        setEmployeeLoading(true);
         const generation = ++employeeCheckGeneration.current;
-        const employeeInfo = await checkEmployeeStatus(
-          data.user.email,
-          generation,
-        );
-        if (!employeeInfo) {
-          // Sign out if not an employee
-          await supabase.auth.signOut();
-          return {
-            error: new Error(
-              "Access denied. Your email is not registered as an employee."
-            ),
-          };
+        try {
+          const employeeInfo = await checkEmployeeStatus(
+            data.user.email,
+            generation,
+          );
+          if (!employeeInfo) {
+            await supabase.auth.signOut();
+            return {
+              error: new Error(
+                "Access denied. Your email is not registered as an employee."
+              ),
+            };
+          }
+          setIsEmployee(true);
+          setEmployeeRole(employeeInfo.role);
+          setEmployeeData(employeeInfo);
+          lastEmployeeEmail.current = data.user.email.toLowerCase().trim();
+        } finally {
+          if (generation === employeeCheckGeneration.current) {
+            setEmployeeLoading(false);
+          }
         }
-        setIsEmployee(true);
-        setEmployeeRole(employeeInfo.role);
-        setEmployeeData(employeeInfo);
       }
 
       return { error: null };
@@ -342,6 +362,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsEmployee(false);
     setEmployeeRole(null);
     setEmployeeData(null);
+    setEmployeeLoading(false);
+    lastEmployeeEmail.current = null;
   };
 
   const permissions = getPermissionsForRole(employeeRole);
@@ -352,6 +374,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         session,
         loading,
+        employeeLoading,
         signIn,
         signInWithMagicLink,
         resetPassword,
