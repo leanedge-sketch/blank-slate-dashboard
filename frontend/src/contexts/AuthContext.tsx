@@ -14,6 +14,8 @@ const EMPLOYEE_CHECK_EVENTS = new Set<AuthChangeEvent>([
   "PASSWORD_RECOVERY",
 ]);
 
+const EMPLOYEE_CHECK_TIMEOUT_MS = 12_000;
+
 /** Canonical production URL (Vercel production alias). */
 export const PRODUCTION_APP_URL = CANONICAL_PRODUCTION_URL;
 
@@ -78,7 +80,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const normalizedEmail = email.toLowerCase().trim();
 
     try {
-      const result = await checkEmployeeStatusAPI(normalizedEmail);
+      const result = await Promise.race([
+        checkEmployeeStatusAPI(normalizedEmail),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(
+            () => reject(new Error("Employee check timed out")),
+            EMPLOYEE_CHECK_TIMEOUT_MS,
+          );
+        }),
+      ]);
       if (generation !== employeeCheckGeneration.current) {
         return null;
       }
@@ -104,13 +114,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const applyEmployeeFromSession = async (
     email: string | undefined | null,
     event: AuthChangeEvent,
+    generation: number,
   ) => {
     if (!email) {
       setIsEmployee(false);
       setEmployeeRole(null);
       setEmployeeData(null);
       lastEmployeeEmail.current = null;
-      setEmployeeLoading(false);
       return;
     }
 
@@ -122,7 +132,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const generation = ++employeeCheckGeneration.current;
     const employeeInfo = await checkEmployeeStatus(normalized, generation);
     if (generation !== employeeCheckGeneration.current) {
       return;
@@ -169,7 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const generation = ++employeeCheckGeneration.current;
       setEmployeeLoading(true);
-      void applyEmployeeFromSession(email, event)
+      void applyEmployeeFromSession(email, event, generation)
         .catch((err) => {
           if (!isRequestAborted(err)) {
             console.error("Employee status check failed:", err);
