@@ -322,6 +322,7 @@ def sync_interaction_to_sales_pipeline(
     interaction: Interaction,
     *,
     use_ai: bool = True,
+    append_snapshot: bool = True,
 ) -> Optional[str]:
     """
     Link a CRM interaction to the best-matching pipeline and refresh pipeline state.
@@ -338,10 +339,11 @@ def sync_interaction_to_sales_pipeline(
         except Exception as e:
             logger.warning("Failed to link interaction %s: %s", interaction.id, e)
 
-    try:
-        _append_crm_snapshot_to_pipeline(pipeline, interaction)
-    except Exception as e:
-        logger.warning("Failed to append CRM snapshot on %s: %s", pipeline_id, e)
+    if append_snapshot:
+        try:
+            _append_crm_snapshot_to_pipeline(pipeline, interaction)
+        except Exception as e:
+            logger.warning("Failed to append CRM snapshot on %s: %s", pipeline_id, e)
 
     text = _interaction_body(interaction)
     if text:
@@ -471,7 +473,11 @@ def backfill_pipelines_from_customer_interactions(
     pipelines_touched: set[str] = set()
 
     for interaction in interactions_sorted:
-        pid = sync_interaction_to_sales_pipeline(interaction, use_ai=use_ai)
+        pid = sync_interaction_to_sales_pipeline(
+            interaction,
+            use_ai=use_ai,
+            append_snapshot=use_ai,
+        )
         if pid:
             linked += 1
             pipelines_touched.add(pid)
@@ -487,16 +493,18 @@ def backfill_pipelines_from_customer_interactions(
 def backfill_all_customers_pipelines(
     *,
     use_ai: bool = False,
-    limit: int = 500,
+    limit: int = 25,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """Backfill sales pipelines for every CRM customer (existing clients)."""
-    from app.services.crm_service import get_all_customers
+    """Backfill sales pipelines for a batch of CRM customers (paginated)."""
+    from app.services.crm_service import get_all_customers, get_customers_count
 
     customers = get_all_customers(limit=limit, offset=offset)
+    total_customers = get_customers_count()
     results: List[Dict[str, Any]] = []
     total_linked = 0
     total_stage_updates = 0
+    errors = 0
 
     for customer in customers:
         cid = str(customer.customer_id)
@@ -506,15 +514,25 @@ def backfill_all_customers_pipelines(
             total_linked += row.get("interactions_linked", 0)
             stage_sync = row.get("crm_stage_sync") or {}
             total_stage_updates += stage_sync.get("updated", 0)
+            if row.get("error"):
+                errors += 1
         except Exception as e:
             logger.warning("Pipeline backfill failed for %s: %s", cid, e)
+            errors += 1
             results.append({"customer_id": cid, "error": str(e)})
+
+    next_offset = offset + len(customers)
+    has_more = next_offset < total_customers
 
     return {
         "customers_processed": len(results),
         "total_interactions_linked": total_linked,
         "total_stage_updates": total_stage_updates,
+        "errors": errors,
         "offset": offset,
         "limit": limit,
+        "next_offset": next_offset,
+        "total_customers": total_customers,
+        "has_more": has_more,
         "results": results,
     }

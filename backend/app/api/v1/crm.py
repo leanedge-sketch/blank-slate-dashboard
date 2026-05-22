@@ -537,10 +537,15 @@ async def sync_all_customer_pipelines_endpoint(
         False,
         description="Use AI stage detection when backfilling (slower)",
     ),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(
+        25,
+        ge=1,
+        le=100,
+        description="Customers per batch (keep small to avoid serverless timeouts)",
+    ),
     offset: int = Query(0, ge=0),
 ):
-    """Backfill sales_pipeline from CRM for all existing customers."""
+    """Backfill sales_pipeline from CRM for existing customers (paginated batches)."""
     try:
         return backfill_all_customers_pipelines(
             use_ai=use_ai, limit=limit, offset=offset

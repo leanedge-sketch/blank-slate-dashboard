@@ -936,24 +936,89 @@ export async function syncCustomerPipelines(
       updated: number;
       created?: boolean;
     };
-  }>(`/crm/customers/${customerId}/sync-pipelines`, null, {
+  }>(`/crm/customers/${customerId}/sync-pipelines`, {}, {
     params: { use_ai: useAi },
+    timeout: 120_000,
   });
   return res.data;
 }
 
-export async function syncAllCustomerPipelines(useAi = false, limit = 500) {
-  const res = await api.post<{
-    customers_processed: number;
-    total_interactions_linked: number;
-    total_stage_updates: number;
-    offset: number;
-    limit: number;
-    results: unknown[];
-  }>("/crm/sync-pipelines-all", null, {
-    params: { use_ai: useAi, limit },
-  });
-  return res.data;
+export interface SyncAllPipelinesResult {
+  customers_processed: number;
+  total_interactions_linked: number;
+  total_stage_updates: number;
+  errors: number;
+  total_customers: number;
+  batches: number;
+}
+
+export async function syncAllCustomerPipelines(
+  useAi = false,
+  options?: {
+    batchSize?: number;
+    onProgress?: (info: {
+      batch: number;
+      processed: number;
+      total: number;
+      errors: number;
+    }) => void;
+  },
+): Promise<SyncAllPipelinesResult> {
+  const batchSize = options?.batchSize ?? 25;
+  let offset = 0;
+  let batch = 0;
+  let hasMore = true;
+  const aggregated: SyncAllPipelinesResult = {
+    customers_processed: 0,
+    total_interactions_linked: 0,
+    total_stage_updates: 0,
+    errors: 0,
+    total_customers: 0,
+    batches: 0,
+  };
+
+  while (hasMore) {
+    batch += 1;
+    const res = await api.post<{
+      customers_processed: number;
+      total_interactions_linked: number;
+      total_stage_updates: number;
+      errors?: number;
+      offset: number;
+      limit: number;
+      next_offset: number;
+      total_customers: number;
+      has_more: boolean;
+      results: unknown[];
+    }>("/crm/sync-pipelines-all", {}, {
+      params: { use_ai: useAi, limit: batchSize, offset },
+      timeout: 120_000,
+    });
+
+    const data = res.data;
+    aggregated.customers_processed += data.customers_processed;
+    aggregated.total_interactions_linked += data.total_interactions_linked;
+    aggregated.total_stage_updates += data.total_stage_updates;
+    aggregated.errors += data.errors ?? 0;
+    aggregated.total_customers = data.total_customers;
+    aggregated.batches = batch;
+
+    options?.onProgress?.({
+      batch,
+      processed: data.next_offset ?? offset + batchSize,
+      total: data.total_customers,
+      errors: aggregated.errors,
+    });
+
+    hasMore = Boolean(data.has_more);
+    offset = data.next_offset ?? offset + batchSize;
+
+    if (!data.customers_processed && !hasMore) {
+      break;
+    }
+  }
+
+  return aggregated;
 }
 
 export async function createSalesPipeline(data: SalesPipelineCreate) {

@@ -173,6 +173,7 @@ export function SalesPipelinePage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [syncingAllFromCrm, setSyncingAllFromCrm] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 50;
@@ -340,19 +341,42 @@ export function SalesPipelinePage() {
     try {
       setSyncingAllFromCrm(true);
       setError(null);
-      const result = await syncAllCustomerPipelines(false);
+      setSyncProgress("Starting CRM sync…");
+      const result = await syncAllCustomerPipelines(false, {
+        batchSize: 25,
+        onProgress: ({ processed, total, batch, errors }) => {
+          setSyncProgress(
+            `Syncing batch ${batch}… ${processed} / ${total} customers` +
+              (errors ? ` (${errors} errors)` : ""),
+          );
+        },
+      });
       await loadPipelines();
+      setSyncProgress(null);
+      const errNote =
+        result.errors > 0 ? ` ${result.errors} customer(s) had errors.` : "";
       alert(
-        `CRM sync complete: ${result.customers_processed} customers, ` +
-          `${result.total_stage_updates} pipeline stage updates, ` +
-          `${result.total_interactions_linked} interactions linked.`
+        `CRM sync complete: ${result.customers_processed} customers in ${result.batches} batch(es), ` +
+          `${result.total_stage_updates} stage updates, ` +
+          `${result.total_interactions_linked} interactions linked.${errNote}`,
       );
     } catch (err: any) {
       console.error(err);
+      setSyncProgress(null);
+      const detail = err?.response?.data?.detail;
+      const detailText =
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ")
+            : null;
       setError(
-        err?.response?.data?.detail ??
+        detailText ??
+          (err?.code === "ECONNABORTED"
+            ? "Sync timed out — try again; batches are smaller now."
+            : null) ??
           err?.message ??
-          "Failed to sync pipelines from CRM"
+          "Failed to sync pipelines from CRM",
       );
     } finally {
       setSyncingAllFromCrm(false);
@@ -893,7 +917,9 @@ export function SalesPipelinePage() {
                 ) : (
                   <RefreshCw size={18} />
                 )}
-                {syncingAllFromCrm ? "Syncing from CRM…" : "Sync all from CRM"}
+                {syncingAllFromCrm
+                  ? syncProgress || "Syncing from CRM…"
+                  : "Sync all from CRM"}
               </button>
               <button
                 onClick={openCreateForm}
