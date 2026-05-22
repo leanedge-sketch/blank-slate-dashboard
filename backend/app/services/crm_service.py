@@ -300,9 +300,9 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
             )
 
     try:
-        from app.services.pipeline_crm_sync import ensure_lead_pipeline_for_customer
+        from app.services.pipeline_crm_sync import ensure_company_pipelines_for_customer
 
-        ensure_lead_pipeline_for_customer(str(customer.customer_id))
+        ensure_company_pipelines_for_customer(str(customer.customer_id))
     except Exception as e:
         logging.warning(
             "Sales pipeline Lead ID setup skipped for new customer %s: %s",

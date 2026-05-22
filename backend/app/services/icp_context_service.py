@@ -26,6 +26,7 @@ from supabase import Client
 
 from app.database.connection import get_supabase_client
 from app.services.crm_service import merge_customer_interaction_history
+from app.models.crm import Customer
 from app.services.ai_service import search_documents_for_profile
 from app.services.web_search_service import search_linkedin_profiles_ethiopia
 
@@ -172,29 +173,36 @@ def _build_pipelines_section(pipelines: List[Dict[str, Any]]) -> str:
 
 
 def _build_rag_section(
-    customer_name: str, recent_interactions: List[Dict[str, Any]]
+    customer_row: Dict[str, Any],
+    recent_interactions: List[Dict[str, Any]],
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    # Use customer name + short summary of last interaction as query
-    if recent_interactions:
-        latest = recent_interactions[0]
-        snippet_parts: List[str] = []
-        if latest.get("input_text"):
-            snippet_parts.append(str(latest["input_text"])[:200])
-        if latest.get("ai_response"):
-            snippet_parts.append(str(latest["ai_response"])[:200])
-        snippet = " | ".join(snippet_parts)
-        query = f"{customer_name} :: {snippet}"
-    else:
-        query = customer_name
+    try:
+        customer = Customer(**customer_row)
+    except Exception as e:
+        logging.warning("RAG section skipped — invalid customer row: %s", e)
+        return "No highly relevant documents found for this profile.\n", []
 
     try:
-        matches = search_documents_for_profile(query=query, user_id=None, limit=10)
+        matches = search_documents_for_profile(
+            customer=customer,
+            interactions=recent_interactions,
+            user_id=None,
+            limit=10,
+        )
     except Exception as e:
-        logging.warning(f"RAG search_documents failed for '{query}': {e}")
+        logging.warning(
+            "RAG search failed for %s: %s",
+            customer.customer_name,
+            e,
+        )
         matches = []
 
     if not matches:
-        return "No similar past conversations found in RAG index.\n", []
+        return (
+            "No highly relevant documents found for this profile "
+            "(company-locked RAG; similarity threshold 0.75).\n",
+            [],
+        )
 
     lines: List[str] = []
     lines.append("Similar Past Cases (RAG):")
@@ -291,7 +299,7 @@ def build_customer_context(
         customer_row, force_refresh=force_external_refresh
     )
     rag_section, rag_matches = _build_rag_section(
-        customer_name=customer_row.get("customer_name", ""), recent_interactions=recent_interactions
+        customer_row, recent_interactions=recent_interactions
     )
 
     # Assemble final context text

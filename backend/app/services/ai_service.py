@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import urlparse
+
+from app.models.crm import Customer, Interaction
 
 from openai import (
     APIConnectionError,
@@ -393,42 +396,319 @@ def log_conversation_to_rag(
     supabase.table("conversation").insert(row).execute()
 
 
-def search_documents_for_profile(
-    query: str,
-    user_id: Optional[str] = None,
-    limit: int = 8,
-    match_threshold: float = 0.35,
-) -> List[Dict[str, Any]]:
-    """
-    RAG search tuned for profile generation: more matches, lower threshold.
-    """
-    supabase: Client = get_supabase_service_client()
+# CRM profile Deep Dive: strict company lock-in (no global fallback pool).
+PROFILE_RAG_MATCH_THRESHOLD = 0.75
+PROFILE_RAG_VECTOR_FETCH_MULTIPLIER = 4
 
+
+def _normalize_company_name(name: str) -> str:
+    return " ".join((name or "").lower().split())
+
+
+def _domain_from_website(url: Optional[str]) -> Optional[str]:
+    if not url or not str(url).strip():
+        return None
     try:
-        query_embedding = ai_embed(query)
+        host = urlparse(str(url).strip()).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host or None
+    except Exception:
+        return None
+
+
+def _metadata_belongs_to_customer(
+    metadata: Any,
+    *,
+    customer_id: str,
+    customer_name: str,
+    domain: Optional[str],
+) -> bool:
+    """Hard filter: document must be explicitly linked to this company."""
+    if not isinstance(metadata, dict):
+        return False
+
+    meta_cid = str(metadata.get("customer_id") or "").strip()
+    if meta_cid and meta_cid == str(customer_id):
+        return True
+
+    meta_name = (metadata.get("customer_name") or "").strip()
+    if meta_name and _normalize_company_name(meta_name) == _normalize_company_name(
+        customer_name
+    ):
+        return True
+
+    if domain:
+        for key in ("domain", "website", "website_url", "company_domain"):
+            val = metadata.get(key)
+            if val and domain in str(val).lower():
+                return True
+
+    return False
+
+
+def _build_profile_rag_search_query(
+    customer: Customer,
+    interactions: List[Union[Interaction, Dict[str, Any]]],
+) -> str:
+    """Embedding query: company name + themes from recent CRM interactions."""
+    name = (customer.customer_name or "").strip()
+    theme_parts: List[str] = []
+
+    for item in interactions[:6]:
+        if isinstance(item, Interaction):
+            input_text = item.input_text
+            ai_response = item.ai_response
+        elif isinstance(item, dict):
+            input_text = item.get("input_text")
+            ai_response = item.get("ai_response")
+        else:
+            continue
+        chunk = " ".join(
+            filter(
+                None,
+                [
+                    (str(input_text or ""))[:280].strip(),
+                    (str(ai_response or ""))[:280].strip(),
+                ],
+            )
+        ).strip()
+        if chunk:
+            theme_parts.append(chunk)
+
+    domain = _domain_from_website(customer.website_url)
+    query_bits = [f"Company: {name}"]
+    if domain:
+        query_bits.append(f"Domain: {domain}")
+    if theme_parts:
+        query_bits.append(
+            "Recent operational context: " + " | ".join(theme_parts[:4])
+        )
+    else:
+        query_bits.append(
+            "B2B chemical supply, construction materials, customer relationship"
+        )
+    return "\n".join(query_bits)[:4000]
+
+
+def _fetch_metadata_linked_rag_rows(
+    *,
+    customer_id: str,
+    customer_name: str,
+    domain: Optional[str],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Rows from conversation/documents with metadata tied to this customer only."""
+    supabase: Client = get_supabase_service_client()
+    cid = str(customer_id)
+    collected: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_row(row: Dict[str, Any], source_table: str) -> None:
+        row_id = str(row.get("id") or "")
+        content = (row.get("content") or "").strip()
+        if not content:
+            return
+        meta = row.get("metadata") or {}
+        if not _metadata_belongs_to_customer(
+            meta,
+            customer_id=cid,
+            customer_name=customer_name,
+            domain=domain,
+        ):
+            return
+        dedupe = row_id or content[:200]
+        if dedupe in seen:
+            return
+        seen.add(dedupe)
+        collected.append(
+            {
+                "id": row_id or None,
+                "content": content,
+                "metadata": meta,
+                "similarity": 1.0,
+                "source_table": source_table,
+            }
+        )
+
+    for table in ("conversation", "documents"):
         try:
-            response = supabase.rpc(
-                "match_conversation",
-                {
-                    "query_embedding": query_embedding,
-                    "match_count": limit,
-                    "match_threshold": match_threshold,
-                    "filter": {},
-                },
-            ).execute()
-            return response.data or []
-        except Exception:
-            response = (
-                supabase.table("conversation")
-                .select("content, metadata")
+            by_id = (
+                supabase.table(table)
+                .select("id, content, metadata, created_at")
+                .eq("metadata->>customer_id", cid)
                 .order("created_at", desc=True)
                 .limit(limit)
                 .execute()
             )
-            return response.data or []
-    except Exception as e:
-        logger.warning("Profile RAG search failed: %s", e)
+            for row in by_id.data or []:
+                add_row(row, table)
+        except Exception as exc:
+            logger.debug("RAG metadata filter on %s by customer_id: %s", table, exc)
+
+        if len(collected) >= limit:
+            break
+
+        if len(_normalize_company_name(customer_name)) < 3:
+            continue
+        try:
+            by_name = (
+                supabase.table(table)
+                .select("id, content, metadata, created_at")
+                .ilike("metadata->>customer_name", customer_name.strip())
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            for row in by_name.data or []:
+                add_row(row, table)
+        except Exception as exc:
+            logger.debug("RAG metadata filter on %s by customer_name: %s", table, exc)
+
+        if len(collected) >= limit:
+            break
+
+    return collected[:limit]
+
+
+def _vector_search_company_scoped(
+    *,
+    query_embedding: List[float],
+    customer_id: str,
+    customer_name: str,
+    domain: Optional[str],
+    match_count: int,
+    match_threshold: float,
+) -> List[Dict[str, Any]]:
+    """pgvector RPC with metadata filter; post-filter to enforce company lock-in."""
+    supabase: Client = get_supabase_service_client()
+    cid = str(customer_id)
+    rpc_filter: Dict[str, Any] = {
+        "customer_id": cid,
+        "customer_name": customer_name,
+    }
+    if domain:
+        rpc_filter["domain"] = domain
+
+    hits: List[Dict[str, Any]] = []
+    for rpc_name, source_table in (
+        ("match_conversation", "conversation"),
+        ("match_documents", "documents"),
+    ):
+        try:
+            response = supabase.rpc(
+                rpc_name,
+                {
+                    "query_embedding": query_embedding,
+                    "match_count": match_count,
+                    "match_threshold": match_threshold,
+                    "filter": rpc_filter,
+                },
+            ).execute()
+            for row in response.data or []:
+                meta = row.get("metadata") or {}
+                if not _metadata_belongs_to_customer(
+                    meta,
+                    customer_id=cid,
+                    customer_name=customer_name,
+                    domain=domain,
+                ):
+                    continue
+                sim = row.get("similarity")
+                if sim is not None and float(sim) < match_threshold:
+                    continue
+                hits.append({**row, "source_table": source_table})
+        except Exception as exc:
+            logger.debug("RAG RPC %s skipped: %s", rpc_name, exc)
+
+    return hits
+
+
+def search_documents_for_profile(
+    *,
+    customer: Customer,
+    interactions: Optional[List[Union[Interaction, Dict[str, Any]]]] = None,
+    user_id: Optional[str] = None,
+    limit: int = 16,
+    match_threshold: float = PROFILE_RAG_MATCH_THRESHOLD,
+) -> List[Dict[str, Any]]:
+    """
+    Company-scoped RAG for CRM profile Deep Dive.
+
+    - Hard metadata filter (customer_id / customer_name / domain)
+    - Contextual embedding query from company + recent interactions
+    - Strict similarity threshold (default 0.75)
+    - Never falls back to unrelated global rows
+    """
+    _ = user_id
+    customer_id = str(customer.customer_id)
+    customer_name = (customer.customer_name or "").strip()
+    domain = _domain_from_website(customer.website_url)
+    interaction_list = list(interactions or [])
+
+    if not customer_name:
         return []
+
+    linked = _fetch_metadata_linked_rag_rows(
+        customer_id=customer_id,
+        customer_name=customer_name,
+        domain=domain,
+        limit=limit,
+    )
+
+    vector_hits: List[Dict[str, Any]] = []
+    try:
+        query = _build_profile_rag_search_query(customer, interaction_list)
+        query_embedding = ai_embed(query)
+        vector_hits = _vector_search_company_scoped(
+            query_embedding=query_embedding,
+            customer_id=customer_id,
+            customer_name=customer_name,
+            domain=domain,
+            match_count=max(limit * PROFILE_RAG_VECTOR_FETCH_MULTIPLIER, limit),
+            match_threshold=match_threshold,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Profile RAG vector search failed for %s: %s", customer_name, exc
+        )
+
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append(doc: Dict[str, Any]) -> None:
+        content = (doc.get("content") or "").strip()
+        if not content:
+            return
+        meta = doc.get("metadata") or {}
+        if not _metadata_belongs_to_customer(
+            meta,
+            customer_id=customer_id,
+            customer_name=customer_name,
+            domain=domain,
+        ):
+            return
+        sim = doc.get("similarity")
+        if sim is not None and float(sim) < match_threshold:
+            return
+        key = f"{doc.get('id') or ''}|{content[:240]}"
+        if key in seen:
+            return
+        seen.add(key)
+        merged.append(doc)
+
+    for doc in linked:
+        append(doc)
+    for doc in sorted(
+        vector_hits,
+        key=lambda d: float(d.get("similarity") or 0),
+        reverse=True,
+    ):
+        append(doc)
+        if len(merged) >= limit:
+            break
+
+    return merged[:limit]
 
 
 def search_documents(

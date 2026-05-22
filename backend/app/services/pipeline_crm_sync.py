@@ -153,42 +153,104 @@ def _pipeline_create_body(
     )
 
 
-def ensure_lead_pipeline_for_customer(customer_id: str) -> Optional[SalesPipeline]:
+def ensure_lead_pipeline_for_product(
+    customer_id: str,
+    *,
+    tds_id: Optional[Union[str, UUID]] = None,
+    chemical_type_id: Optional[Union[str, UUID]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[SalesPipeline]:
     """
-    When a customer is registered, ensure they appear on the sales pipeline at Lead ID.
-    Creates one company-level deal if none exists yet.
+    Ensure one Lead ID deal exists for this company + product (or company umbrella when no product).
+    Does not change stage if the deal already exists.
     """
     deals = list_sales_pipelines(
-        limit=50,
+        limit=100,
         offset=0,
         customer_id=customer_id,
         latest_per_deal=True,
     )
-    general = _general_company_deal(deals)
-    if general:
-        return general
+    tds_s = str(tds_id) if tds_id else None
+    chem_s = str(chemical_type_id) if chemical_type_id else None
 
+    for pipeline in deals:
+        if tds_s:
+            if pipeline.tds_id and str(pipeline.tds_id) == tds_s:
+                return pipeline
+            continue
+        if chem_s:
+            if pipeline.chemical_type_id and str(pipeline.chemical_type_id) == chem_s:
+                return pipeline
+            continue
+        if not pipeline.tds_id and not pipeline.chemical_type_id:
+            return pipeline
+
+    meta = {
+        "source": "auto_on_customer_create",
+        "synced_at": datetime.utcnow().isoformat(),
+        **(metadata or {}),
+    }
+    if tds_s:
+        meta["source"] = "auto_on_product_deal"
     try:
         pipeline = create_sales_pipeline(
             _pipeline_create_body(
                 customer_id,
+                tds_id=tds_id,
+                chemical_type_id=chemical_type_id,
                 stage="Lead ID",
-                metadata={"source": "auto_on_customer_create"},
+                metadata=meta,
             )
         )
         logger.info(
-            "Created Lead ID pipeline %s for new customer %s",
+            "Created Lead ID pipeline %s for customer %s (tds=%s)",
             pipeline.id,
             customer_id,
+            tds_s or "umbrella",
         )
         return pipeline
     except Exception as e:
         logger.warning(
-            "Could not create Lead ID pipeline for customer %s: %s",
+            "Could not create Lead ID pipeline for customer %s product %s: %s",
             customer_id,
+            tds_s or "umbrella",
             e,
         )
         return None
+
+
+def ensure_lead_pipeline_for_customer(customer_id: str) -> Optional[SalesPipeline]:
+    """Company umbrella deal at Lead ID (no product attached)."""
+    return ensure_lead_pipeline_for_product(customer_id)
+
+
+def ensure_company_pipelines_for_customer(customer_id: str) -> Dict[str, Any]:
+    """
+    One umbrella company row at Lead ID plus one Lead ID deal per product (TDS) seen in CRM.
+    Each product keeps its own stage as interactions sync — stages are not shared across products.
+    """
+    from app.services.crm_service import get_all_interactions_for_customer
+
+    umbrella = ensure_lead_pipeline_for_product(customer_id)
+    tds_ids: set[str] = set()
+    for interaction in get_all_interactions_for_customer(
+        customer_id, max_rows=500
+    ):
+        if interaction.tds_id:
+            tds_ids.add(str(interaction.tds_id))
+
+    product_pipeline_ids: List[str] = []
+    for tds_id in sorted(tds_ids):
+        deal = ensure_lead_pipeline_for_product(customer_id, tds_id=tds_id)
+        if deal:
+            product_pipeline_ids.append(str(deal.id))
+
+    return {
+        "customer_id": customer_id,
+        "umbrella_pipeline_id": str(umbrella.id) if umbrella else None,
+        "product_deal_count": len(product_pipeline_ids),
+        "product_pipeline_ids": product_pipeline_ids,
+    }
 
 
 def _heuristic_stage_from_text(text: str) -> Optional[str]:
@@ -239,22 +301,11 @@ def _resolve_pipeline_for_interaction(
         existing = get_pipeline_by_customer_and_product(customer_id, tds_id=tds_id)
         if existing:
             return existing
-        try:
-            return create_sales_pipeline(
-                _pipeline_create_body(
-                    interaction.customer_id,
-                    tds_id=interaction.tds_id,
-                    stage="Lead ID",
-                    metadata={"source": "auto_on_interaction_tds"},
-                )
-            )
-        except Exception as e:
-            logger.warning(
-                "Could not create product pipeline for customer %s: %s",
-                customer_id,
-                e,
-            )
-            return None
+        return ensure_lead_pipeline_for_product(
+            customer_id,
+            tds_id=interaction.tds_id,
+            metadata={"source": "auto_on_interaction_tds"},
+        )
 
     deals = list_sales_pipelines(
         limit=50,
@@ -268,21 +319,10 @@ def _resolve_pipeline_for_interaction(
     if len(deals) == 1:
         return deals[0]
     if len(deals) == 0:
-        try:
-            return create_sales_pipeline(
-                _pipeline_create_body(
-                    interaction.customer_id,
-                    stage="Lead ID",
-                    metadata={"source": "auto_on_interaction"},
-                )
-            )
-        except Exception as e:
-            logger.warning(
-                "Could not create default pipeline for customer %s: %s",
-                customer_id,
-                e,
-            )
-            return None
+        return ensure_lead_pipeline_for_product(
+            customer_id,
+            metadata={"source": "auto_on_interaction"},
+        )
 
     logger.info(
         "Interaction %s: %s product deals — link skipped (set tds_id or pipeline_id)",
@@ -363,25 +403,16 @@ def _resolve_pipeline_for_interaction_cached(
             if pipeline.tds_id and str(pipeline.tds_id) == tds_id:
                 cache[key] = pipeline
                 return pipeline
-        try:
-            created = create_sales_pipeline(
-                _pipeline_create_body(
-                    interaction.customer_id,
-                    tds_id=interaction.tds_id,
-                    stage="Lead ID",
-                    metadata={"source": "auto_on_interaction_tds"},
-                )
-            )
+        created = ensure_lead_pipeline_for_product(
+            customer_id,
+            tds_id=interaction.tds_id,
+            metadata={"source": "auto_on_interaction_tds"},
+        )
+        if created:
             deals.append(created)
             cache[key] = created
             return created
-        except Exception as e:
-            logger.warning(
-                "Could not create product pipeline for customer %s: %s",
-                customer_id,
-                e,
-            )
-            return None
+        return None
 
     general = _general_company_deal(deals)
     if general:
@@ -391,24 +422,15 @@ def _resolve_pipeline_for_interaction_cached(
         cache[_deal_cache_key(customer_id, None)] = deals[0]
         return deals[0]
     if len(deals) == 0:
-        try:
-            created = create_sales_pipeline(
-                _pipeline_create_body(
-                    interaction.customer_id,
-                    stage="Lead ID",
-                    metadata={"source": "auto_on_interaction"},
-                )
-            )
+        created = ensure_lead_pipeline_for_product(
+            customer_id,
+            metadata={"source": "auto_on_interaction"},
+        )
+        if created:
             deals.append(created)
             cache[_deal_cache_key(customer_id, None)] = created
             return created
-        except Exception as e:
-            logger.warning(
-                "Could not create default pipeline for customer %s: %s",
-                customer_id,
-                e,
-            )
-            return None
+        return None
 
     return None
 
@@ -663,10 +685,11 @@ def sync_customer_pipelines_from_crm(
     fast: bool = True,
 ) -> Dict[str, Any]:
     """Backfill interactions into per-product pipeline deals (stages per deal)."""
-    ensure_lead_pipeline_for_customer(customer_id)
+    bootstrap = ensure_company_pipelines_for_customer(customer_id)
     result = backfill_pipelines_from_customer_interactions(
         customer_id, use_ai=use_ai, fast=fast
     )
+    result["company_pipelines"] = bootstrap
     result["product_deals"] = apply_customer_sales_stage_to_pipelines(customer_id)
     return result
 

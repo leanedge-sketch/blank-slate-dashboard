@@ -121,8 +121,9 @@ export function ProfileDeepDiveTabs({
           <ProfileProse body={proseContent} compact />
         ) : (
           <p className="text-sm text-slate-400 italic m-0">
-            No {TABS.find((t) => t.id === active)?.label} content. Regenerate ICP after adding CRM
-            notes or configuring search keys.
+            {active === "rag"
+              ? "No highly relevant documents found for this profile. RAG only shows snippets linked to this company (customer ID, name, or domain) with strong similarity."
+              : `No ${TABS.find((t) => t.id === active)?.label} content. Regenerate ICP after adding CRM notes or configuring search keys.`}
           </p>
         )}
       </div>

@@ -514,6 +514,9 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     supabase: Client = get_supabase_client()
     payload = body.model_dump(exclude_unset=True)
 
+    if not payload.get("stage"):
+        payload["stage"] = "Lead ID"
+
     # Merge list fields from metadata into primary columns when present
     meta = payload.get("metadata") or {}
     if isinstance(meta, dict):

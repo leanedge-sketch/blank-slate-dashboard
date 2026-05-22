@@ -1705,7 +1705,8 @@ export function SalesPipelinePage() {
             <div className="p-4 sm:p-6 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-900">Pipeline by stage</h2>
               <p className="text-sm text-slate-500 mt-1">
-                Current deal per customer and product. CRM interactions sync here automatically.
+                Each company can have multiple product deals at different stages (new customers
+                start at Lead ID). CRM sync links interactions to the right product deal.
               </p>
             </div>
             <div className="overflow-x-auto p-4 sm:p-6">
@@ -1824,8 +1825,9 @@ export function SalesPipelinePage() {
                               {customerName || "Unknown Customer"}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {customerPipelines.length} pipeline
-                              {customerPipelines.length !== 1 ? "s" : ""} for this company
+                              {customerPipelines.length} product deal
+                              {customerPipelines.length !== 1 ? "s" : ""} — each can be at a
+                              different stage
                             </p>
                           </div>
                         </div>

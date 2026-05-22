@@ -68,55 +68,30 @@ def _gather_rag_documents(
     *,
     user_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    queries: List[str] = [
-        customer.customer_name,
-        f"{customer.customer_name} Ethiopia construction cement dry-mix admixtures",
-        f"{customer.customer_name} B2B chemical supply LeanChem",
-    ]
-    if interactions:
-        latest = interactions[0]
-        snippet = " ".join(
-            filter(
-                None,
-                [
-                    (latest.input_text or "")[:200],
-                    (latest.ai_response or "")[:200],
-                ],
-            )
-        ).strip()
-        if snippet:
-            queries.append(f"{customer.customer_name} {snippet}")
-
-    seen: set[str] = set()
-    collected: List[Dict[str, Any]] = []
-    per_query_limit = max(4, PROFILE_MAX_RAG_DOCS // len(queries))
-
-    for query in queries:
-        try:
-            matches = search_documents_for_profile(
-                query, user_id=user_id, limit=per_query_limit
-            )
-        except Exception as exc:
-            logging.warning("RAG search failed for '%s': %s", query, exc)
-            matches = []
-        for doc in matches:
-            content = (doc.get("content") or "").strip()
-            if not content:
-                continue
-            key = content[:300]
-            if key in seen:
-                continue
-            seen.add(key)
-            collected.append(doc)
-        if len(collected) >= PROFILE_MAX_RAG_DOCS:
-            break
-
-    return collected[:PROFILE_MAX_RAG_DOCS]
+    """Company-locked RAG snippets for profile Deep Dive (no global pool)."""
+    try:
+        return search_documents_for_profile(
+            customer=customer,
+            interactions=interactions,
+            user_id=user_id,
+            limit=PROFILE_MAX_RAG_DOCS,
+        )
+    except Exception as exc:
+        logging.warning(
+            "RAG search failed for customer %s: %s",
+            customer.customer_name,
+            exc,
+        )
+        return []
 
 
 def _format_rag_section(docs: List[Dict[str, Any]], char_budget: int) -> Tuple[str, Dict[str, Any]]:
     if not docs:
-        body = "No RAG documents matched this customer in the conversation index.\n"
+        body = (
+            "No highly relevant documents found for this profile.\n"
+            "Only snippets explicitly linked to this company (customer ID, company name, "
+            "or domain) with similarity ≥ 0.75 are included.\n"
+        )
         return (
             "=== RAG DOCUMENTS (0 snippets) ===\n" + body,
             {"rag_document_count": 0, "rag_chars": len(body), "rag_truncated": False},
