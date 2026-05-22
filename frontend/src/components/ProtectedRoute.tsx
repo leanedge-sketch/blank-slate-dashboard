@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -6,9 +7,12 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading, employeeLoading, isEmployee } = useAuth();
+  const { user, loading, employeeLoading, isEmployee, recheckEmployeeAccess } =
+    useAuth();
+  const [rechecking, setRechecking] = useState(false);
 
-  if (loading || (user && employeeLoading)) {
+  // Only block the app before we know the user is an employee (not on token refresh / re-check).
+  if (loading || (user && employeeLoading && !isEmployee)) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -36,11 +40,29 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
               : "Your account is not registered as an employee."}
           </p>
           <p className="text-slate-500 text-xs">
-            Ask an administrator to add you to the employees table, then sign in again.
+            Ask an administrator to add you to the employees table in Supabase, then
+            try again.
           </p>
-          <a href="/login" className="inline-block text-blue-400 text-sm hover:underline">
-            Back to login
-          </a>
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              type="button"
+              disabled={rechecking || employeeLoading}
+              onClick={async () => {
+                setRechecking(true);
+                try {
+                  await recheckEmployeeAccess();
+                } finally {
+                  setRechecking(false);
+                }
+              }}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+            >
+              {rechecking || employeeLoading ? "Checking access…" : "Retry access check"}
+            </button>
+            <a href="/login" className="inline-block text-blue-400 text-sm hover:underline">
+              Back to login
+            </a>
+          </div>
         </div>
       </div>
     );

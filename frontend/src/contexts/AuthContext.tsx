@@ -7,14 +7,75 @@ import { checkEmployeeStatus as checkEmployeeStatusAPI } from "../services/api";
 import { CANONICAL_PRODUCTION_URL } from "../lib/canonical-host";
 import { isRequestAborted } from "../lib/request-errors";
 
+/** Auth events that require a fresh employees-table lookup. */
 const EMPLOYEE_CHECK_EVENTS = new Set<AuthChangeEvent>([
   "INITIAL_SESSION",
   "SIGNED_IN",
-  "USER_UPDATED",
-  "PASSWORD_RECOVERY",
+]);
+
+/** Refresh/session churn — never block the UI or revoke access. */
+const EMPLOYEE_CHECK_SKIP_EVENTS = new Set<AuthChangeEvent>([
+  "TOKEN_REFRESHED",
 ]);
 
 const EMPLOYEE_CHECK_TIMEOUT_MS = 12_000;
+const EMPLOYEE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const EMPLOYEE_CACHE_KEY = "leanchem_employee_verification";
+
+interface CachedEmployeeVerification {
+  email: string;
+  role: EmployeeRole;
+  name?: string;
+  verifiedAt: number;
+}
+
+function readEmployeeCache(email: string): CachedEmployeeVerification | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(EMPLOYEE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedEmployeeVerification;
+    if (parsed.email !== email.toLowerCase().trim()) return null;
+    if (Date.now() - parsed.verifiedAt > EMPLOYEE_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeEmployeeCache(data: EmployeeData): void {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: CachedEmployeeVerification = {
+      email: data.email.toLowerCase().trim(),
+      role: data.role,
+      name: data.name,
+      verifiedAt: Date.now(),
+    };
+    sessionStorage.setItem(EMPLOYEE_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function clearEmployeeCache(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(EMPLOYEE_CACHE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function employeeDataFromCache(
+  cached: CachedEmployeeVerification,
+): EmployeeData {
+  return {
+    email: cached.email,
+    role: cached.role,
+    name: cached.name,
+  };
+}
 
 /** Canonical production URL (Vercel production alias). */
 export const PRODUCTION_APP_URL = CANONICAL_PRODUCTION_URL;
@@ -52,6 +113,8 @@ interface AuthContextType {
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   checkPasswordSet: () => boolean;
   signOut: () => Promise<void>;
+  /** Re-run employees table check (e.g. after admin adds your email). */
+  recheckEmployeeAccess: () => Promise<void>;
   isEmployee: boolean;
   employeeRole: EmployeeRole | null;
   employeeData: EmployeeData | null;
@@ -70,6 +133,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const employeeCheckGeneration = useRef(0);
   const lastEmployeeEmail = useRef<string | null>(null);
+  const verifiedEmployeeRef = useRef<EmployeeData | null>(null);
+
+  const applyVerifiedEmployee = (employeeInfo: EmployeeData) => {
+    verifiedEmployeeRef.current = employeeInfo;
+    lastEmployeeEmail.current = employeeInfo.email.toLowerCase().trim();
+    setIsEmployee(true);
+    setEmployeeRole(employeeInfo.role);
+    setEmployeeData(employeeInfo);
+    writeEmployeeCache(employeeInfo);
+  };
+
+  const clearVerifiedEmployee = () => {
+    verifiedEmployeeRef.current = null;
+    lastEmployeeEmail.current = null;
+    setIsEmployee(false);
+    setEmployeeRole(null);
+    setEmployeeData(null);
+    clearEmployeeCache();
+  };
 
   // Check if user email exists in employees table and get role
   // Uses backend API instead of direct Supabase query for better reliability
@@ -93,10 +175,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      if (result.is_employee && result.role) {
+      if (result.is_employee) {
+        const role = (result.role?.trim().toLowerCase() ||
+          "sales") as EmployeeRole;
         return {
           email: result.email,
-          role: result.role as EmployeeRole,
+          role,
           name: result.name || undefined,
         };
       }
@@ -111,23 +195,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const hydrateEmployeeFromCache = (email: string): boolean => {
+    const normalized = email.toLowerCase().trim();
+    const cached = readEmployeeCache(normalized);
+    if (!cached) return false;
+    applyVerifiedEmployee(employeeDataFromCache(cached));
+    return true;
+  };
+
   const applyEmployeeFromSession = async (
     email: string | undefined | null,
     event: AuthChangeEvent,
     generation: number,
+    options?: { background?: boolean },
   ) => {
     if (!email) {
-      setIsEmployee(false);
-      setEmployeeRole(null);
-      setEmployeeData(null);
-      lastEmployeeEmail.current = null;
+      clearVerifiedEmployee();
       return;
     }
 
     const normalized = email.toLowerCase().trim();
+    const isDefinitiveCheck = EMPLOYEE_CHECK_EVENTS.has(event);
+
     if (
-      !EMPLOYEE_CHECK_EVENTS.has(event) &&
-      lastEmployeeEmail.current === normalized
+      !isDefinitiveCheck &&
+      lastEmployeeEmail.current === normalized &&
+      verifiedEmployeeRef.current
     ) {
       return;
     }
@@ -137,18 +230,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    lastEmployeeEmail.current = normalized;
     if (employeeInfo) {
-      setIsEmployee(true);
-      setEmployeeRole(employeeInfo.role);
-      setEmployeeData(employeeInfo);
-    } else {
+      applyVerifiedEmployee(employeeInfo);
+      return;
+    }
+
+    const cached = readEmployeeCache(normalized);
+    if (cached) {
+      applyVerifiedEmployee(employeeDataFromCache(cached));
+      if (!options?.background) {
+        console.warn(
+          "Employee API check failed; using cached verification for",
+          normalized,
+        );
+      }
+      return;
+    }
+
+    if (isDefinitiveCheck) {
       console.warn(
         "Employee check failed — user may not be registered or API error",
       );
-      setIsEmployee(false);
-      setEmployeeRole(null);
-      setEmployeeData(null);
+      clearVerifiedEmployee();
     }
   };
 
@@ -168,20 +271,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const email = session?.user?.email;
       if (!email) {
-        setIsEmployee(false);
-        setEmployeeRole(null);
-        setEmployeeData(null);
-        lastEmployeeEmail.current = null;
+        clearVerifiedEmployee();
         setEmployeeLoading(false);
         return;
       }
 
+      const normalized = email.toLowerCase().trim();
+
+      if (EMPLOYEE_CHECK_SKIP_EVENTS.has(event)) {
+        return;
+      }
+
+      const alreadyVerified =
+        lastEmployeeEmail.current === normalized && verifiedEmployeeRef.current;
+
+      if (!EMPLOYEE_CHECK_EVENTS.has(event) && alreadyVerified) {
+        return;
+      }
+
       const generation = ++employeeCheckGeneration.current;
-      setEmployeeLoading(true);
-      void applyEmployeeFromSession(email, event, generation)
+      const useCacheWhileLoading =
+        EMPLOYEE_CHECK_EVENTS.has(event) && hydrateEmployeeFromCache(normalized);
+      const blockUi = !useCacheWhileLoading && !alreadyVerified;
+
+      if (blockUi) {
+        setEmployeeLoading(true);
+      }
+
+      void applyEmployeeFromSession(email, event, generation, {
+        background: useCacheWhileLoading || alreadyVerified,
+      })
         .catch((err) => {
           if (!isRequestAborted(err)) {
             console.error("Employee status check failed:", err);
+          }
+          if (
+            EMPLOYEE_CHECK_EVENTS.has(event) &&
+            !verifiedEmployeeRef.current
+          ) {
+            hydrateEmployeeFromCache(normalized);
           }
         })
         .finally(() => {
@@ -227,16 +355,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
           if (!employeeInfo) {
             await supabase.auth.signOut();
+            clearVerifiedEmployee();
             return {
               error: new Error(
                 "Access denied. Your email is not registered as an employee."
               ),
             };
           }
-          setIsEmployee(true);
-          setEmployeeRole(employeeInfo.role);
-          setEmployeeData(employeeInfo);
-          lastEmployeeEmail.current = data.user.email.toLowerCase().trim();
+          applyVerifiedEmployee(employeeInfo);
         } finally {
           if (generation === employeeCheckGeneration.current) {
             setEmployeeLoading(false);
@@ -363,16 +489,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user.user_metadata?.password_set === true || user.app_metadata?.password_set === true;
   };
 
+  const recheckEmployeeAccess = async () => {
+    const email = user?.email;
+    if (!email) return;
+
+    const normalized = email.toLowerCase().trim();
+    const generation = ++employeeCheckGeneration.current;
+    setEmployeeLoading(true);
+    try {
+      const employeeInfo = await checkEmployeeStatus(normalized, generation);
+      if (generation !== employeeCheckGeneration.current) return;
+      if (employeeInfo) {
+        applyVerifiedEmployee(employeeInfo);
+        return;
+      }
+      const cached = readEmployeeCache(normalized);
+      if (cached) {
+        applyVerifiedEmployee(employeeDataFromCache(cached));
+        return;
+      }
+      clearVerifiedEmployee();
+    } finally {
+      if (generation === employeeCheckGeneration.current) {
+        setEmployeeLoading(false);
+      }
+    }
+  };
+
   const signOut = async () => {
     if (!isSupabaseConfigured()) {
       return;
     }
     await supabase.auth.signOut();
-    setIsEmployee(false);
-    setEmployeeRole(null);
-    setEmployeeData(null);
+    clearVerifiedEmployee();
     setEmployeeLoading(false);
-    lastEmployeeEmail.current = null;
   };
 
   const permissions = getPermissionsForRole(employeeRole);
@@ -390,6 +540,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updatePassword,
         checkPasswordSet,
         signOut,
+        recheckEmployeeAccess,
         isEmployee,
         employeeRole,
         employeeData,

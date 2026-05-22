@@ -106,11 +106,22 @@ async def check_employee_status(
     try:
         # Query employees table using service client (bypasses RLS)
         lookup = email.lower().strip()
-        result = supabase.table("employees").select("email, role, name").eq("email", lookup).execute()
+        result = (
+            supabase.table("employees")
+            .select("email, role, name")
+            .ilike("email", lookup)
+            .limit(10)
+            .execute()
+        )
         print(f"[check-employee] lookup={lookup!r} result.data={result.data!r}")
 
-        if result.data and len(result.data) > 0:
-            employee = result.data[0]
+        employee = None
+        for row in result.data or []:
+            if (row.get("email") or "").lower().strip() == lookup:
+                employee = row
+                break
+
+        if employee:
             return {
                 "is_employee": True,
                 "email": employee["email"],
