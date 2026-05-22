@@ -1,9 +1,10 @@
 """
-Sync CRM interactions with sales_pipeline records.
+Sync CRM, PMS (TDS/products), and sales_pipeline automatically.
 
-- Links interactions.pipeline_id when missing
-- Mirrors CRM activity into pipeline ai_interactions
-- Advances pipeline stage from interaction text + customer sales_stage (1–7)
+- New customers get a Lead ID deal on the sales pipeline board
+- Each interaction links to the matching product deal (tds_id / pipeline_id)
+- Interaction updates refresh pipeline snapshots and can advance stage
+- Per-product stages are independent (company sales_stage is informational only)
 """
 
 from __future__ import annotations
@@ -11,7 +12,8 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID
 
 from app.database.connection import get_supabase_client
 from app.models.crm import Interaction
@@ -95,6 +97,93 @@ def _interaction_body(interaction: Interaction) -> str:
     return "\n".join(parts).strip()
 
 
+def _coerce_uuid(value: Union[str, UUID]) -> UUID:
+    return value if isinstance(value, UUID) else UUID(str(value))
+
+
+def _general_company_deal(deals: List[SalesPipeline]) -> Optional[SalesPipeline]:
+    """Company umbrella deal with no specific PMS product attached."""
+    for pipeline in deals:
+        if not pipeline.tds_id and not pipeline.chemical_type_id:
+            return pipeline
+    return None
+
+
+def _pipeline_create_body(
+    customer_id: Union[str, UUID],
+    *,
+    tds_id: Optional[Union[str, UUID]] = None,
+    chemical_type_id: Optional[Union[str, UUID]] = None,
+    stage: str = "Lead ID",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> SalesPipelineCreate:
+    """Build a pipeline row linked to CRM customer and optional PMS product."""
+    cid = _coerce_uuid(customer_id)
+    meta = {
+        "source": "crm_auto_sync",
+        "synced_at": datetime.utcnow().isoformat(),
+        **(metadata or {}),
+    }
+    resolved_chemical = chemical_type_id
+    resolved_tds = tds_id
+
+    if tds_id and not resolved_chemical:
+        try:
+            from app.services.pms_service import get_tds_by_id
+
+            tds = get_tds_by_id(str(tds_id))
+            if tds and tds.chemical_type_id:
+                resolved_chemical = tds.chemical_type_id
+        except Exception as e:
+            logger.debug("TDS lookup for pipeline link skipped: %s", e)
+
+    return SalesPipelineCreate(
+        customer_id=cid,
+        tds_id=_coerce_uuid(resolved_tds) if resolved_tds else None,
+        chemical_type_id=_coerce_uuid(resolved_chemical) if resolved_chemical else None,
+        stage=stage,
+        metadata=meta,
+    )
+
+
+def ensure_lead_pipeline_for_customer(customer_id: str) -> Optional[SalesPipeline]:
+    """
+    When a customer is registered, ensure they appear on the sales pipeline at Lead ID.
+    Creates one company-level deal if none exists yet.
+    """
+    deals = list_sales_pipelines(
+        limit=50,
+        offset=0,
+        customer_id=customer_id,
+        latest_per_deal=True,
+    )
+    general = _general_company_deal(deals)
+    if general:
+        return general
+
+    try:
+        pipeline = create_sales_pipeline(
+            _pipeline_create_body(
+                customer_id,
+                stage="Lead ID",
+                metadata={"source": "auto_on_customer_create"},
+            )
+        )
+        logger.info(
+            "Created Lead ID pipeline %s for new customer %s",
+            pipeline.id,
+            customer_id,
+        )
+        return pipeline
+    except Exception as e:
+        logger.warning(
+            "Could not create Lead ID pipeline for customer %s: %s",
+            customer_id,
+            e,
+        )
+        return None
+
+
 def _heuristic_stage_from_text(text: str) -> Optional[str]:
     lower = text.lower()
     if any(w in lower for w in ("closed won", "purchase order received", "po received", "deal won")):
@@ -144,12 +233,14 @@ def _resolve_pipeline_for_interaction(
         if existing:
             return existing
         try:
-            body = SalesPipelineCreate(
-                customer_id=interaction.customer_id,
-                tds_id=interaction.tds_id,
-                stage="Lead ID",
+            return create_sales_pipeline(
+                _pipeline_create_body(
+                    interaction.customer_id,
+                    tds_id=interaction.tds_id,
+                    stage="Lead ID",
+                    metadata={"source": "auto_on_interaction_tds"},
+                )
             )
-            return create_sales_pipeline(body)
         except Exception as e:
             logger.warning(
                 "Could not create product pipeline for customer %s: %s",
@@ -164,15 +255,20 @@ def _resolve_pipeline_for_interaction(
         customer_id=customer_id,
         latest_per_deal=True,
     )
+    general = _general_company_deal(deals)
+    if general:
+        return general
     if len(deals) == 1:
         return deals[0]
     if len(deals) == 0:
         try:
-            body = SalesPipelineCreate(
-                customer_id=interaction.customer_id,
-                stage="Lead ID",
+            return create_sales_pipeline(
+                _pipeline_create_body(
+                    interaction.customer_id,
+                    stage="Lead ID",
+                    metadata={"source": "auto_on_interaction"},
+                )
             )
-            return create_sales_pipeline(body)
         except Exception as e:
             logger.warning(
                 "Could not create default pipeline for customer %s: %s",
@@ -196,15 +292,18 @@ def _link_interaction_to_pipeline(interaction_id: str, pipeline_id: str) -> None
     ).execute()
 
 
-def _append_crm_snapshot_to_pipeline(
+def _upsert_crm_snapshot_to_pipeline(
     pipeline: SalesPipeline, interaction: Interaction
 ) -> None:
-    text = _interaction_body(interaction)
+    """Mirror CRM interaction text onto the pipeline deal (insert or refresh on edit)."""
     entry: Dict[str, Any] = {
         "source": "crm",
         "interaction_id": str(interaction.id),
+        "tds_id": str(interaction.tds_id) if interaction.tds_id else None,
+        "pipeline_id": str(interaction.pipeline_id) if interaction.pipeline_id else None,
         "input_text": (interaction.input_text or "")[:4000],
         "ai_response": (interaction.ai_response or "")[:4000],
+        "updated_at": datetime.utcnow().isoformat(),
         "created_at": (
             interaction.created_at.isoformat()
             if hasattr(interaction.created_at, "isoformat") and interaction.created_at
@@ -221,13 +320,15 @@ def _append_crm_snapshot_to_pipeline(
             except json.JSONDecodeError:
                 existing = []
 
-    if any(
-        isinstance(x, dict) and x.get("interaction_id") == entry["interaction_id"]
-        for x in existing
-    ):
-        return
+    replaced = False
+    for idx, item in enumerate(existing):
+        if isinstance(item, dict) and item.get("interaction_id") == entry["interaction_id"]:
+            existing[idx] = entry
+            replaced = True
+            break
+    if not replaced:
+        existing.append(entry)
 
-    existing.append(entry)
     update_sales_pipeline(
         str(pipeline.id),
         SalesPipelineUpdate(ai_interactions=existing[-200:]),
@@ -346,9 +447,9 @@ def sync_interaction_to_sales_pipeline(
 
     if append_snapshot:
         try:
-            _append_crm_snapshot_to_pipeline(pipeline, interaction)
+            _upsert_crm_snapshot_to_pipeline(pipeline, interaction)
         except Exception as e:
-            logger.warning("Failed to append CRM snapshot on %s: %s", pipeline_id, e)
+            logger.warning("Failed to upsert CRM snapshot on %s: %s", pipeline_id, e)
 
     text = _interaction_body(interaction)
     if text:
@@ -440,6 +541,7 @@ def sync_customer_pipelines_from_crm(
     use_ai: bool = False,
 ) -> Dict[str, Any]:
     """Backfill interactions into per-product pipeline deals (stages per deal)."""
+    ensure_lead_pipeline_for_customer(customer_id)
     result = backfill_pipelines_from_customer_interactions(
         customer_id, use_ai=use_ai
     )

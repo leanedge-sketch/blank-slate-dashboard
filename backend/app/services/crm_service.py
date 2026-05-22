@@ -290,6 +290,31 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
         raise RuntimeError("Failed to create customer")
 
     customer = Customer(**response.data[0])
+
+    if not customer.sales_stage:
+        try:
+            supabase.table("customers").update({"sales_stage": "1"}).eq(
+                "customer_id", str(customer.customer_id)
+            ).execute()
+            customer.sales_stage = "1"
+        except Exception as e:
+            logging.warning(
+                "Could not set default CRM sales_stage for %s: %s",
+                customer.customer_id,
+                e,
+            )
+
+    try:
+        from app.services.pipeline_crm_sync import ensure_lead_pipeline_for_customer
+
+        ensure_lead_pipeline_for_customer(str(customer.customer_id))
+    except Exception as e:
+        logging.warning(
+            "Sales pipeline Lead ID setup skipped for new customer %s: %s",
+            customer.customer_id,
+            e,
+        )
+
     return customer
 
 
@@ -1273,7 +1298,11 @@ def create_interaction(
     try:
         from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
 
-        sync_interaction_to_sales_pipeline(created, use_ai=True)
+        pipeline_id = sync_interaction_to_sales_pipeline(created, use_ai=True)
+        if pipeline_id and not created.pipeline_id:
+            linked = get_interaction_by_id(str(created.id))
+            if linked:
+                created = linked
     except Exception as e:
         logging.warning(
             "Sales pipeline sync skipped for interaction %s: %s",
@@ -1443,7 +1472,13 @@ def update_interaction(
         try:
             from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
 
-            sync_interaction_to_sales_pipeline(updated, use_ai=True)
+            pipeline_id = sync_interaction_to_sales_pipeline(
+                updated, use_ai=True, append_snapshot=True
+            )
+            if pipeline_id and str(updated.pipeline_id or "") != str(pipeline_id):
+                refreshed = get_interaction_by_id(interaction_id)
+                if refreshed:
+                    updated = refreshed
         except Exception as e:
             logging.warning(
                 "Sales pipeline sync skipped on interaction update %s: %s",
