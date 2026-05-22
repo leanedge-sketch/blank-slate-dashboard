@@ -12,7 +12,16 @@ import {
   PipelineStage,
   fetchTDS,
   Tds,
+  fetchChemicalFullData,
+  fetchChemicalTypes,
+  ChemicalFullData,
+  ChemicalType,
 } from "../../services/api";
+import {
+  getPipelineProductLabel,
+  PIPELINE_STAGE_COLORS,
+  PIPELINE_STAGE_ORDER,
+} from "../../utils/pipelineProduct";
 import {
   fetchAllCustomerInteractions,
   isConversationArchiveRow,
@@ -53,7 +62,16 @@ export function CustomerDetailPage() {
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [syncingPipelines, setSyncingPipelines] = useState(false);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
+  const [chemicalFullData, setChemicalFullData] = useState<ChemicalFullData[]>([]);
+  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
+  const [selectedDealId, setSelectedDealId] = useState<string>("");
   const navigate = useNavigate();
+
+  const productLabelOptions = {
+    chemicalFullData,
+    chemicalTypes,
+    tdsList,
+  };
 
   async function fetchCustomerAndInteractions() {
     if (!customerId) return;
@@ -121,15 +139,21 @@ export function CustomerDetailPage() {
   }
 
   useEffect(() => {
-    async function loadTDS() {
+    async function loadCatalog() {
       try {
-        const res = await fetchTDS({ limit: 500 });
-        setTdsList(res.tds);
+        const [tdsRes, fullRes, typesRes] = await Promise.all([
+          fetchTDS({ limit: 500 }),
+          fetchChemicalFullData({ limit: 1000 }).catch(() => ({ chemicals: [], total: 0 })),
+          fetchChemicalTypes({ limit: 500 }).catch(() => []),
+        ]);
+        setTdsList(tdsRes.tds);
+        setChemicalFullData(fullRes.chemicals);
+        setChemicalTypes(typesRes.chemicals);
       } catch (err) {
-        console.error("Failed to load TDS:", err);
+        console.error("Failed to load product catalog:", err);
       }
     }
-    loadTDS();
+    loadCatalog();
   }, []);
 
   useEffect(() => {
@@ -163,6 +187,7 @@ export function CustomerDetailPage() {
       setInteractions((prev) => [res.data, ...prev]);
       setChatInput("");
       setSelectedFile(null);
+      await fetchPipelines();
     } catch (err: any) {
       console.error("Chat error:", err);
       console.error("Error response:", err?.response?.data);
@@ -298,37 +323,13 @@ export function CustomerDetailPage() {
     });
   }
 
-  // Calculate stage distribution
-  const stageDistribution: Record<PipelineStage, number> = {
-    Lead: 0,
-    "Product Identified": 0,
-    "Quote Sent": 0,
-    "Sample Requested": 0,
-    "Sample Delivered": 0,
-    "Agreement in Review": 0,
-    "PO Received": 0,
-    Invoiced: 0,
-    Delivered: 0,
-    "Closed Won": 0,
-    "Closed Lost": 0,
-  };
+  const stageDistribution: Record<string, number> = {};
+  PIPELINE_STAGE_ORDER.forEach((s) => {
+    stageDistribution[s] = 0;
+  });
   pipelines.forEach((p) => {
     stageDistribution[p.stage] = (stageDistribution[p.stage] || 0) + 1;
   });
-
-  const STAGE_COLORS: Record<PipelineStage, string> = {
-    Lead: "bg-slate-100 text-slate-700 border-slate-300",
-    "Product Identified": "bg-blue-100 text-blue-700 border-blue-300",
-    "Quote Sent": "bg-purple-100 text-purple-700 border-purple-300",
-    "Sample Requested": "bg-yellow-100 text-yellow-700 border-yellow-300",
-    "Sample Delivered": "bg-orange-100 text-orange-700 border-orange-300",
-    "Agreement in Review": "bg-indigo-100 text-indigo-700 border-indigo-300",
-    "PO Received": "bg-green-100 text-green-700 border-green-300",
-    Invoiced: "bg-teal-100 text-teal-700 border-teal-300",
-    Delivered: "bg-emerald-100 text-emerald-700 border-emerald-300",
-    "Closed Won": "bg-green-500 text-white border-green-600",
-    "Closed Lost": "bg-red-100 text-red-700 border-red-300",
-  };
 
   if (loading) {
     return (
@@ -447,6 +448,26 @@ export function CustomerDetailPage() {
               </div>
 
               <form onSubmit={handleChatSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Link chat to product deal (optional)
+                  </label>
+                  <select
+                    value={selectedDealId}
+                    onChange={(e) => setSelectedDealId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Auto (single deal only) or general</option>
+                    {pipelines.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {getPipelineProductLabel(p, productLabelOptions)} — {p.stage}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Choose a product deal so this chat updates that pipeline stage, not every product.
+                  </p>
+                </div>
                 <div className="relative">
           <textarea
             value={chatInput}
@@ -805,7 +826,7 @@ export function CustomerDetailPage() {
                   Sales Pipeline
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Track deals and opportunities for this customer.
+                  One company, multiple product deals — each product has its own pipeline stage.
                 </p>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
@@ -818,11 +839,13 @@ export function CustomerDetailPage() {
                   {syncingPipelines ? "Syncing…" : "Sync from CRM history"}
                 </button>
                 <button
-                  onClick={() => navigate(`/sales/pipeline?customer=${customerId}`)}
+                  onClick={() =>
+                    navigate(`/sales/pipeline?customer=${customerId}&new=true`)
+                  }
                   className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
                 >
                   <Plus size={16} />
-                  Add Pipeline
+                  Add product deal
                 </button>
                 <Link
                   to="/sales/pipeline"
@@ -854,10 +877,17 @@ export function CustomerDetailPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {/* Stage Summary */}
+                <p className="text-sm text-slate-600">
+                  <span className="font-semibold text-slate-900">
+                    {pipelines.length}
+                  </span>{" "}
+                  active product deal{pipelines.length === 1 ? "" : "s"} for this
+                  company
+                </p>
+
                 <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <h3 className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">
-                    Stage Summary
+                    Stages across products
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(stageDistribution)
@@ -866,7 +896,8 @@ export function CustomerDetailPage() {
                         <span
                           key={stage}
                           className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                            STAGE_COLORS[stage as PipelineStage]
+                            PIPELINE_STAGE_COLORS[stage] ||
+                            "bg-slate-100 text-slate-700 border-slate-300"
                           }`}
                         >
                           {stage}: {count}
@@ -875,62 +906,64 @@ export function CustomerDetailPage() {
                   </div>
                 </div>
 
-                {/* Pipeline List */}
-                <div className="space-y-3">
-                  {pipelines.slice(0, 5).map((pipeline) => (
-                    <div
-                      key={pipeline.id}
-                      onClick={() => navigate(`/sales/pipeline?pipeline=${pipeline.id}`)}
-                      className="rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Package className="w-4 h-4 text-slate-400" />
-                            <span className="text-sm font-medium text-slate-900">
-                              {getTdsName(pipeline.tds_id)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap">
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">Product / project</th>
+                        <th className="px-4 py-3">Stage</th>
+                        <th className="px-4 py-3">Value</th>
+                        <th className="px-4 py-3">Expected close</th>
+                        <th className="px-4 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pipelines.map((pipeline) => (
+                        <tr
+                          key={pipeline.id}
+                          className="bg-white hover:bg-slate-50 cursor-pointer"
+                          onClick={() =>
+                            navigate(`/sales/pipeline?pipeline=${pipeline.id}`)
+                          }
+                        >
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {getPipelineProductLabel(pipeline, productLabelOptions)}
+                          </td>
+                          <td className="px-4 py-3">
                             <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                                STAGE_COLORS[pipeline.stage]
+                              className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                                PIPELINE_STAGE_COLORS[pipeline.stage] ||
+                                "bg-slate-100 text-slate-700"
                               }`}
                             >
                               {pipeline.stage}
                             </span>
-                            {pipeline.amount && (
-                              <div className="flex items-center gap-1 text-sm text-slate-600">
-                                <DollarSign className="w-4 h-4" />
-                                <span className="font-medium">
-                                  {formatCurrency(pipeline.amount)}
-                                </span>
-                              </div>
-                            )}
-                            {pipeline.expected_close_date && (
-                              <div className="flex items-center gap-1 text-sm text-slate-600">
-                                <Calendar className="w-4 h-4" />
-                                <span>{formatDate(pipeline.expected_close_date)}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                      </div>
-                    </div>
-                  ))}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {pipeline.amount
+                              ? formatCurrency(pipeline.amount)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {pipeline.expected_close_date
+                              ? formatDate(pipeline.expected_close_date)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-emerald-600 font-medium">
+                            Open →
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                {pipelines.length > 5 && (
-                  <div className="pt-2 border-t border-slate-200">
-                    <Link
-                      to={`/sales/pipeline?customer=${customerId}`}
-                      className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-                    >
-                      View all {pipelines.length} pipeline records →
-                    </Link>
-                  </div>
-                )}
+                <Link
+                  to={`/sales/pipeline?customer=${customerId}`}
+                  className="inline-block text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                >
+                  Open full pipeline board for {customer?.customer_name} →
+                </Link>
               </div>
             )}
           </div>

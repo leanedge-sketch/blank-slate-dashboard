@@ -119,6 +119,7 @@ def _heuristic_stage_from_text(text: str) -> Optional[str]:
 def _resolve_pipeline_for_interaction(
     interaction: Interaction,
 ) -> Optional[SalesPipeline]:
+    """Pick or create one deal (customer + product). Never attach to the wrong product."""
     if interaction.pipeline_id:
         existing = get_sales_pipeline_by_id(str(interaction.pipeline_id))
         if existing:
@@ -127,30 +128,65 @@ def _resolve_pipeline_for_interaction(
     customer_id = str(interaction.customer_id)
     tds_id = str(interaction.tds_id) if interaction.tds_id else None
 
-    candidates = list_sales_pipelines(
+    if tds_id:
+        from app.services.sales_pipeline_service import get_pipeline_by_customer_and_product
+
+        matched = list_sales_pipelines(
+            limit=10,
+            offset=0,
+            customer_id=customer_id,
+            tds_id=tds_id,
+            latest_per_deal=True,
+        )
+        if matched:
+            return matched[0]
+        existing = get_pipeline_by_customer_and_product(customer_id, tds_id=tds_id)
+        if existing:
+            return existing
+        try:
+            body = SalesPipelineCreate(
+                customer_id=interaction.customer_id,
+                tds_id=interaction.tds_id,
+                stage="Lead ID",
+            )
+            return create_sales_pipeline(body)
+        except Exception as e:
+            logger.warning(
+                "Could not create product pipeline for customer %s: %s",
+                customer_id,
+                e,
+            )
+            return None
+
+    deals = list_sales_pipelines(
         limit=50,
         offset=0,
         customer_id=customer_id,
-        tds_id=tds_id,
         latest_per_deal=True,
     )
-    if candidates:
-        if tds_id:
-            for p in candidates:
-                if p.tds_id and str(p.tds_id) == tds_id:
-                    return p
-        return candidates[0]
+    if len(deals) == 1:
+        return deals[0]
+    if len(deals) == 0:
+        try:
+            body = SalesPipelineCreate(
+                customer_id=interaction.customer_id,
+                stage="Lead ID",
+            )
+            return create_sales_pipeline(body)
+        except Exception as e:
+            logger.warning(
+                "Could not create default pipeline for customer %s: %s",
+                customer_id,
+                e,
+            )
+            return None
 
-    try:
-        body = SalesPipelineCreate(
-            customer_id=interaction.customer_id,
-            tds_id=interaction.tds_id,
-            stage="Lead ID",
-        )
-        return create_sales_pipeline(body)
-    except Exception as e:
-        logger.warning("Could not create pipeline for customer %s: %s", customer_id, e)
-        return None
+    logger.info(
+        "Interaction %s: %s product deals — link skipped (set tds_id or pipeline_id)",
+        interaction.id,
+        len(deals),
+    )
+    return None
 
 
 def _link_interaction_to_pipeline(interaction_id: str, pipeline_id: str) -> None:
@@ -260,61 +296,30 @@ def _maybe_advance_from_customer_sales_stage(
 
 
 def apply_customer_sales_stage_to_pipelines(customer_id: str) -> Dict[str, Any]:
-    """Ensure each deal for this customer reflects customers.sales_stage on the board."""
+    """
+    Company-level customers.sales_stage is CRM relationship context only.
+
+    Per-product pipeline stages are updated from interactions (per deal), not
+    broadcast from this legacy field.
+    """
     from app.services.crm_service import get_customer_by_id
 
     customer = get_customer_by_id(customer_id)
     if not customer:
         return {"customer_id": customer_id, "error": "customer not found", "updated": 0}
 
-    target = pipeline_stage_from_crm_sales_stage(customer.sales_stage)
-    if not target:
-        return {
-            "customer_id": customer_id,
-            "sales_stage": customer.sales_stage,
-            "updated": 0,
-            "message": "no mappable CRM sales_stage",
-        }
-
-    pipelines = list_sales_pipelines(
+    deals = list_sales_pipelines(
         limit=100,
         offset=0,
         customer_id=customer_id,
         latest_per_deal=True,
     )
-    updated = 0
-    if not pipelines:
-        try:
-            create_sales_pipeline(
-                SalesPipelineCreate(
-                    customer_id=customer.customer_id,
-                    stage=target,
-                )
-            )
-            return {
-                "customer_id": customer_id,
-                "sales_stage": customer.sales_stage,
-                "target_stage": target,
-                "updated": 1,
-                "created": True,
-            }
-        except Exception as e:
-            logger.warning("Could not create pipeline for %s: %s", customer_id, e)
-            return {"customer_id": customer_id, "updated": 0, "error": str(e)}
-
-    for pipeline in pipelines:
-        if _stage_rank(target) > _stage_rank(pipeline.stage):
-            before = pipeline.stage
-            _maybe_advance_from_customer_sales_stage(pipeline, customer.sales_stage)
-            refreshed = get_sales_pipeline_by_id(str(pipeline.id))
-            if refreshed and refreshed.stage != before:
-                updated += 1
-
     return {
         "customer_id": customer_id,
         "sales_stage": customer.sales_stage,
-        "target_stage": target,
-        "updated": updated,
+        "product_deals": len(deals),
+        "updated": 0,
+        "message": "per_product_stages_only",
     }
 
 
@@ -380,18 +385,6 @@ def sync_interaction_to_sales_pipeline(
             except Exception as e:
                 logger.debug("AI pipeline advance skipped: %s", e)
 
-    try:
-        from app.services.crm_service import get_customer_by_id
-
-        customer = get_customer_by_id(str(interaction.customer_id))
-        refreshed = get_sales_pipeline_by_id(pipeline_id)
-        if refreshed and customer:
-            _maybe_advance_from_customer_sales_stage(
-                refreshed, customer.sales_stage
-            )
-    except Exception as e:
-        logger.debug("Customer sales_stage sync skipped: %s", e)
-
     return pipeline_id
 
 
@@ -446,12 +439,11 @@ def sync_customer_pipelines_from_crm(
     *,
     use_ai: bool = False,
 ) -> Dict[str, Any]:
-    """Backfill from interaction history, then apply latest CRM sales_stage."""
+    """Backfill interactions into per-product pipeline deals (stages per deal)."""
     result = backfill_pipelines_from_customer_interactions(
         customer_id, use_ai=use_ai
     )
-    stage_result = apply_customer_sales_stage_to_pipelines(customer_id)
-    result["crm_stage_sync"] = stage_result
+    result["product_deals"] = apply_customer_sales_stage_to_pipelines(customer_id)
     return result
 
 

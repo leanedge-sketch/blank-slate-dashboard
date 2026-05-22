@@ -630,6 +630,7 @@ async def chat_with_customer_endpoint(
     customer_id: str,
     input_text: Optional[str] = Form(None),
     tds_id: Optional[str] = Form(None),
+    pipeline_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
@@ -657,6 +658,7 @@ async def chat_with_customer_endpoint(
             body = await request.json()
             input_text = body.get("input_text") or input_text
             tds_id = body.get("tds_id") or tds_id
+            pipeline_id = body.get("pipeline_id") or pipeline_id
             # Note: Can't send files via JSON, so file will remain None
         except Exception as e:
             logger.error(f"Error parsing JSON body: {e}")
@@ -714,6 +716,7 @@ async def chat_with_customer_endpoint(
             customer_id=customer_id,
             input_text=input_text,
             tds_id=tds_id,
+            pipeline_id=pipeline_id,
             user_id=None,
             file_url=file_url,
             file_type=file_type,

@@ -109,6 +109,7 @@ export interface InteractionListResponse {
 export interface CustomerChatRequest {
   input_text: string;
   tds_id?: string | null;
+  pipeline_id?: string | null;
 }
 
 export interface InteractionUpdate {

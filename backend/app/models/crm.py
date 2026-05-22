@@ -148,6 +148,7 @@ class CustomerChatRequest(BaseModel):
     """Request body for AI chat with a customer."""
     input_text: str
     tds_id: Optional[UUID] = None
+    pipeline_id: Optional[UUID] = None
     file_url: Optional[str] = None  # URL of uploaded file in Supabase storage
     file_type: Optional[str] = None  # MIME type of the file
     file_content: Optional[str] = None  # Extracted text content from the file

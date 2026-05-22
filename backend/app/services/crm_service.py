@@ -341,22 +341,7 @@ def update_customer(customer_id: str, customer_update: CustomerUpdate) -> Custom
     if not response.data:
         raise RuntimeError("Failed to update customer")
 
-    updated = Customer(**response.data[0])
-
-    if "sales_stage" in update_data:
-        try:
-            from app.services.pipeline_crm_sync import (
-                apply_customer_sales_stage_to_pipelines,
-            )
-
-            apply_customer_sales_stage_to_pipelines(customer_id)
-        except Exception as e:
-            logging.warning(
-                "Sales pipeline sync after customer sales_stage update failed: %s",
-                e,
-            )
-
-    return updated
+    return Customer(**response.data[0])
 
 
 def delete_customer(customer_id: str) -> None:
@@ -1842,6 +1827,7 @@ def chat_with_customer(
     customer_id: str,
     input_text: str,
     tds_id: Optional[str] = None,
+    pipeline_id: Optional[str] = None,
     user_id: Optional[str] = None,
     file_url: Optional[str] = None,
     file_type: Optional[str] = None,
@@ -1884,23 +1870,39 @@ def chat_with_customer(
     # 2.5) Fetch sales pipelines for this customer to provide pipeline context
     sales_pipelines = []
     try:
-        # Import here to avoid circular import
         from app.services.sales_pipeline_service import list_sales_pipelines
+
         sales_pipelines = list_sales_pipelines(
-            limit=20,
+            limit=50,
             customer_id=str(customer.customer_id),
+            latest_per_deal=True,
         )
     except Exception:
-        pass  # Don't fail if pipeline service is unavailable
-    
+        pass
+
     pipeline_context = ""
     if sales_pipelines:
-        pipeline_context = f"\n\nSales Pipeline Information ({len(sales_pipelines)} pipeline(s)):\n"
-        for idx, p in enumerate(sales_pipelines[:10], 1):  # Show up to 10 pipelines
-            amount_str = f"{p.amount or 0:,.2f} {p.currency or 'USD'}" if p.amount else "Not set"
-            pipeline_context += f"- Pipeline {idx}: Stage: {p.stage}, Amount: {amount_str}, Expected Close: {p.expected_close_date or 'Not set'}\n"
+        pipeline_context = (
+            f"\n\nActive product deals for this company ({len(sales_pipelines)} deal(s), "
+            "each product can be at a different stage):\n"
+        )
+        for idx, p in enumerate(sales_pipelines[:15], 1):
+            product_ref = (
+                f"TDS {p.tds_id}"
+                if p.tds_id
+                else (f"product {p.chemical_type_id}" if p.chemical_type_id else "general")
+            )
+            amount_str = (
+                f"{p.amount or 0:,.2f} {p.currency or 'USD'}" if p.amount else "Not set"
+            )
+            pipeline_context += (
+                f"- Deal {idx} ({product_ref}): stage={p.stage}, amount={amount_str}, "
+                f"close={p.expected_close_date or 'Not set'}, pipeline_id={p.id}\n"
+            )
     else:
-        pipeline_context = "\n\nSales Pipeline Information: No active pipelines found for this customer.\n"
+        pipeline_context = (
+            "\n\nProduct deals: none yet — new interactions can start a Lead ID deal per product.\n"
+        )
 
     customer_context = (
         f"Customer name: {customer.customer_name}\n"
@@ -1941,10 +1943,23 @@ User Memories:
     ai_response = gemini_chat(messages)
 
     # 5) Store in interactions table
+    resolved_tds_id = tds_id
+    resolved_pipeline_id = pipeline_id
+    if resolved_pipeline_id and not resolved_tds_id:
+        try:
+            from app.services.sales_pipeline_service import get_sales_pipeline_by_id
+
+            deal = get_sales_pipeline_by_id(str(resolved_pipeline_id))
+            if deal and deal.tds_id:
+                resolved_tds_id = deal.tds_id
+        except Exception:
+            pass
+
     interaction_payload = InteractionCreate(
         input_text=input_text,
         ai_response=ai_response,
-        tds_id=tds_id,
+        tds_id=resolved_tds_id,
+        pipeline_id=resolved_pipeline_id,
         file_url=file_url,
         file_type=file_type,
     )
@@ -1981,17 +1996,6 @@ User Memories:
             supabase.table("customers").update({"sales_stage": new_stage}).eq(
                 "customer_id", customer_id
             ).execute()
-            try:
-                from app.services.pipeline_crm_sync import (
-                    apply_customer_sales_stage_to_pipelines,
-                )
-
-                apply_customer_sales_stage_to_pipelines(customer_id)
-            except Exception as sync_err:
-                logging.warning(
-                    "Sales pipeline sync after chat sales_stage update failed: %s",
-                    sync_err,
-                )
     except Exception:
         # Don't block the main interaction flow if stage analysis fails
         pass
