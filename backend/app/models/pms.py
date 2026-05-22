@@ -65,6 +65,9 @@ class ChemicalTypeListResponse(BaseModel):
 
 
 class TdsBase(BaseModel):
+    # Supabase column is chemical_id (UUID from chemical_full_data.uuid_id).
+    chemical_id: Optional[UUID] = None
+    # API/FE alias kept for backward compatibility.
     chemical_type_id: Optional[UUID] = None
     brand: Optional[str] = None
     grade: Optional[str] = None
@@ -79,6 +82,7 @@ class TdsCreate(TdsBase):
 
 
 class TdsUpdate(BaseModel):
+    chemical_id: Optional[UUID] = None
     chemical_type_id: Optional[UUID] = None
     brand: Optional[str] = None
     grade: Optional[str] = None

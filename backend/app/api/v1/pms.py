@@ -61,6 +61,7 @@ from app.services.pms_service import (
     list_tds,
     count_tds,
     create_tds,
+    backfill_tds_from_chemical_catalog,
     get_tds_by_id,
     update_tds,
     delete_tds,
@@ -204,6 +205,26 @@ async def get_tds_list(
         return TdsListResponse(tds=tds_items, total=total)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching TDS data: {str(e)}")
+
+
+@router.post("/tds/backfill-catalog")
+async def backfill_tds_catalog_endpoint(
+    dry_run: bool = Query(
+        False,
+        description="If true, report how many rows would be created without inserting",
+    ),
+):
+    """
+    Populate tds_data from chemical_full_data (master catalog).
+    Safe to run when tds_data is empty; skips products that already have a TDS row.
+    """
+    try:
+        return backfill_tds_from_chemical_catalog(dry_run=dry_run)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error backfilling TDS from catalog: {str(e)}",
+        )
 
 
 @router.post("/tds", response_model=Tds, status_code=201)

@@ -706,7 +706,16 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         
         # Create new version with all existing data + updates
         # Get all fields from existing pipeline, excluding metadata fields
-        existing_dict = existing.model_dump(exclude={"id", "created_at", "updated_at", "version_number", "parent_pipeline_id", "is_current_version", "ai_interactions"})
+        existing_dict = existing.model_dump(
+            exclude={
+                "id",
+                "created_at",
+                "updated_at",
+                "version_number",
+                "parent_pipeline_id",
+                "is_current_version",
+            }
+        )
         
         # Filter out None values and fields that might not exist in database
         # Only include fields that have values to avoid column errors
@@ -767,9 +776,30 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         
         if not response.data:
             raise RuntimeError("Failed to create new pipeline version")
-        
+
         row = normalize_pipeline_row_from_db(response.data[0])
-        return SalesPipeline(**row)
+        new_pipeline = SalesPipeline(**row)
+        try:
+            from app.services.pipeline_crm_sync import (
+                relocate_interactions_to_pipeline_version,
+            )
+
+            moved = relocate_interactions_to_pipeline_version(
+                str(pipeline_id), str(new_pipeline.id)
+            )
+            if moved:
+                logger.info(
+                    "Relinked %s interactions to new pipeline version %s",
+                    moved,
+                    new_pipeline.id,
+                )
+        except Exception as e:
+            logger.warning(
+                "Interaction relink after version create failed for %s: %s",
+                pipeline_id,
+                e,
+            )
+        return new_pipeline
     
     # Regular update (no stage/amount change) - just update existing record
     update_data = convert_uuids(normalize_pipeline_payload_to_db(update_data))

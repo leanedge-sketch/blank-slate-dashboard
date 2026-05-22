@@ -5,6 +5,7 @@ import {
   fetchTDS,
   fetchTDSById,
   createTDS,
+  backfillTdsFromCatalog,
   fetchChemicalTypes,
   Tds,
   TdsCreate,
@@ -69,6 +70,25 @@ export function TDSPage() {
   const [selectedTdsId, setSelectedTdsId] = useState<string | null>(null);
   const [selectedTdsDetail, setSelectedTdsDetail] = useState<Tds | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+
+  function catalogUuid(ct: ChemicalType): string | null {
+    const meta = ct.metadata as { uuid_id?: string } | null | undefined;
+    return meta?.uuid_id ? String(meta.uuid_id) : null;
+  }
+
+  function resolveChemicalTypeForTds(tds: Tds): ChemicalType | undefined {
+    const ref = tds.chemical_type_id || (tds as Tds & { chemical_id?: string }).chemical_id;
+    if (ref) {
+      const byUuid = chemicalTypes.find((ct) => catalogUuid(ct) === ref);
+      if (byUuid) return byUuid;
+    }
+    const catalogId = tds.metadata?.chemical_full_data_id;
+    if (catalogId != null) {
+      return chemicalTypes.find((ct) => String(ct.id) === String(catalogId));
+    }
+    return undefined;
+  }
 
   async function loadChemicalTypes() {
     try {
@@ -76,6 +96,37 @@ export function TDSPage() {
       setChemicalTypes(res.chemicals);
     } catch (err) {
       console.error("Failed to load chemical types:", err);
+    }
+  }
+
+  async function handleBackfillFromCatalog() {
+    if (
+      !window.confirm(
+        "Import TDS records from the chemical catalog (chemical_full_data)? " +
+          "This creates one TDS row per catalog product that does not have one yet."
+      )
+    ) {
+      return;
+    }
+    try {
+      setBackfilling(true);
+      setError(null);
+      const result = await backfillTdsFromCatalog(false);
+      await loadTDS();
+      alert(
+        `Catalog import complete: ${result.created} TDS created, ` +
+          `${result.skipped} skipped, ${result.errors} errors. ` +
+          `Total TDS rows: ${result.tds_total_after}.`
+      );
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err as Error)?.message ||
+        "Failed to import from catalog";
+      setError(String(message));
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -173,9 +224,10 @@ export function TDSPage() {
             data.generic_product_name.toLowerCase().includes(ct.name.toLowerCase())
         );
         if (matched) {
+          const uuid = catalogUuid(matched);
           setFormData((prev) => ({
             ...prev,
-            chemical_type_id: matched.id,
+            chemical_type_id: uuid || String(matched.id),
           }));
         }
       }
@@ -410,11 +462,15 @@ export function TDSPage() {
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   >
                     <option value="">Select chemical type...</option>
-                    {chemicalTypes.map((ct) => (
-                      <option key={ct.id} value={ct.id}>
-                        {ct.name} {ct.category ? `(${ct.category})` : ""}
-                      </option>
-                    ))}
+                    {chemicalTypes.map((ct) => {
+                      const uuid = catalogUuid(ct);
+                      return (
+                        <option key={ct.id} value={uuid || String(ct.id)} disabled={!uuid}>
+                          {ct.name} {ct.category ? `(${ct.category})` : ""}
+                          {!uuid ? " (no UUID)" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div>
@@ -584,11 +640,31 @@ export function TDSPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
             <Package className="w-12 h-12 text-slate-400 mx-auto mb-4" />
             <p className="text-slate-600 font-medium">No TDS records found</p>
-            <p className="text-slate-500 text-sm mt-1">
+            <p className="text-slate-500 text-sm mt-1 max-w-md mx-auto">
               {hasFilters
                 ? "Try adjusting your filters"
-                : "Create your first TDS record to get started"}
+                : "Your TDS table is empty. Import from the chemical catalog or create a TDS manually."}
             </p>
+            {!hasFilters && (
+              <button
+                type="button"
+                onClick={handleBackfillFromCatalog}
+                disabled={backfilling}
+                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                {backfilling ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Importing from catalog…
+                  </>
+                ) : (
+                  <>
+                    <Package className="w-4 h-4" />
+                    Import from chemical catalog
+                  </>
+                )}
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -603,7 +679,7 @@ export function TDSPage() {
             {/* TDS List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {tdsList.map((tds) => {
-                const chemicalType = chemicalTypes.find((ct) => ct.id === tds.chemical_type_id);
+                const chemicalType = resolveChemicalTypeForTds(tds);
                 return (
                   <div
                     key={tds.id}
@@ -747,8 +823,7 @@ export function TDSPage() {
                             Chemical Type
                           </div>
                           <p className="text-slate-900 font-medium">
-                            {chemicalTypes.find((ct) => ct.id === selectedTdsDetail.chemical_type_id)
-                              ?.name || "Unknown"}
+                            {resolveChemicalTypeForTds(selectedTdsDetail)?.name || "Unknown"}
                           </p>
                         </div>
                       )}

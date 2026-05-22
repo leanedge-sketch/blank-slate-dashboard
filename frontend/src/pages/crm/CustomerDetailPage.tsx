@@ -118,7 +118,7 @@ export function CustomerDetailPage() {
     if (!customerId) return;
     try {
       setSyncingPipelines(true);
-      const result = await syncCustomerPipelines(customerId, false);
+      const result = await syncCustomerPipelines(customerId, true);
       await fetchPipelines();
       alert(
         `Synced ${result.interactions_processed} interactions → ${result.pipelines_updated} pipeline deal(s).`

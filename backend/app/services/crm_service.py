@@ -851,6 +851,7 @@ def get_pipeline_chat_history_for_customer(
                 Interaction(
                     id=synthetic_id,
                     customer_id=UUIDType(str(customer_id)),
+                    pipeline_id=UUIDType(str(pipeline_id)) if pipeline_id else None,
                     input_text=input_text or None,
                     ai_response=ai_response or None,
                     created_at=created_at,

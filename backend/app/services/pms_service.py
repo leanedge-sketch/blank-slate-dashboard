@@ -14,6 +14,7 @@ operations on top of Supabase:
 from typing import List, Optional, Dict, Any
 import json
 import re
+from uuid import UUID
 
 from supabase import Client
 
@@ -73,7 +74,7 @@ def list_chemical_types(limit: int = 100, offset: int = 0) -> List[ChemicalType]
         response = (
             supabase.table("chemical_full_data")
             .select(
-                "id, vendor, product_category, sub_category, product_name, "
+                "id, uuid_id, vendor, product_category, sub_category, product_name, "
                 "packing, typical_application, product_description, hs_code, price"
             )
             .order("product_name", desc=False)
@@ -103,6 +104,12 @@ def list_chemical_types(limit: int = 100, offset: int = 0) -> List[ChemicalType]
                         "typical_application": row_dict.get("typical_application"),
                         "product_description": row_dict.get("product_description"),
                         "price": row_dict.get("price"),
+                        "chemical_full_data_id": row_dict.get("id"),
+                        "uuid_id": (
+                            str(row_dict["uuid_id"])
+                            if row_dict.get("uuid_id")
+                            else None
+                        ),
                     },
                     "created_at": None,
                 }
@@ -177,7 +184,7 @@ def get_chemical_type_by_id(chemical_id: str) -> Optional[ChemicalType]:
     response = (
         supabase.table("chemical_full_data")
         .select(
-            "id, vendor, product_category, sub_category, product_name, "
+            "id, uuid_id, vendor, product_category, sub_category, product_name, "
             "packing, typical_application, product_description, hs_code, price"
         )
         .eq("id", int(chemical_id))
@@ -200,6 +207,10 @@ def get_chemical_type_by_id(chemical_id: str) -> Optional[ChemicalType]:
                 "typical_application": row.get("typical_application"),
                 "product_description": row.get("product_description"),
                 "price": row.get("price"),
+                "chemical_full_data_id": row.get("id"),
+                "uuid_id": (
+                    str(row["uuid_id"]) if row.get("uuid_id") else None
+                ),
             },
             "created_at": None,
         }
@@ -275,6 +286,51 @@ def delete_chemical_type(chemical_id: str) -> bool:
 # =============================
 
 
+def _resolve_catalog_uuid_for_tds(chemical_ref: Optional[str]) -> Optional[str]:
+    """Map catalog integer id or uuid string to chemical_full_data.uuid_id."""
+    if not chemical_ref:
+        return None
+    ref = str(chemical_ref).strip()
+    if not ref:
+        return None
+    try:
+        UUID(ref)
+        return ref
+    except ValueError:
+        pass
+    try:
+        chem = get_chemical_type_by_id(ref)
+        if chem and chem.metadata and chem.metadata.get("uuid_id"):
+            return str(chem.metadata["uuid_id"])
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _prepare_tds_db_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip API-only fields and map chemical_type_id -> chemical_id for tds_data."""
+    data = dict(payload)
+    ref = data.pop("chemical_type_id", None)
+    if ref is not None:
+        resolved = _resolve_catalog_uuid_for_tds(str(ref))
+        if resolved:
+            data["chemical_id"] = resolved
+    elif data.get("chemical_id") is not None:
+        resolved = _resolve_catalog_uuid_for_tds(str(data["chemical_id"]))
+        if resolved:
+            data["chemical_id"] = resolved
+    return data
+
+
+def _tds_from_row(row: Dict[str, Any]) -> Tds:
+    """Normalize DB row (chemical_id) to API model (chemical_type_id alias)."""
+    normalized = dict(row)
+    chem_id = normalized.get("chemical_id")
+    if chem_id and not normalized.get("chemical_type_id"):
+        normalized["chemical_type_id"] = chem_id
+    return Tds(**normalized)
+
+
 def list_tds(
     limit: int = 100,
     offset: int = 0,
@@ -292,12 +348,18 @@ def list_tds(
         query = query.ilike("grade", f"%{grade}%")
     if owner:
         query = query.ilike("owner", f"%{owner}%")
-    # chemical_full_data.id (int) is passed as chemical_type_id from the UI.
-    # Filter TDS by brand/grade matching the catalog product name when possible.
     if chemical_type_id:
-        chem = get_chemical_type_by_id(str(chemical_type_id))
-        if chem and chem.name:
-            query = query.ilike("brand", f"%{chem.name}%")
+        cid = str(chemical_type_id).strip()
+        catalog_uuid = _resolve_catalog_uuid_for_tds(cid)
+        if catalog_uuid:
+            query = query.eq("chemical_id", catalog_uuid)
+        else:
+            try:
+                query = query.eq("metadata->>chemical_full_data_id", cid)
+            except Exception:
+                chem = get_chemical_type_by_id(cid)
+                if chem and chem.name:
+                    query = query.ilike("brand", f"%{chem.name}%")
 
     response = (
         query.order("created_at", desc=True)
@@ -305,7 +367,7 @@ def list_tds(
         .offset(offset)
         .execute()
     )
-    return [Tds(**row) for row in (response.data or [])]
+    return [_tds_from_row(row) for row in (response.data or [])]
 
 
 def count_tds() -> int:
@@ -314,12 +376,128 @@ def count_tds() -> int:
     return response.count or 0
 
 
+def _tds_catalog_dedupe_key(brand: Optional[str], grade: Optional[str]) -> str:
+    return f"{(brand or '').strip().lower()}|{(grade or '').strip().lower()}"
+
+
+def backfill_tds_from_chemical_catalog(
+    *,
+    dry_run: bool = False,
+    page_size: int = 200,
+) -> Dict[str, Any]:
+    """
+    Create tds_data rows from chemical_full_data when the TDS table is empty or incomplete.
+    One TDS per catalog product (deduped by catalog id / brand+grade).
+    """
+    existing = list_tds(limit=5000, offset=0)
+    by_catalog_id: Dict[int, Tds] = {}
+    by_key: Dict[str, Tds] = {}
+    for row in existing:
+        meta = row.metadata if isinstance(row.metadata, dict) else {}
+        catalog_id = meta.get("chemical_full_data_id")
+        if catalog_id is not None:
+            try:
+                by_catalog_id[int(catalog_id)] = row
+            except (TypeError, ValueError):
+                pass
+        by_key[_tds_catalog_dedupe_key(row.brand, row.grade)] = row
+
+    created = 0
+    skipped = 0
+    errors = 0
+    offset = 0
+    catalog_total = 0
+
+    while True:
+        batch = list_chemical_full_data(limit=page_size, offset=offset)
+        if not batch:
+            break
+        catalog_total += len(batch)
+        for chem in batch:
+            product_name = (chem.product_name or "").strip()
+            if not product_name:
+                skipped += 1
+                continue
+            if chem.id in by_catalog_id:
+                skipped += 1
+                continue
+            grade = (chem.sub_category or chem.packing or "").strip() or None
+            dedupe = _tds_catalog_dedupe_key(product_name, grade)
+            if dedupe in by_key:
+                skipped += 1
+                continue
+
+            specs: Dict[str, Any] = {}
+            if chem.product_category:
+                specs["product_category"] = chem.product_category
+            if chem.hs_code:
+                specs["hs_code"] = chem.hs_code
+            if chem.typical_application:
+                specs["typical_application"] = chem.typical_application
+            if chem.product_description:
+                specs["product_description"] = chem.product_description
+
+            if not chem.uuid_id:
+                errors += 1
+                continue
+
+            body = TdsCreate(
+                chemical_id=chem.uuid_id,
+                brand=product_name,
+                grade=grade,
+                owner=(chem.vendor or "").strip() or None,
+                source="chemical_full_data_catalog",
+                specs=specs or None,
+                metadata={
+                    "chemical_full_data_id": chem.id,
+                    "uuid_id": str(chem.uuid_id) if chem.uuid_id else None,
+                    "vendor": chem.vendor,
+                    "sector": chem.sector,
+                    "industry": chem.industry,
+                    "backfill": "catalog_sync",
+                },
+            )
+
+            if dry_run:
+                created += 1
+                continue
+
+            try:
+                tds = create_tds(body)
+                by_catalog_id[chem.id] = tds
+                by_key[dedupe] = tds
+                created += 1
+            except Exception as exc:
+                errors += 1
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "TDS backfill failed for catalog id %s (%s): %s",
+                    chem.id,
+                    product_name,
+                    exc,
+                )
+
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return {
+        "dry_run": dry_run,
+        "catalog_products_scanned": catalog_total,
+        "existing_tds": len(existing),
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+        "tds_total_after": len(existing) + (0 if dry_run else created),
+    }
+
+
 def create_tds(body: TdsCreate) -> Tds:
     supabase: Client = get_supabase_client()
-    payload = body.model_dump(exclude_unset=True)
-    
+    payload = _prepare_tds_db_payload(body.model_dump(exclude_unset=True))
+
     # Convert ALL UUIDs in the entire payload to strings (Supabase needs strings)
-    from uuid import UUID
     def convert_uuids(obj):
         """Recursively convert UUID objects to strings for JSON serialization."""
         if isinstance(obj, UUID):
@@ -338,7 +516,7 @@ def create_tds(body: TdsCreate) -> Tds:
     response = supabase.table("tds_data").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create TDS record")
-    return Tds(**response.data[0])
+    return _tds_from_row(response.data[0])
 
 
 def get_tds_by_id(tds_id: str) -> Optional[Tds]:
@@ -351,7 +529,7 @@ def get_tds_by_id(tds_id: str) -> Optional[Tds]:
         .execute()
     )
     if response.data:
-        return Tds(**response.data)
+        return _tds_from_row(response.data)
     return None
 
 
@@ -361,12 +539,10 @@ def update_tds(tds_id: str, body: TdsUpdate) -> Tds:
     if not existing:
         raise ValueError("TDS record not found")
     
-    update_data = body.model_dump(exclude_unset=True)
+    update_data = _prepare_tds_db_payload(body.model_dump(exclude_unset=True))
     if not update_data:
         return existing
-    
-    # Convert ALL UUIDs in the update data to strings
-    from uuid import UUID
+
     def convert_uuids(obj):
         """Recursively convert UUID objects to strings for JSON serialization."""
         if isinstance(obj, UUID):
@@ -389,7 +565,7 @@ def update_tds(tds_id: str, body: TdsUpdate) -> Tds:
     )
     if not response.data:
         raise RuntimeError("Failed to update TDS record")
-    return Tds(**response.data[0])
+    return _tds_from_row(response.data[0])
 
 
 def delete_tds(tds_id: str) -> bool:

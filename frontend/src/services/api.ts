@@ -259,6 +259,26 @@ export async function createTDS(data: TdsCreate) {
   return res.data;
 }
 
+export interface TdsCatalogBackfillResult {
+  dry_run: boolean;
+  catalog_products_scanned: number;
+  existing_tds: number;
+  created: number;
+  skipped: number;
+  errors: number;
+  tds_total_after: number;
+}
+
+/** Create TDS rows from chemical_full_data catalog (one per product). */
+export async function backfillTdsFromCatalog(dryRun = false) {
+  const res = await api.post<TdsCatalogBackfillResult>(
+    "/pms/tds/backfill-catalog",
+    {},
+    { params: { dry_run: dryRun } },
+  );
+  return res.data;
+}
+
 export interface TdsUpdate {
   chemical_type_id?: string | null;
   brand?: string | null;

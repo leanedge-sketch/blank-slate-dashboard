@@ -116,6 +116,28 @@ def _general_company_deal(deals: List[SalesPipeline]) -> Optional[SalesPipeline]
     return None
 
 
+def _pick_default_deal_for_orphan_interaction(
+    deals: List[SalesPipeline],
+) -> Optional[SalesPipeline]:
+    """
+    When an interaction has no tds_id/pipeline_id but the customer has several deals,
+    attach to the best current deal (prefer Closed/Confirmation, then current version).
+    """
+    if not deals:
+        return None
+    general = _general_company_deal(deals)
+    if general:
+        return general
+
+    def score(pipeline: SalesPipeline) -> float:
+        rank = float(_stage_rank(pipeline.stage or ""))
+        if pipeline.is_current_version:
+            rank += 10.0
+        return rank
+
+    return max(deals, key=score)
+
+
 def _pipeline_create_body(
     customer_id: Union[str, UUID],
     *,
@@ -324,11 +346,16 @@ def _resolve_pipeline_for_interaction(
             metadata={"source": "auto_on_interaction"},
         )
 
-    logger.info(
-        "Interaction %s: %s product deals — link skipped (set tds_id or pipeline_id)",
-        interaction.id,
-        len(deals),
-    )
+    picked = _pick_default_deal_for_orphan_interaction(deals)
+    if picked:
+        logger.info(
+            "Interaction %s: %s product deals — linked to default deal %s (%s)",
+            interaction.id,
+            len(deals),
+            picked.id,
+            picked.stage,
+        )
+        return picked
     return None
 
 
@@ -432,6 +459,10 @@ def _resolve_pipeline_for_interaction_cached(
             return created
         return None
 
+    picked = _pick_default_deal_for_orphan_interaction(deals)
+    if picked:
+        cache[_deal_cache_key(customer_id, None)] = picked
+        return picked
     return None
 
 
@@ -632,11 +663,118 @@ def sync_interaction_to_sales_pipeline(
     return pipeline_id
 
 
+def relocate_interactions_to_pipeline_version(
+    old_pipeline_id: str,
+    new_pipeline_id: str,
+) -> int:
+    """Move interaction links when a deal gets a new pipeline version (e.g. Closed)."""
+    if not old_pipeline_id or not new_pipeline_id or old_pipeline_id == new_pipeline_id:
+        return 0
+    supabase = get_supabase_client()
+    try:
+        res = (
+            supabase.table("interactions")
+            .update({"pipeline_id": new_pipeline_id})
+            .eq("pipeline_id", old_pipeline_id)
+            .execute()
+        )
+        return len(res.data or [])
+    except Exception as e:
+        logger.warning(
+            "Failed to relocate interactions %s -> %s: %s",
+            old_pipeline_id,
+            new_pipeline_id,
+            e,
+        )
+        return 0
+
+
+def _pipeline_version_ids(pipeline_id: str) -> List[str]:
+    from app.services.sales_pipeline_service import get_pipeline_versions
+
+    versions = get_pipeline_versions(pipeline_id)
+    if versions:
+        return [str(v.id) for v in versions]
+    return [pipeline_id]
+
+
+def _product_ids_for_pipeline(pipeline: SalesPipeline) -> List[str]:
+    ids: List[str] = []
+    if pipeline.tds_id:
+        ids.append(str(pipeline.tds_id))
+    if pipeline.chemical_type_id:
+        cid = str(pipeline.chemical_type_id)
+        if cid not in ids:
+            ids.append(cid)
+    return ids
+
+
+def _interaction_matches_product(
+    row: Dict[str, Any],
+    product_ids: List[str],
+) -> bool:
+    if not product_ids:
+        return True
+    row_tds = row.get("tds_id")
+    if row_tds is None:
+        return True
+    return str(row_tds) in product_ids
+
+
+def _ai_interaction_rows_from_pipeline(
+    pipeline: SalesPipeline,
+    *,
+    seen: set[str],
+) -> List[Dict[str, Any]]:
+    """CRM snapshots stored on sales_pipeline.ai_interactions (not always in interactions table)."""
+    raw = pipeline.ai_interactions
+    if isinstance(raw, str):
+        try:
+            entries = json.loads(raw)
+        except json.JSONDecodeError:
+            entries = []
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        entries = []
+
+    rows: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        iid = entry.get("interaction_id")
+        if iid and str(iid) in seen:
+            continue
+        input_text = (entry.get("input_text") or entry.get("user_input") or "").strip()
+        ai_response = (entry.get("ai_response") or "").strip()
+        if not input_text and not ai_response:
+            continue
+        synthetic_id = iid or f"pipeline-ai-{pipeline.id}-{entry.get('created_at', '')}"
+        if str(synthetic_id) in seen:
+            continue
+        seen.add(str(synthetic_id))
+        rows.append(
+            {
+                "id": synthetic_id,
+                "customer_id": str(pipeline.customer_id),
+                "pipeline_id": str(pipeline.id),
+                "tds_id": entry.get("tds_id") or (
+                    str(pipeline.tds_id) if pipeline.tds_id else None
+                ),
+                "input_text": input_text or None,
+                "ai_response": ai_response or None,
+                "created_at": entry.get("created_at") or entry.get("timestamp"),
+                "history_source": "pipeline",
+            }
+        )
+    return rows
+
+
 def get_interactions_for_pipeline(
     pipeline_id: str,
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
-    """Interactions linked to this pipeline or matching customer+TDS."""
+    """Interactions for this deal: all versions, customer+product match, and pipeline JSON."""
     pipeline = get_sales_pipeline_by_id(pipeline_id)
     if not pipeline:
         return []
@@ -644,35 +782,40 @@ def get_interactions_for_pipeline(
     supabase = get_supabase_client()
     seen: set[str] = set()
     rows: List[Dict[str, Any]] = []
+    product_ids = _product_ids_for_pipeline(pipeline)
 
-    def add_rows(data: List[dict]) -> None:
+    def add_rows(data: List[dict], *, filter_product: bool = False) -> None:
         for row in data or []:
+            if filter_product and not _interaction_matches_product(row, product_ids):
+                continue
             rid = str(row.get("id", ""))
             if rid and rid not in seen:
                 seen.add(rid)
                 rows.append(row)
 
-    res = (
-        supabase.table("interactions")
-        .select("*")
-        .eq("pipeline_id", pipeline_id)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    add_rows(res.data or [])
+    for vid in _pipeline_version_ids(pipeline_id):
+        res = (
+            supabase.table("interactions")
+            .select("*")
+            .eq("pipeline_id", vid)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        add_rows(res.data or [])
 
-    q = (
+    cust_res = (
         supabase.table("interactions")
         .select("*")
         .eq("customer_id", str(pipeline.customer_id))
         .order("created_at", desc=True)
-        .limit(limit)
+        .limit(limit * 2)
+        .execute()
     )
-    if pipeline.tds_id:
-        q = q.eq("tds_id", str(pipeline.tds_id))
-    res2 = q.execute()
-    add_rows(res2.data or [])
+    add_rows(cust_res.data or [], filter_product=bool(product_ids))
+
+    current = get_sales_pipeline_by_id(pipeline_id) or pipeline
+    rows.extend(_ai_interaction_rows_from_pipeline(current, seen=seen))
 
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return rows[:limit]
@@ -736,11 +879,26 @@ def backfill_pipelines_from_customer_interactions(
                 pending_links.append((str(interaction.id), pid))
 
         linked = _batch_link_interactions_to_pipelines(pending_links)
+        snapshots = 0
+        for interaction in interactions_sorted:
+            pipeline = _resolve_pipeline_for_interaction_cached(
+                interaction, deals, cache
+            )
+            if not pipeline:
+                continue
+            try:
+                refreshed = get_sales_pipeline_by_id(str(pipeline.id)) or pipeline
+                _upsert_crm_snapshot_to_pipeline(refreshed, interaction)
+                snapshots += 1
+            except Exception as e:
+                logger.debug("Fast snapshot upsert skipped for %s: %s", interaction.id, e)
+
         return {
             "customer_id": customer_id,
             "interactions_processed": len(interactions_sorted),
             "interactions_linked": linked,
             "pipelines_updated": len(pipelines_touched),
+            "snapshots_upserted": snapshots,
             "fast_mode": True,
             "interactions_capped": capped,
         }
@@ -765,6 +923,61 @@ def backfill_pipelines_from_customer_interactions(
         "pipelines_updated": len(pipelines_touched),
         "fast_mode": False,
         "interactions_capped": capped,
+    }
+
+
+def relink_stale_interactions_to_current_deals(
+    customer_id: Optional[str] = None,
+    *,
+    limit: int = 500,
+) -> Dict[str, Any]:
+    """
+    Point interactions at the current pipeline version when they still reference
+    an older version (common after moving a deal to Closed).
+    """
+    from app.services.sales_pipeline_service import (
+        _pick_better_pipeline,
+        normalize_pipeline_row_from_db,
+    )
+
+    supabase = get_supabase_client()
+    query = supabase.table("sales_pipeline").select(
+        "id, customer_id, tds_id, chemical_type_id, stage, is_current_version, "
+        "parent_pipeline_id, version_number, updated_at, created_at, ai_interactions"
+    )
+    if customer_id:
+        query = query.eq("customer_id", customer_id)
+    resp = query.limit(limit).execute()
+    pipelines = resp.data or []
+
+    by_root: Dict[str, SalesPipeline] = {}
+    for row in pipelines:
+        try:
+            pipeline = SalesPipeline(**normalize_pipeline_row_from_db(row))
+        except Exception:
+            continue
+        root = str(pipeline.parent_pipeline_id or pipeline.id)
+        prev = by_root.get(root)
+        if not prev:
+            by_root[root] = pipeline
+            continue
+        by_root[root] = _pick_better_pipeline(prev, pipeline)
+
+    stale_to_current: Dict[str, str] = {}
+    for current in by_root.values():
+        for vid in _pipeline_version_ids(str(current.id)):
+            if vid != str(current.id):
+                stale_to_current[vid] = str(current.id)
+
+    relinked = 0
+    for old_id, new_id in stale_to_current.items():
+        relinked += relocate_interactions_to_pipeline_version(old_id, new_id)
+
+    return {
+        "customer_id": customer_id,
+        "current_deals": len(by_root),
+        "stale_pipeline_ids": len(stale_to_current),
+        "interactions_relinked": relinked,
     }
 
 
