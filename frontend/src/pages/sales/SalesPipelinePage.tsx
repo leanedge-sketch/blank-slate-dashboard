@@ -24,6 +24,7 @@ import {
   fetchChemicalFullData,
   ChemicalFullData,
   fetchPartnerChemicals,
+  syncAllCustomerPipelines,
 } from "../../services/api";
 import {
   TrendingUp,
@@ -45,6 +46,7 @@ import {
   FileText,
   Folder,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { QuotationForm, QuotationFormData, QuotationFormType } from "../../components/QuotationForm";
 
@@ -170,6 +172,7 @@ export function SalesPipelinePage() {
   const [stageBoardPipelines, setStageBoardPipelines] = useState<SalesPipeline[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [syncingAllFromCrm, setSyncingAllFromCrm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 50;
@@ -325,6 +328,36 @@ export function SalesPipelinePage() {
   useEffect(() => {
     loadPipelines();
   }, [offset, selectedCustomer, selectedChemicalType, selectedStage]);
+
+  async function handleSyncAllFromCrm() {
+    if (
+      !window.confirm(
+        "Sync sales pipeline stages from CRM for all customers? This may take a minute."
+      )
+    ) {
+      return;
+    }
+    try {
+      setSyncingAllFromCrm(true);
+      setError(null);
+      const result = await syncAllCustomerPipelines(false);
+      await loadPipelines();
+      alert(
+        `CRM sync complete: ${result.customers_processed} customers, ` +
+          `${result.total_stage_updates} pipeline stage updates, ` +
+          `${result.total_interactions_linked} interactions linked.`
+      );
+    } catch (err: any) {
+      console.error(err);
+      setError(
+        err?.response?.data?.detail ??
+          err?.message ??
+          "Failed to sync pipelines from CRM"
+      );
+    } finally {
+      setSyncingAllFromCrm(false);
+    }
+  }
 
   function clearFilters() {
     setSelectedCustomer("");
@@ -848,13 +881,28 @@ export function SalesPipelinePage() {
               </p>
             </div>
 
-            <button
-              onClick={openCreateForm}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 active:translate-y-0"
-            >
-              <Plus size={20} />
-              Add Pipeline
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSyncAllFromCrm}
+                disabled={syncingAllFromCrm}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-slate-500 bg-slate-800/80 text-slate-100 font-semibold transition-all hover:bg-slate-700 disabled:opacity-60"
+              >
+                {syncingAllFromCrm ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={18} />
+                )}
+                {syncingAllFromCrm ? "Syncing from CRM…" : "Sync all from CRM"}
+              </button>
+              <button
+                onClick={openCreateForm}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 active:translate-y-0"
+              >
+                <Plus size={20} />
+                Add Pipeline
+              </button>
+            </div>
           </div>
         </main>
       </div>

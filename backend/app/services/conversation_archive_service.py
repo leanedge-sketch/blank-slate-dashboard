@@ -13,6 +13,26 @@ from typing import Any, Dict, List, Optional, Set
 
 from app.database.connection import get_supabase_service_client
 
+_CHATGPT_ARCHIVED_FLAG_RE = re.compile(
+    r"""(?:'is_archived'|"is_archived")\s*:\s*(?:True|true)""",
+    re.IGNORECASE,
+)
+_CHATGPT_STUB_AI_MARKER = "Archived ChatGPT conversation (imported from conversations.json)"
+
+
+def chatgpt_export_content_is_archived(content: str) -> bool:
+    """True when the raw conversations.json row is marked archived in ChatGPT."""
+    return bool(_CHATGPT_ARCHIVED_FLAG_RE.search(content or ""))
+
+
+def is_chatgpt_export_ui_stub(user_text: str, ai_text: str) -> bool:
+    """Placeholder rows with no real transcript (legacy parser fallback)."""
+    ai = (ai_text or "").strip()
+    if _CHATGPT_STUB_AI_MARKER in ai:
+        return True
+    user = (user_text or "").strip()
+    return user.startswith("[ChatGPT export]") and not ai
+
 
 def _name_search_variants(customer_name: str) -> List[str]:
     name = (customer_name or "").strip()
@@ -52,29 +72,27 @@ def _parse_chatgpt_export_row(content: str) -> tuple[str, str, Optional[str]]:
         except (ValueError, OSError):
             create_time = None
 
-    user_snippets = re.findall(
-        r"'role':\s*'user'.*?'parts':\s*\[\s*'((?:\\'|[^'])*)'",
-        content or "",
-        flags=re.DOTALL,
-    )
-    assistant_snippets = re.findall(
-        r"'role':\s*'assistant'.*?'parts':\s*\[\s*'((?:\\'|[^'])*)'",
-        content or "",
-        flags=re.DOTALL,
-    )
-
     def _clean(s: str) -> str:
-        return s.replace("\\n", "\n").replace("\\'", "'").strip()
+        return s.replace("\\n", "\n").replace("\\'", "'").replace('\\"', '"').strip()
 
-    user_text = _clean(user_snippets[0]) if user_snippets else ""
-    ai_text = _clean(assistant_snippets[0]) if assistant_snippets else ""
+    def _extract_role_parts(role: str) -> List[str]:
+        pattern = (
+            rf"['\"]role['\"]\s*:\s*['\"]{role}['\"]"
+            rf".*?['\"]parts['\"]\s*:\s*\[\s*['\"]((?:\\'|[^'\"])*)['\"]"
+        )
+        return [_clean(m) for m in re.findall(pattern, content or "", flags=re.DOTALL | re.IGNORECASE)]
+
+    user_parts = [p for p in _extract_role_parts("user") if p]
+    assistant_parts = [p for p in _extract_role_parts("assistant") if p]
+
+    user_text = user_parts[0] if user_parts else ""
+    ai_text = assistant_parts[0] if assistant_parts else ""
 
     if not user_text:
         user_text = f"[ChatGPT export] {title}"
     if not ai_text:
         ai_text = (
-            "Archived ChatGPT conversation (imported from conversations.json). "
-            "Open the RAG row for the full transcript."
+            "Imported ChatGPT conversation (open full export in Supabase for complete transcript)."
         )
 
     return user_text[:12000], ai_text[:12000], create_time

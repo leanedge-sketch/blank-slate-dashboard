@@ -1,3 +1,9 @@
+import {
+  canonicalStrategicFitLabel,
+  mergeStrategicFitAssessmentItems,
+  normalizeCategoryKey,
+} from "./strategicFitAssessment";
+
 export interface StrategicFitItem {
   category: string;
   score: number;
@@ -41,22 +47,39 @@ export function mergeStrategicFitItems(
 ): StrategicFitItem[] {
   const reasonByKey = new Map<string, string>();
   for (const item of parseStrategicFitLines(profileText)) {
-    reasonByKey.set(item.category.toLowerCase().trim(), item.reason);
+    const keys = [
+      item.category.toLowerCase().trim(),
+      normalizeCategoryKey(item.category),
+      normalizeCategoryKey(canonicalStrategicFitLabel(item.category)),
+    ];
+    for (const key of keys) {
+      if (key && item.reason) reasonByKey.set(key, item.reason);
+    }
   }
 
+  let raw: StrategicFitItem[];
+
   if (scores && Object.keys(scores).length > 0) {
-    return Object.entries(scores).map(([category, rawScore]) => {
+    raw = Object.entries(scores).map(([category, rawScore]) => {
       const score = Math.min(3, Math.max(0, Number(rawScore) || 0));
-      const key = category.toLowerCase().trim();
+      const keys = [
+        category.toLowerCase().trim(),
+        normalizeCategoryKey(category),
+        normalizeCategoryKey(canonicalStrategicFitLabel(category)),
+      ];
+      const reason =
+        keys.map((k) => reasonByKey.get(k)).find((r) => r?.trim()) || "";
       return {
         category,
         score,
-        reason: reasonByKey.get(key) || "",
+        reason,
       };
     });
+  } else {
+    raw = parseStrategicFitLines(profileText);
   }
 
-  return parseStrategicFitLines(profileText);
+  return mergeStrategicFitAssessmentItems(raw);
 }
 
 /** Remove fit-score lines and matrix headings from prose (shown in score cards instead). */

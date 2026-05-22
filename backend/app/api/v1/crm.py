@@ -51,7 +51,10 @@ from app.services.crm_service import (
     list_customer_profile_feedback,
 )
 from app.services.crm_report_service import build_crm_report_pdf
-from app.services.pipeline_crm_sync import backfill_pipelines_from_customer_interactions
+from app.services.pipeline_crm_sync import (
+    backfill_all_customers_pipelines,
+    sync_customer_pipelines_from_crm,
+)
 from app.dependencies import get_current_user
 
 # Create a router for CRM endpoints
@@ -425,6 +428,14 @@ async def list_customer_interactions(
         True,
         description="Include RAG conversation archive rows for this customer (legacy/historical chats)",
     ),
+    include_chatgpt_exports: bool = Query(
+        True,
+        description="Include imported ChatGPT conversations (conversations.json) in the timeline",
+    ),
+    exclude_archived_chatgpt: bool = Query(
+        True,
+        description="Hide archived ChatGPT chats and empty import stubs from the timeline (UI only)",
+    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """List interactions for a specific customer with optional date filtering."""
@@ -440,6 +451,8 @@ async def list_customer_interactions(
                     customer_id,
                     start_date=start_date,
                     end_date=end_date,
+                    include_chatgpt_exports=include_chatgpt_exports,
+                    exclude_archived_chatgpt=exclude_archived_chatgpt,
                 )
             )
             page = merged[offset : offset + limit]
@@ -510,13 +523,32 @@ async def sync_customer_pipelines_endpoint(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     try:
-        return backfill_pipelines_from_customer_interactions(
-            customer_id, use_ai=use_ai
-        )
+        return sync_customer_pipelines_from_crm(customer_id, use_ai=use_ai)
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Error syncing pipelines: {str(e)}",
+        )
+
+
+@router.post("/sync-pipelines-all")
+async def sync_all_customer_pipelines_endpoint(
+    use_ai: bool = Query(
+        False,
+        description="Use AI stage detection when backfilling (slower)",
+    ),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+):
+    """Backfill sales_pipeline from CRM for all existing customers."""
+    try:
+        return backfill_all_customers_pipelines(
+            use_ai=use_ai, limit=limit, offset=offset
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error syncing all pipelines: {str(e)}",
         )
 
 

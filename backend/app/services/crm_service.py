@@ -48,7 +48,9 @@ from app.services.ai_service import (
 )
 from app.services.conversation_archive_service import (
     _parse_chatgpt_export_row,
+    chatgpt_export_content_is_archived,
     get_chatgpt_export_archives_for_customer,
+    is_chatgpt_export_ui_stub,
 )
 from app.services.profile_research_service import (
     PROFILE_CONTEXT_MAX_CHARS,
@@ -339,7 +341,22 @@ def update_customer(customer_id: str, customer_update: CustomerUpdate) -> Custom
     if not response.data:
         raise RuntimeError("Failed to update customer")
 
-    return Customer(**response.data[0])
+    updated = Customer(**response.data[0])
+
+    if "sales_stage" in update_data:
+        try:
+            from app.services.pipeline_crm_sync import (
+                apply_customer_sales_stage_to_pipelines,
+            )
+
+            apply_customer_sales_stage_to_pipelines(customer_id)
+        except Exception as e:
+            logging.warning(
+                "Sales pipeline sync after customer sales_stage update failed: %s",
+                e,
+            )
+
+    return updated
 
 
 def delete_customer(customer_id: str) -> None:
@@ -903,10 +920,13 @@ def merge_customer_interaction_history(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     max_rows: int = INTERACTIONS_MAX_FETCH,
+    include_chatgpt_exports: bool = True,
+    exclude_archived_chatgpt: bool = True,
 ) -> tuple[List[Interaction], int, int, int, int]:
     """
-    Unified timeline: interactions + conversation + pipeline JSON + ChatGPT exports (deduped).
+    Unified timeline: interactions + conversation + pipeline JSON + optional ChatGPT exports (deduped).
     Returns (merged, table_count, conversation-only, pipeline-only, chatgpt_export-only).
+    exclude_archived_chatgpt hides archived/stub ChatGPT import rows from UI only (data stays in Supabase).
     """
     customer_row = get_customer_by_id(customer_id)
     customer_name = customer_row.customer_name if customer_row else ""
@@ -931,6 +951,14 @@ def merge_customer_interaction_history(
     archive_added = 0
     for row in get_conversation_logs_for_customer(customer_id, max_rows=max_rows):
         if not _row_in_date_range(row.get("created_at"), start_date, end_date):
+            continue
+        meta = row.get("metadata") or {}
+        if (
+            exclude_archived_chatgpt
+            and isinstance(meta, dict)
+            and str(meta.get("source") or "") == "conversations_json"
+            and chatgpt_export_content_is_archived(row.get("content") or "")
+        ):
             continue
         input_text, ai_response = _parse_conversation_content(row.get("content") or "")
         fp = _interaction_fingerprint(input_text, ai_response)
@@ -971,15 +999,20 @@ def merge_customer_interaction_history(
         pipeline_added += 1
 
     chatgpt_added = 0
-    if customer_name:
+    if include_chatgpt_exports and customer_name:
         for row in get_chatgpt_export_archives_for_customer(
             customer_id, customer_name, max_rows=30
         ):
             if not _row_in_date_range(row.get("created_at"), start_date, end_date):
                 continue
-            input_text, ai_response, parsed_time = _parse_chatgpt_export_row(
-                row.get("content") or ""
-            )
+            raw_content = row.get("content") or ""
+            if exclude_archived_chatgpt and chatgpt_export_content_is_archived(raw_content):
+                continue
+            input_text, ai_response, parsed_time = _parse_chatgpt_export_row(raw_content)
+            if exclude_archived_chatgpt and is_chatgpt_export_ui_stub(
+                input_text, ai_response
+            ):
+                continue
             fp = _interaction_fingerprint(input_text, ai_response)
             if fp in fingerprints:
                 continue
@@ -1883,7 +1916,20 @@ User Memories:
         
         # Update customer's sales stage if it changed
         if new_stage != customer.sales_stage:
-            supabase.table("customers").update({"sales_stage": new_stage}).eq("customer_id", customer_id).execute()
+            supabase.table("customers").update({"sales_stage": new_stage}).eq(
+                "customer_id", customer_id
+            ).execute()
+            try:
+                from app.services.pipeline_crm_sync import (
+                    apply_customer_sales_stage_to_pipelines,
+                )
+
+                apply_customer_sales_stage_to_pipelines(customer_id)
+            except Exception as sync_err:
+                logging.warning(
+                    "Sales pipeline sync after chat sales_stage update failed: %s",
+                    sync_err,
+                )
     except Exception:
         # Don't block the main interaction flow if stage analysis fails
         pass

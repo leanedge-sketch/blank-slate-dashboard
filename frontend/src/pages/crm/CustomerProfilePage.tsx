@@ -80,7 +80,12 @@ export function CustomerProfilePage() {
       if (!profileText) {
         try {
           const interactionsRes = await api.get<InteractionListResponse>(`/crm/customers/${customerId}/interactions`, {
-            params: { limit: 1, offset: 0 },
+            params: {
+              limit: 1,
+              offset: 0,
+              include_chatgpt_exports: true,
+              exclude_archived_chatgpt: true,
+            },
           });
           // Handle InteractionListResponse format
           const interactions = interactionsRes.data?.interactions || [];

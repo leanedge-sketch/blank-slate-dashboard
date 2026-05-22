@@ -1,116 +1,110 @@
+import { useMemo, useState } from "react";
 import type { StrategicFitItem } from "../utils/profileText";
+import {
+  mergeStrategicFitAssessmentItems,
+  splitStrategicFitVisibility,
+} from "../utils/strategicFitAssessment";
 
-function scoreStyles(score: number): {
-  backgroundColor: string;
-  borderColor: string;
-  scoreColor: string;
-} {
+function scoreBadgeClasses(score: number): string {
+  if (score <= 0) {
+    return "bg-slate-200 text-slate-500";
+  }
   if (score >= 3) {
-    return {
-      backgroundColor: "#ecfdf5",
-      borderColor: "#10b981",
-      scoreColor: "#10b981",
-    };
+    return "bg-emerald-600 text-white";
   }
   if (score === 2) {
-    return {
-      backgroundColor: "#eff6ff",
-      borderColor: "#3b82f6",
-      scoreColor: "#3b82f6",
-    };
+    return "bg-blue-600 text-white";
   }
-  if (score === 1) {
-    return {
-      backgroundColor: "#fffbeb",
-      borderColor: "#f59e0b",
-      scoreColor: "#f59e0b",
-    };
-  }
-  return {
-    backgroundColor: "#f9fafb",
-    borderColor: "#e5e7eb",
-    scoreColor: "#9ca3af",
-  };
+  return "bg-amber-500 text-white";
+}
+
+function FitScoreRow({ item }: { item: StrategicFitItem }) {
+  const active = item.score > 0;
+
+  return (
+    <div
+      className={
+        active
+          ? "flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:gap-4"
+          : "flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50/90 px-4 py-3 sm:flex-row sm:items-start sm:gap-4"
+      }
+    >
+      <span
+        className={
+          active
+            ? "min-w-[9rem] shrink-0 text-sm font-bold text-slate-900 sm:text-base"
+            : "min-w-[9rem] shrink-0 text-sm font-medium text-slate-400 sm:text-base"
+        }
+      >
+        {item.category}
+      </span>
+
+      <span
+        className={`inline-flex w-fit shrink-0 items-center justify-center rounded-full px-3 py-1 text-sm font-bold tabular-nums ${scoreBadgeClasses(item.score)}`}
+      >
+        {item.score}/3
+      </span>
+
+      {item.reason ? (
+        <p
+          className={
+            active
+              ? "flex-1 text-sm leading-relaxed text-slate-600"
+              : "flex-1 text-sm leading-relaxed text-slate-400"
+          }
+        >
+          {item.reason}
+        </p>
+      ) : (
+        <span className="flex-1 text-sm italic text-slate-400">No rationale provided</span>
+      )}
+    </div>
+  );
+}
+
+function FitScoreList({ items }: { items: StrategicFitItem[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {items.map((item) => (
+        <FitScoreRow key={item.category} item={item} />
+      ))}
+    </div>
+  );
 }
 
 export function StrategicFitAssessment({ items }: { items: StrategicFitItem[] }) {
-  if (!items.length) return null;
+  const [expanded, setExpanded] = useState(false);
+
+  const merged = useMemo(
+    () => mergeStrategicFitAssessmentItems(items),
+    [items],
+  );
+
+  const { visible, hidden } = useMemo(
+    () => splitStrategicFitVisibility(merged),
+    [merged],
+  );
+
+  if (!merged.length) return null;
 
   return (
-    <section
-      className="card"
-      style={{
-        marginBottom: 0,
-        padding: "2rem",
-        backgroundColor: "#ffffff",
-      }}
-    >
-      <h3
-        style={{
-          fontSize: "1.5rem",
-          fontWeight: "700",
-          color: "#111827",
-          marginBottom: "1rem",
-          paddingBottom: "1rem",
-          borderBottom: "3px solid #3b82f6",
-        }}
-      >
-        Strategic Fit Assessment
-      </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {items.map((item) => {
-          const styles = scoreStyles(item.score);
-          return (
-            <div
-              key={item.category}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "1rem",
-                padding: "1rem 1.25rem",
-                backgroundColor: styles.backgroundColor,
-                borderRadius: "0.75rem",
-                border: `2px solid ${styles.borderColor}`,
-              }}
-            >
-              <span
-                style={{
-                  fontWeight: "700",
-                  minWidth: "160px",
-                  color: "#111827",
-                  flexShrink: 0,
-                }}
-              >
-                {item.category}:
-              </span>
-              <span
-                style={{
-                  fontSize: "1.5rem",
-                  fontWeight: "800",
-                  color: styles.scoreColor,
-                  minWidth: "56px",
-                  flexShrink: 0,
-                  lineHeight: 1.2,
-                }}
-              >
-                {item.score}/3
-              </span>
-              {item.reason ? (
-                <span
-                  style={{
-                    color: "#6b7280",
-                    flex: 1,
-                    fontSize: "0.95rem",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {item.reason}
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </section>
+    <div className="flex flex-col gap-4">
+      <FitScoreList items={visible} />
+
+      {hidden.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {expanded ? <FitScoreList items={hidden} /> : null}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="self-start rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+          >
+            {expanded
+              ? "Read Less"
+              : `Read More (${hidden.length} more ${hidden.length === 1 ? "category" : "categories"})`}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }

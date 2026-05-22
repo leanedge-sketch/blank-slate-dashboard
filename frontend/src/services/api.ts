@@ -929,8 +929,29 @@ export async function syncCustomerPipelines(
     interactions_processed: number;
     interactions_linked: number;
     pipelines_updated: number;
+    crm_stage_sync?: {
+      customer_id: string;
+      sales_stage?: string;
+      target_stage?: string;
+      updated: number;
+      created?: boolean;
+    };
   }>(`/crm/customers/${customerId}/sync-pipelines`, null, {
     params: { use_ai: useAi },
+  });
+  return res.data;
+}
+
+export async function syncAllCustomerPipelines(useAi = false, limit = 500) {
+  const res = await api.post<{
+    customers_processed: number;
+    total_interactions_linked: number;
+    total_stage_updates: number;
+    offset: number;
+    limit: number;
+    results: unknown[];
+  }>("/crm/sync-pipelines-all", null, {
+    params: { use_ai: useAi, limit },
   });
   return res.data;
 }

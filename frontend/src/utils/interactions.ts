@@ -22,8 +22,17 @@ export interface CustomerInteractionBundle {
 /** Fetch unified history (interactions table + conversation archive, merged). */
 export async function fetchAllCustomerInteractions(
   customerId: string,
-  options?: { startDate?: string; endDate?: string },
+  options?: {
+    startDate?: string;
+    endDate?: string;
+    /** Include imported ChatGPT rows (default true). */
+    includeChatgptExports?: boolean;
+    /** Hide archived ChatGPT chats and empty stubs (default true). */
+    excludeArchivedChatgpt?: boolean;
+  },
 ): Promise<CustomerInteractionBundle> {
+  const includeChatgpt = options?.includeChatgptExports !== false;
+  const excludeArchived = options?.excludeArchivedChatgpt !== false;
   const all: Interaction[] = [];
   let offset = 0;
   let total = 0;
@@ -37,6 +46,8 @@ export async function fetchAllCustomerInteractions(
       limit: PAGE_SIZE,
       offset,
       include_conversation: true,
+      include_chatgpt_exports: includeChatgpt,
+      exclude_archived_chatgpt: excludeArchived,
     };
     if (options?.startDate) params.start_date = options.startDate;
     if (options?.endDate) params.end_date = options.endDate;
@@ -61,14 +72,35 @@ export async function fetchAllCustomerInteractions(
     offset += PAGE_SIZE;
   }
 
+  let visible = includeChatgpt ? all : all.filter((it) => !isChatgptExportRow(it));
+
+  if (excludeArchived) {
+    visible = visible.filter((it) => !isArchivedChatgptUiRow(it));
+  }
+
   return {
-    interactions: all,
-    total: Math.max(total, all.length),
+    interactions: visible,
+    total: visible.length,
     interactionsTableTotal,
     conversationArchiveTotal,
     pipelineArchiveTotal,
     chatgptExportTotal,
   };
+}
+
+/** Archived ChatGPT import or empty stub — hidden from CRM UI only. */
+export function isArchivedChatgptUiRow(interaction: Interaction): boolean {
+  if (interaction.history_source !== "chatgpt_export") {
+    return false;
+  }
+  const ai = (interaction.ai_response || "").trim();
+  if (
+    ai.includes("Archived ChatGPT conversation (imported from conversations.json)")
+  ) {
+    return true;
+  }
+  const user = (interaction.input_text || "").trim();
+  return user.startsWith("[ChatGPT export]") && !ai;
 }
 
 export function isConversationArchiveRow(interaction: Interaction): boolean {
@@ -103,7 +135,7 @@ export function formatInteractionsForCrmTab(
 
   if (!interactions.length) {
     return (
-      "No CRM history found in public.interactions, public.conversation, pipeline, or ChatGPT export for this customer."
+      "No CRM history found in public.interactions, public.conversation, or pipeline for this customer."
     );
   }
 

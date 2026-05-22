@@ -28,6 +28,7 @@ from app.services.sales_pipeline_service import (
 
 logger = logging.getLogger(__name__)
 
+# Brian Tracy CRM stages (customers.sales_stage 1–7) → sales pipeline board stages
 CRM_SALES_STAGE_TO_PIPELINE: Dict[str, str] = {
     "1": "Lead ID",
     "2": "Discovery",
@@ -38,7 +39,45 @@ CRM_SALES_STAGE_TO_PIPELINE: Dict[str, str] = {
     "7": "Closed",
 }
 
-_STAGE_INDEX = {s: i for i, s in enumerate([x for x in PIPELINE_STAGES if x != "Lost"])}
+CRM_STAGE_NAMES: Dict[str, str] = {
+    "1": "Prospecting",
+    "2": "Rapport",
+    "3": "Needs Analysis",
+    "4": "Presenting Solution",
+    "5": "Handling Objections",
+    "6": "Closing",
+    "7": "Follow-up & Cross-sell",
+}
+
+_STAGE_ORDER = [x for x in PIPELINE_STAGES if x != "Lost"]
+_STAGE_INDEX = {s: i for i, s in enumerate(_STAGE_ORDER)}
+
+
+def normalize_crm_sales_stage(value: Any) -> Optional[str]:
+    """Return CRM stage key '1'–'7' from numeric or Brian Tracy label."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s in CRM_SALES_STAGE_TO_PIPELINE:
+        return s
+    try:
+        n = int(float(s))
+        if 1 <= n <= 7:
+            return str(n)
+    except (TypeError, ValueError):
+        pass
+    lower = s.lower()
+    for num, name in CRM_STAGE_NAMES.items():
+        if name.lower() == lower or lower in name.lower():
+            return num
+    return None
+
+
+def pipeline_stage_from_crm_sales_stage(value: Any) -> Optional[str]:
+    key = normalize_crm_sales_stage(value)
+    if not key:
+        return None
+    return CRM_SALES_STAGE_TO_PIPELINE.get(key)
 
 
 def _stage_rank(stage: Optional[str]) -> int:
@@ -159,34 +198,124 @@ def _append_crm_snapshot_to_pipeline(
     )
 
 
+def _advance_pipeline_to_target(
+    pipeline: SalesPipeline,
+    target: str,
+    reason: str,
+) -> SalesPipeline:
+    """Advance one pipeline stage at a time until target (avoids silent skip failures)."""
+    current = pipeline
+    guard = 0
+    while _stage_rank(current.stage) < _stage_rank(target) and guard < len(_STAGE_ORDER):
+        guard += 1
+        next_idx = _stage_rank(current.stage) + 1
+        if next_idx < 0 or next_idx >= len(_STAGE_ORDER):
+            break
+        next_stage = _STAGE_ORDER[next_idx]
+        if _stage_rank(next_stage) > _stage_rank(target):
+            next_stage = target
+        try:
+            current = update_sales_pipeline(
+                str(current.id),
+                SalesPipelineUpdate(
+                    stage=next_stage,
+                    reason_for_stage_change=reason,
+                    metadata={
+                        **(current.metadata or {}),
+                        "synced_at": datetime.utcnow().isoformat(),
+                    },
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                "Pipeline stage advance %s -> %s failed: %s",
+                current.stage,
+                next_stage,
+                e,
+            )
+            break
+        if current.stage == target:
+            break
+    return current
+
+
 def _maybe_advance_from_customer_sales_stage(
     pipeline: SalesPipeline, customer_sales_stage: Optional[str]
 ) -> SalesPipeline:
     if not customer_sales_stage:
         return pipeline
-    target = CRM_SALES_STAGE_TO_PIPELINE.get(str(customer_sales_stage).strip())
+    target = pipeline_stage_from_crm_sales_stage(customer_sales_stage)
     if not target or target == pipeline.stage:
         return pipeline
     if _stage_rank(target) <= _stage_rank(pipeline.stage):
         return pipeline
+    reason = (
+        f"Synced from CRM customer sales_stage {customer_sales_stage}"
+    )
     try:
-        return update_sales_pipeline(
-            str(pipeline.id),
-            SalesPipelineUpdate(
-                stage=target,
-                reason_for_stage_change=(
-                    f"Synced from CRM customer sales_stage {customer_sales_stage}"
-                ),
-                metadata={
-                    **(pipeline.metadata or {}),
-                    "synced_from_crm_sales_stage": str(customer_sales_stage),
-                    "synced_at": datetime.utcnow().isoformat(),
-                },
-            ),
-        )
+        return _advance_pipeline_to_target(pipeline, target, reason)
     except Exception as e:
-        logger.debug("CRM sales_stage sync skipped for %s: %s", pipeline.id, e)
+        logger.warning("CRM sales_stage sync skipped for %s: %s", pipeline.id, e)
         return pipeline
+
+
+def apply_customer_sales_stage_to_pipelines(customer_id: str) -> Dict[str, Any]:
+    """Ensure each deal for this customer reflects customers.sales_stage on the board."""
+    from app.services.crm_service import get_customer_by_id
+
+    customer = get_customer_by_id(customer_id)
+    if not customer:
+        return {"customer_id": customer_id, "error": "customer not found", "updated": 0}
+
+    target = pipeline_stage_from_crm_sales_stage(customer.sales_stage)
+    if not target:
+        return {
+            "customer_id": customer_id,
+            "sales_stage": customer.sales_stage,
+            "updated": 0,
+            "message": "no mappable CRM sales_stage",
+        }
+
+    pipelines = list_sales_pipelines(
+        limit=100,
+        offset=0,
+        customer_id=customer_id,
+        latest_per_deal=True,
+    )
+    updated = 0
+    if not pipelines:
+        try:
+            create_sales_pipeline(
+                SalesPipelineCreate(
+                    customer_id=customer.customer_id,
+                    stage=target,
+                )
+            )
+            return {
+                "customer_id": customer_id,
+                "sales_stage": customer.sales_stage,
+                "target_stage": target,
+                "updated": 1,
+                "created": True,
+            }
+        except Exception as e:
+            logger.warning("Could not create pipeline for %s: %s", customer_id, e)
+            return {"customer_id": customer_id, "updated": 0, "error": str(e)}
+
+    for pipeline in pipelines:
+        if _stage_rank(target) > _stage_rank(pipeline.stage):
+            before = pipeline.stage
+            _maybe_advance_from_customer_sales_stage(pipeline, customer.sales_stage)
+            refreshed = get_sales_pipeline_by_id(str(pipeline.id))
+            if refreshed and refreshed.stage != before:
+                updated += 1
+
+    return {
+        "customer_id": customer_id,
+        "sales_stage": customer.sales_stage,
+        "target_stage": target,
+        "updated": updated,
+    }
 
 
 def sync_interaction_to_sales_pipeline(
@@ -310,6 +439,20 @@ def get_interactions_for_pipeline(
     return rows[:limit]
 
 
+def sync_customer_pipelines_from_crm(
+    customer_id: str,
+    *,
+    use_ai: bool = False,
+) -> Dict[str, Any]:
+    """Backfill from interaction history, then apply latest CRM sales_stage."""
+    result = backfill_pipelines_from_customer_interactions(
+        customer_id, use_ai=use_ai
+    )
+    stage_result = apply_customer_sales_stage_to_pipelines(customer_id)
+    result["crm_stage_sync"] = stage_result
+    return result
+
+
 def backfill_pipelines_from_customer_interactions(
     customer_id: str,
     *,
@@ -338,4 +481,40 @@ def backfill_pipelines_from_customer_interactions(
         "interactions_processed": len(interactions_sorted),
         "interactions_linked": linked,
         "pipelines_updated": len(pipelines_touched),
+    }
+
+
+def backfill_all_customers_pipelines(
+    *,
+    use_ai: bool = False,
+    limit: int = 500,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """Backfill sales pipelines for every CRM customer (existing clients)."""
+    from app.services.crm_service import get_all_customers
+
+    customers = get_all_customers(limit=limit, offset=offset)
+    results: List[Dict[str, Any]] = []
+    total_linked = 0
+    total_stage_updates = 0
+
+    for customer in customers:
+        cid = str(customer.customer_id)
+        try:
+            row = sync_customer_pipelines_from_crm(cid, use_ai=use_ai)
+            results.append(row)
+            total_linked += row.get("interactions_linked", 0)
+            stage_sync = row.get("crm_stage_sync") or {}
+            total_stage_updates += stage_sync.get("updated", 0)
+        except Exception as e:
+            logger.warning("Pipeline backfill failed for %s: %s", cid, e)
+            results.append({"customer_id": cid, "error": str(e)})
+
+    return {
+        "customers_processed": len(results),
+        "total_interactions_linked": total_linked,
+        "total_stage_updates": total_stage_updates,
+        "offset": offset,
+        "limit": limit,
+        "results": results,
     }
