@@ -1469,9 +1469,71 @@ def update_interaction(
     return None
 
 
-def delete_interaction(interaction_id: str) -> None:
-    """Delete an interaction. Raises on failure."""
-    supabase: Client = get_supabase_client()
+def _archive_interaction_to_recycle_bin(
+    interaction_row: Dict[str, Any],
+    *,
+    deleted_by: Optional[str] = None,
+    deletion_reason: Optional[str] = None,
+) -> None:
+    """Copy interaction row to interaction_recycle_bin before UI removal."""
+    supabase = get_supabase_service_client()
+    archive_payload: Dict[str, Any] = {
+        "original_interaction_id": str(interaction_row.get("id")),
+        "customer_id": str(interaction_row.get("customer_id")),
+        "user_id": interaction_row.get("user_id"),
+        "input_text": interaction_row.get("input_text"),
+        "ai_response": interaction_row.get("ai_response"),
+        "file_url": interaction_row.get("file_url"),
+        "file_type": interaction_row.get("file_type"),
+        "tds_id": interaction_row.get("tds_id"),
+        "pipeline_id": interaction_row.get("pipeline_id"),
+        "interaction_created_at": interaction_row.get("created_at"),
+        "interaction_updated_at": interaction_row.get("updated_at"),
+        "deleted_at": datetime.utcnow().isoformat(),
+        "deleted_by": deleted_by,
+        "deletion_reason": deletion_reason or "removed_from_ui",
+        "raw_payload": interaction_row,
+    }
+    supabase.table("interaction_recycle_bin").insert(archive_payload).execute()
+
+
+def delete_interaction(
+    interaction_id: str,
+    *,
+    deleted_by: Optional[str] = None,
+    deletion_reason: Optional[str] = None,
+) -> None:
+    """
+    Remove an interaction from the active CRM UI table.
+
+    Archives a full copy to public.interaction_recycle_bin, then deletes
+    from public.interactions. Permanent purge happens only in Supabase.
+    """
+    supabase = get_supabase_service_client()
+    response = (
+        supabase.table("interactions")
+        .select("*")
+        .eq("id", interaction_id)
+        .execute()
+    )
+    if not response.data:
+        raise ValueError("Interaction not found")
+
+    row = response.data[0]
+    try:
+        _archive_interaction_to_recycle_bin(
+            row,
+            deleted_by=deleted_by,
+            deletion_reason=deletion_reason,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "interaction_recycle_bin" in err or "does not exist" in err:
+            raise RuntimeError(
+                "Recycle bin table is missing. Run docs/0004_interaction_recycle_bin.sql "
+                "in the Supabase SQL Editor, then try again."
+            ) from e
+        raise
 
     supabase.table("interactions").delete().eq("id", interaction_id).execute()
 

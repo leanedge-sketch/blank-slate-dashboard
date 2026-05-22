@@ -240,7 +240,15 @@ export function CustomerDetailPage() {
   }
 
   async function handleDelete(interactionId: string) {
-    if (!confirm("Are you sure you want to delete this interaction?")) return;
+    if (
+      !confirm(
+        "Remove this interaction from the conversation list?\n\n" +
+          "It will be hidden in the app but saved in Supabase (interaction_recycle_bin) " +
+          "so you can review or permanently delete it there later."
+      )
+    ) {
+      return;
+    }
 
     try {
       setDeleting(interactionId);
@@ -687,7 +695,7 @@ export function CustomerDetailPage() {
                                   }}
                                   disabled={isDeleting}
                                   className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900/60 p-1.5 text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/60 hover:text-rose-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  title="Delete interaction"
+                                  title="Move to recycle bin (hidden from app, kept in Supabase)"
                                 >
                                   <Trash2 size={14} />
                                 </button>

@@ -606,14 +606,16 @@ async def delete_customer_interaction(
     interaction_id: str,
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
-    """Delete an interaction by ID."""
+    """Archive interaction to recycle bin and remove from active CRM list."""
     existing = get_interaction_by_id(interaction_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Interaction not found")
 
     try:
-        delete_interaction(interaction_id)
+        delete_interaction(interaction_id, deletion_reason="removed_from_ui")
         return Response(status_code=204)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting interaction: {str(e)}")
 
