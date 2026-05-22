@@ -500,18 +500,30 @@ async def sync_all_customer_pipelines_endpoint(
         False,
         description="Use AI stage detection when backfilling (slower)",
     ),
+    fast: bool = Query(
+        True,
+        description="Fast bulk link mode (batched DB writes, no per-row snapshots)",
+    ),
     limit: int = Query(
-        25,
+        8,
         ge=1,
-        le=100,
-        description="Customers per batch (keep small to avoid serverless timeouts)",
+        le=15,
+        description="Customers per batch (small batches avoid 504 timeouts on Vercel)",
     ),
     offset: int = Query(0, ge=0),
+    include_results: bool = Query(
+        False,
+        description="Include per-customer result rows (off by default to keep responses small)",
+    ),
 ):
     """Backfill sales_pipeline from CRM for existing customers (paginated batches)."""
     try:
         return backfill_all_customers_pipelines(
-            use_ai=use_ai, limit=limit, offset=offset
+            use_ai=use_ai,
+            fast=fast,
+            limit=limit,
+            offset=offset,
+            include_results=include_results,
         )
     except Exception as e:
         raise HTTPException(

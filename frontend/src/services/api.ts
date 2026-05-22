@@ -953,6 +953,46 @@ export interface SyncAllPipelinesResult {
   batches: number;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function postSyncPipelinesBatch(
+  useAi: boolean,
+  batchSize: number,
+  offset: number,
+): Promise<{
+  customers_processed: number;
+  total_interactions_linked: number;
+  total_stage_updates: number;
+  errors?: number;
+  offset: number;
+  limit: number;
+  next_offset: number;
+  total_customers: number;
+  has_more: boolean;
+}> {
+  const res = await api.post<{
+    customers_processed: number;
+    total_interactions_linked: number;
+    total_stage_updates: number;
+    errors?: number;
+    offset: number;
+    limit: number;
+    next_offset: number;
+    total_customers: number;
+    has_more: boolean;
+  }>("/crm/sync-pipelines-all", {}, {
+    params: {
+      use_ai: useAi,
+      fast: !useAi,
+      limit: batchSize,
+      offset,
+      include_results: false,
+    },
+    timeout: 55_000,
+  });
+  return res.data;
+}
+
 export async function syncAllCustomerPipelines(
   useAi = false,
   options?: {
@@ -965,7 +1005,7 @@ export async function syncAllCustomerPipelines(
     }) => void;
   },
 ): Promise<SyncAllPipelinesResult> {
-  const batchSize = options?.batchSize ?? 25;
+  let batchSize = options?.batchSize ?? 8;
   let offset = 0;
   let batch = 0;
   let hasMore = true;
@@ -980,23 +1020,31 @@ export async function syncAllCustomerPipelines(
 
   while (hasMore) {
     batch += 1;
-    const res = await api.post<{
-      customers_processed: number;
-      total_interactions_linked: number;
-      total_stage_updates: number;
-      errors?: number;
-      offset: number;
-      limit: number;
-      next_offset: number;
-      total_customers: number;
-      has_more: boolean;
-      results: unknown[];
-    }>("/crm/sync-pipelines-all", {}, {
-      params: { use_ai: useAi, limit: batchSize, offset },
-      timeout: 120_000,
-    });
+    let data: Awaited<ReturnType<typeof postSyncPipelinesBatch>> | null = null;
+    const maxAttempts = 4;
 
-    const data = res.data;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        data = await postSyncPipelinesBatch(useAi, batchSize, offset);
+        break;
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        const retryable = status === 504 || status === 502 || status === 503;
+        if (retryable && attempt < maxAttempts) {
+          if (batchSize > 3) {
+            batchSize = Math.max(3, Math.floor(batchSize / 2));
+          }
+          await sleep(1500 * attempt);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!data) {
+      break;
+    }
+
     aggregated.customers_processed += data.customers_processed;
     aggregated.total_interactions_linked += data.total_interactions_linked;
     aggregated.total_stage_updates += data.total_stage_updates;
@@ -1016,6 +1064,11 @@ export async function syncAllCustomerPipelines(
 
     if (!data.customers_processed && !hasMore) {
       break;
+    }
+
+    // Brief pause between batches to reduce gateway pressure
+    if (hasMore) {
+      await sleep(400);
     }
   }
 

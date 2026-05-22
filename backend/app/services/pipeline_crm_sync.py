@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
 from app.database.connection import get_supabase_client
@@ -29,6 +30,12 @@ from app.services.sales_pipeline_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bulk sync must finish within Vercel's ~60s limit (gateway may 504 earlier).
+BACKFILL_BATCH_DEFAULT = 8
+BACKFILL_BATCH_MAX = 15
+BACKFILL_MAX_INTERACTIONS_PER_CUSTOMER = 250
+BACKFILL_LINK_CHUNK_SIZE = 40
 
 # Brian Tracy CRM stages (customers.sales_stage 1–7) → sales pipeline board stages
 CRM_SALES_STAGE_TO_PIPELINE: Dict[str, str] = {
@@ -292,6 +299,120 @@ def _link_interaction_to_pipeline(interaction_id: str, pipeline_id: str) -> None
     ).execute()
 
 
+def _batch_link_interactions_to_pipelines(
+    links: List[Tuple[str, str]],
+    *,
+    chunk_size: int = BACKFILL_LINK_CHUNK_SIZE,
+) -> int:
+    """Apply pipeline_id to many interactions (grouped by pipeline, chunked)."""
+    if not links:
+        return 0
+    by_pipeline: Dict[str, List[str]] = defaultdict(list)
+    for interaction_id, pipeline_id in links:
+        by_pipeline[pipeline_id].append(interaction_id)
+
+    supabase = get_supabase_client()
+    linked = 0
+    for pipeline_id, interaction_ids in by_pipeline.items():
+        unique_ids = list(dict.fromkeys(interaction_ids))
+        for i in range(0, len(unique_ids), chunk_size):
+            chunk = unique_ids[i : i + chunk_size]
+            try:
+                supabase.table("interactions").update({"pipeline_id": pipeline_id}).in_(
+                    "id", chunk
+                ).execute()
+                linked += len(chunk)
+            except Exception as e:
+                logger.warning(
+                    "Batch link %s interactions -> pipeline %s failed: %s",
+                    len(chunk),
+                    pipeline_id,
+                    e,
+                )
+    return linked
+
+
+def _deal_cache_key(customer_id: str, tds_id: Optional[str]) -> str:
+    return f"{customer_id}:{tds_id or '__general__'}"
+
+
+def _resolve_pipeline_for_interaction_cached(
+    interaction: Interaction,
+    deals: List[SalesPipeline],
+    cache: Dict[str, SalesPipeline],
+) -> Optional[SalesPipeline]:
+    """Resolve deal using in-memory cache (avoids repeated list_sales_pipelines calls)."""
+    if interaction.pipeline_id:
+        pid = str(interaction.pipeline_id)
+        cached = cache.get(f"pid:{pid}")
+        if cached:
+            return cached
+        existing = get_sales_pipeline_by_id(pid)
+        if existing:
+            cache[f"pid:{pid}"] = existing
+            return existing
+
+    customer_id = str(interaction.customer_id)
+    tds_id = str(interaction.tds_id) if interaction.tds_id else None
+    key = _deal_cache_key(customer_id, tds_id)
+    if key in cache:
+        return cache[key]
+
+    if tds_id:
+        for pipeline in deals:
+            if pipeline.tds_id and str(pipeline.tds_id) == tds_id:
+                cache[key] = pipeline
+                return pipeline
+        try:
+            created = create_sales_pipeline(
+                _pipeline_create_body(
+                    interaction.customer_id,
+                    tds_id=interaction.tds_id,
+                    stage="Lead ID",
+                    metadata={"source": "auto_on_interaction_tds"},
+                )
+            )
+            deals.append(created)
+            cache[key] = created
+            return created
+        except Exception as e:
+            logger.warning(
+                "Could not create product pipeline for customer %s: %s",
+                customer_id,
+                e,
+            )
+            return None
+
+    general = _general_company_deal(deals)
+    if general:
+        cache[_deal_cache_key(customer_id, None)] = general
+        return general
+    if len(deals) == 1:
+        cache[_deal_cache_key(customer_id, None)] = deals[0]
+        return deals[0]
+    if len(deals) == 0:
+        try:
+            created = create_sales_pipeline(
+                _pipeline_create_body(
+                    interaction.customer_id,
+                    stage="Lead ID",
+                    metadata={"source": "auto_on_interaction"},
+                )
+            )
+            deals.append(created)
+            cache[_deal_cache_key(customer_id, None)] = created
+            return created
+        except Exception as e:
+            logger.warning(
+                "Could not create default pipeline for customer %s: %s",
+                customer_id,
+                e,
+            )
+            return None
+
+    return None
+
+
 def _upsert_crm_snapshot_to_pipeline(
     pipeline: SalesPipeline, interaction: Interaction
 ) -> None:
@@ -539,11 +660,12 @@ def sync_customer_pipelines_from_crm(
     customer_id: str,
     *,
     use_ai: bool = False,
+    fast: bool = True,
 ) -> Dict[str, Any]:
     """Backfill interactions into per-product pipeline deals (stages per deal)."""
     ensure_lead_pipeline_for_customer(customer_id)
     result = backfill_pipelines_from_customer_interactions(
-        customer_id, use_ai=use_ai
+        customer_id, use_ai=use_ai, fast=fast
     )
     result["product_deals"] = apply_customer_sales_stage_to_pipelines(customer_id)
     return result
@@ -553,15 +675,52 @@ def backfill_pipelines_from_customer_interactions(
     customer_id: str,
     *,
     use_ai: bool = False,
+    fast: bool = True,
+    max_interactions: int = BACKFILL_MAX_INTERACTIONS_PER_CUSTOMER,
 ) -> Dict[str, Any]:
-    """Process all CRM interactions chronologically and sync to sales_pipeline."""
+    """Process CRM interactions and link them to sales_pipeline deals."""
     from app.services.crm_service import get_all_interactions_for_customer
 
-    interactions = get_all_interactions_for_customer(customer_id)
+    interactions = get_all_interactions_for_customer(
+        customer_id, max_rows=max_interactions
+    )
     interactions_sorted = sorted(
         interactions,
         key=lambda i: (i.created_at or datetime.min),
     )
+    capped = len(interactions) >= max_interactions
+
+    if fast and not use_ai:
+        deals = list_sales_pipelines(
+            limit=100,
+            offset=0,
+            customer_id=customer_id,
+            latest_per_deal=True,
+        )
+        cache: Dict[str, SalesPipeline] = {}
+        pipelines_touched: set[str] = set()
+        pending_links: List[Tuple[str, str]] = []
+
+        for interaction in interactions_sorted:
+            pipeline = _resolve_pipeline_for_interaction_cached(
+                interaction, deals, cache
+            )
+            if not pipeline:
+                continue
+            pid = str(pipeline.id)
+            pipelines_touched.add(pid)
+            if not interaction.pipeline_id or str(interaction.pipeline_id) != pid:
+                pending_links.append((str(interaction.id), pid))
+
+        linked = _batch_link_interactions_to_pipelines(pending_links)
+        return {
+            "customer_id": customer_id,
+            "interactions_processed": len(interactions_sorted),
+            "interactions_linked": linked,
+            "pipelines_updated": len(pipelines_touched),
+            "fast_mode": True,
+            "interactions_capped": capped,
+        }
 
     linked = 0
     pipelines_touched: set[str] = set()
@@ -581,21 +740,27 @@ def backfill_pipelines_from_customer_interactions(
         "interactions_processed": len(interactions_sorted),
         "interactions_linked": linked,
         "pipelines_updated": len(pipelines_touched),
+        "fast_mode": False,
+        "interactions_capped": capped,
     }
 
 
 def backfill_all_customers_pipelines(
     *,
     use_ai: bool = False,
-    limit: int = 25,
+    fast: bool = True,
+    limit: int = BACKFILL_BATCH_DEFAULT,
     offset: int = 0,
+    include_results: bool = False,
 ) -> Dict[str, Any]:
-    """Backfill sales pipelines for a batch of CRM customers (paginated)."""
+    """Backfill sales pipelines for a batch of CRM customers (paginated, serverless-safe)."""
     from app.services.crm_service import get_all_customers, get_customers_count
 
-    customers = get_all_customers(limit=limit, offset=offset)
+    batch_limit = min(max(1, limit), BACKFILL_BATCH_MAX)
+    customers = get_all_customers(limit=batch_limit, offset=offset)
     total_customers = get_customers_count()
     results: List[Dict[str, Any]] = []
+    error_details: List[Dict[str, Any]] = []
     total_linked = 0
     total_stage_updates = 0
     errors = 0
@@ -603,30 +768,43 @@ def backfill_all_customers_pipelines(
     for customer in customers:
         cid = str(customer.customer_id)
         try:
-            row = sync_customer_pipelines_from_crm(cid, use_ai=use_ai)
-            results.append(row)
+            row = sync_customer_pipelines_from_crm(
+                cid, use_ai=use_ai, fast=fast and not use_ai
+            )
+            if include_results:
+                results.append(row)
             total_linked += row.get("interactions_linked", 0)
             stage_sync = row.get("crm_stage_sync") or {}
             total_stage_updates += stage_sync.get("updated", 0)
             if row.get("error"):
                 errors += 1
+                error_details.append(
+                    {"customer_id": cid, "error": row.get("error")}
+                )
         except Exception as e:
             logger.warning("Pipeline backfill failed for %s: %s", cid, e)
             errors += 1
-            results.append({"customer_id": cid, "error": str(e)})
+            error_details.append({"customer_id": cid, "error": str(e)})
+            if include_results:
+                results.append({"customer_id": cid, "error": str(e)})
 
     next_offset = offset + len(customers)
     has_more = next_offset < total_customers
 
-    return {
-        "customers_processed": len(results),
+    payload: Dict[str, Any] = {
+        "customers_processed": len(customers),
         "total_interactions_linked": total_linked,
         "total_stage_updates": total_stage_updates,
         "errors": errors,
         "offset": offset,
-        "limit": limit,
+        "limit": batch_limit,
         "next_offset": next_offset,
         "total_customers": total_customers,
         "has_more": has_more,
-        "results": results,
+        "fast_mode": fast and not use_ai,
     }
+    if include_results:
+        payload["results"] = results
+    if error_details:
+        payload["error_details"] = error_details
+    return payload

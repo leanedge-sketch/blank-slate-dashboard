@@ -333,7 +333,7 @@ export function SalesPipelinePage() {
   async function handleSyncAllFromCrm() {
     if (
       !window.confirm(
-        "Sync sales pipeline stages from CRM for all customers? This may take a minute."
+        "Sync sales pipeline from CRM for all customers? Runs in small batches and may take several minutes."
       )
     ) {
       return;
@@ -343,7 +343,7 @@ export function SalesPipelinePage() {
       setError(null);
       setSyncProgress("Starting CRM sync…");
       const result = await syncAllCustomerPipelines(false, {
-        batchSize: 25,
+        batchSize: 8,
         onProgress: ({ processed, total, batch, errors }) => {
           setSyncProgress(
             `Syncing batch ${batch}… ${processed} / ${total} customers` +
@@ -372,6 +372,9 @@ export function SalesPipelinePage() {
             : null;
       setError(
         detailText ??
+          (err?.response?.status === 504
+            ? "Server timed out (504). Wait a moment and run Sync again — it will continue in batches."
+            : null) ??
           (err?.code === "ECONNABORTED"
             ? "Sync timed out — try again; batches are smaller now."
             : null) ??
