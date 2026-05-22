@@ -27,19 +27,50 @@ a:hover {
   flex-direction: column;
 }
 
-.app-header {
+.app-chrome {
   background: #0f172a;
   color: white;
-  padding: 0.75rem 1.5rem;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
 }
 
-.app-header-inner {
-  max-width: 1120px;
+/* Tier 1: global identity + account */
+.app-global-header {
+  border-bottom: 1px solid #1e293b;
+}
+
+.app-global-header-inner {
+  max-width: 1200px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.5rem;
+}
+
+.app-global-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.app-global-header-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.65rem;
+}
+
+.app-global-header-login {
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.app-global-header-login:hover {
+  color: #fff;
+  text-decoration: none;
 }
 
 .app-title-link {
@@ -63,29 +94,11 @@ a:hover {
   font-size: 0.875rem;
 }
 
-.app-nav {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 0.75rem;
-}
-
-.app-nav a {
-  color: #cbd5f5;
-  font-size: 0.95rem;
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.app-nav a:hover {
-  color: white;
-  text-decoration: none;
-}
-
+/* Tier 2: module workspace navigation */
 .workspace-dock {
   background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
   border-bottom: 1px solid #334155;
-  padding: 0 1rem;
+  padding: 0 1.5rem;
 }
 
 .workspace-dock-inner {
@@ -93,8 +106,10 @@ a:hover {
   margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 0.35rem;
-  padding: 0.5rem 0;
+  padding: 0.65rem 0 0.75rem;
 }
 
 .workspace-dock-link {
@@ -184,12 +199,12 @@ a:hover {
 
 .app-build-badge {
   font-size: 0.65rem;
-  color: #64748b;
-  padding: 0.15rem 0.4rem;
+  color: #94a3b8;
+  padding: 0.2rem 0.45rem;
   border: 1px solid #334155;
   border-radius: 0.25rem;
   white-space: nowrap;
-  align-self: center;
+  flex-shrink: 0;
 }
 
 .app-sign-out-btn {

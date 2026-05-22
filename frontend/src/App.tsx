@@ -26,7 +26,6 @@ import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
 import { WorkspaceDock } from "./components/WorkspaceDock";
-import { useCanView } from "./hooks/usePermissions";
 import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabilityPage";
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
 import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
@@ -36,13 +35,10 @@ import { UserProfileMenu } from "./components/UserProfileMenu";
 import { useAuth } from "./contexts/AuthContext";
 import { LogOut } from "lucide-react";
 
-function AppHeader() {
+function AppGlobalHeader() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const canViewSales = useCanView("sales");
-  const canViewStock = useCanView("stock");
-  const canViewReports = useCanView("crm");
   const isAuthScreen =
     location.pathname.startsWith("/login") ||
     location.pathname.startsWith("/auth/");
@@ -52,23 +48,19 @@ function AppHeader() {
   }
 
   return (
-    <header className="app-header">
-      <div className="app-header-inner">
-        <Link to="/" className="app-title-link">
-          <h1 className="app-title">LeanChem Connect</h1>
-        </Link>
-        <nav className="app-nav">
+    <header className="app-global-header">
+      <div className="app-global-header-inner">
+        <div className="app-global-header-left">
+          <Link to="/" className="app-title-link">
+            <h1 className="app-title">LeanChem Connect</h1>
+          </Link>
           <AppBuildBadge />
+        </div>
+        <div className="app-global-header-right">
           {loading ? (
             <span className="app-nav-loading">Loading…</span>
           ) : user ? (
             <>
-              <Link to="/">Home</Link>
-              <Link to="/crm">CRM</Link>
-              <Link to="/pms">PMS</Link>
-              {canViewSales && <Link to="/sales/pipeline">Sales</Link>}
-              {canViewStock && <Link to="/stock">Stock</Link>}
-              {canViewReports && <Link to="/reports">Reports</Link>}
               <UserProfileMenu />
               <button
                 type="button"
@@ -83,9 +75,11 @@ function AppHeader() {
               </button>
             </>
           ) : (
-            <Link to="/login">Login</Link>
+            <Link to="/login" className="app-global-header-login">
+              Login
+            </Link>
           )}
-        </nav>
+        </div>
       </div>
     </header>
   );
@@ -96,10 +90,10 @@ function AppChrome() {
   const showDock =
     !location.pathname.startsWith("/login") && !location.pathname.startsWith("/auth/");
   return (
-    <>
-      <AppHeader />
+    <div className="app-chrome">
+      <AppGlobalHeader />
       {showDock && <WorkspaceDock />}
-    </>
+    </div>
   );
 }
 
