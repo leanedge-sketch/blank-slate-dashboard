@@ -11,10 +11,7 @@ import {
   Activity,
   Zap,
 } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
-
 export function HomePage() {
-  const { employeeData, employeeRole } = useAuth();
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black overflow-hidden">
       {/* Background orbs + grid (reuse CRM style) */}
@@ -72,23 +69,6 @@ export function HomePage() {
                   AI-augmented control center built for LeanChem&apos;s real-world
                   workflows.
                 </p>
-                
-                {/* User Info Badge */}
-                {employeeData && (
-                  <div className="flex items-center gap-3 pt-2">
-                    <div className="px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50 backdrop-blur-sm">
-                      <p className="text-sm text-slate-300">
-                        <span className="text-slate-400">Logged in as:</span>{" "}
-                        <span className="font-semibold text-white">{employeeData.name || employeeData.email}</span>
-                        {employeeRole && (
-                          <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                            {employeeRole}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { AuthCallbackPage } from "./pages/auth/AuthCallbackPage";
@@ -25,82 +25,16 @@ import { MarketPage } from "./pages/pms/MarketPage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
-import { WorkspaceDock } from "./components/WorkspaceDock";
+import { AppShell } from "./components/AppShell";
 import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabilityPage";
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
 import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
-import { AppBuildBadge } from "./components/AppBuildBadge";
-import { UserProfileMenu } from "./components/UserProfileMenu";
-import { useAuth } from "./contexts/AuthContext";
-import { LogOut } from "lucide-react";
-
-function AppGlobalHeader() {
-  const { user, loading, signOut } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const isAuthScreen =
-    location.pathname.startsWith("/login") ||
-    location.pathname.startsWith("/auth/");
-
-  if (isAuthScreen) {
-    return null;
-  }
-
-  return (
-    <header className="app-global-header">
-      <div className="app-global-header-inner">
-        <div className="app-global-header-left">
-          <Link to="/" className="app-title-link">
-            <h1 className="app-title">LeanChem Connect</h1>
-          </Link>
-          <AppBuildBadge />
-        </div>
-        <div className="app-global-header-right">
-          {loading ? (
-            <span className="app-nav-loading">Loading…</span>
-          ) : user ? (
-            <>
-              <UserProfileMenu />
-              <button
-                type="button"
-                className="app-sign-out-btn"
-                onClick={async () => {
-                  await signOut();
-                  navigate("/login");
-                }}
-              >
-                <LogOut className="app-sign-out-icon" aria-hidden />
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <Link to="/login" className="app-global-header-login">
-              Login
-            </Link>
-          )}
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function AppChrome() {
-  const location = useLocation();
-  const showDock =
-    !location.pathname.startsWith("/login") && !location.pathname.startsWith("/auth/");
-  return (
-    <div className="app-chrome">
-      <AppGlobalHeader />
-      {showDock && <WorkspaceDock />}
-    </div>
-  );
-}
 
 export default function App() {
   return (
     <div className="app-root">
-      <AppChrome />
+      <AppShell />
 
       <main className="app-main">
         <Routes>

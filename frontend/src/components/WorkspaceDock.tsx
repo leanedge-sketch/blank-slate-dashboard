@@ -25,7 +25,12 @@ const dockItems: {
   },
 ];
 
-export function WorkspaceDock() {
+type WorkspaceDockProps = {
+  /** When true, render tabs only (parent AppShell provides chrome wrapper). */
+  embedded?: boolean;
+};
+
+export function WorkspaceDock({ embedded = false }: WorkspaceDockProps) {
   const location = useLocation();
   const canViewCrm = useCanView("crm");
   const canViewPms = useCanView("pms");
@@ -43,12 +48,7 @@ export function WorkspaceDock() {
     return true;
   });
 
-  if (visibleItems.length <= 1) return null;
-
-  return (
-    <nav className="workspace-dock" aria-label="Workspace navigation">
-      <div className="workspace-dock-inner">
-        {visibleItems.map((item) => (
+  const links = visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -61,8 +61,19 @@ export function WorkspaceDock() {
           >
             {item.label}
           </NavLink>
-        ))}
-      </div>
+  ));
+
+  if (embedded) {
+    return (
+      <nav className="workspace-dock workspace-dock--embedded" aria-label="Workspace navigation">
+        <div className="workspace-dock-inner">{links}</div>
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="workspace-dock" aria-label="Workspace navigation">
+      <div className="workspace-dock-inner">{links}</div>
     </nav>
   );
 }
