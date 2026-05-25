@@ -590,6 +590,20 @@ function parseCategoryLinesFromActions(actionSource: string): Map<IcpProductCate
   return byCategory;
 }
 
+/** Highest strategic-fit score first; ties keep canonical category order. */
+export function sortCategoryRecommendationsByScore(
+  categories: CategoryRecommendation[],
+): CategoryRecommendation[] {
+  return [...categories].sort((a, b) => {
+    const scoreA = a.score ?? -1;
+    const scoreB = b.score ?? -1;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    const orderA = ICP_PRODUCT_CATEGORIES.indexOf(a.category);
+    const orderB = ICP_PRODUCT_CATEGORIES.indexOf(b.category);
+    return (orderA >= 0 ? orderA : 99) - (orderB >= 0 ? orderB : 99);
+  });
+}
+
 function buildCategoryRecommendations(
   actionSource: string,
   fitItems: StrategicFitItem[],
@@ -607,7 +621,7 @@ function buildCategoryRecommendations(
     }
   }
 
-  return ICP_PRODUCT_CATEGORIES.map((category) => {
+  const rows = ICP_PRODUCT_CATEGORIES.map((category) => {
     const fit = fitMap.get(category);
     const score = fit?.score;
     const raw = parsed.get(category);
@@ -637,6 +651,8 @@ function buildCategoryRecommendations(
       score,
     };
   });
+
+  return sortCategoryRecommendationsByScore(rows);
 }
 
 function parseInlineContactFields(segment: string): ProfileContact | null {

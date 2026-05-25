@@ -1,5 +1,8 @@
 import { CircleSlash, Sparkles } from "lucide-react";
-import type { CategoryRecommendation } from "../../utils/profileText";
+import {
+  sortCategoryRecommendationsByScore,
+  type CategoryRecommendation,
+} from "../../utils/profileText";
 import { ProfileProse } from "../ProfileProse";
 
 const toneStyles: Record<
@@ -30,7 +33,8 @@ export function ProfileNextSteps({
   interactionReview: string;
   categories: CategoryRecommendation[];
 }) {
-  const hasCategories = categories.some(
+  const sortedCategories = sortCategoryRecommendationsByScore(categories);
+  const hasCategories = sortedCategories.some(
     (c) => c.analysis.trim() || c.action.trim(),
   );
 
@@ -47,7 +51,7 @@ export function ProfileNextSteps({
 
       {hasCategories ? (
         <ul className="space-y-4 list-none m-0 p-0">
-          {categories.map((item) => {
+          {sortedCategories.map((item) => {
             const styles = toneStyles[item.tone];
             const isPrimary = item.tone === "action";
 
