@@ -14,7 +14,6 @@ import {
   MapPin,
 } from "lucide-react";
 import {
-  fetchChemicalTypes,
   fetchTDS,
   fetchCustomers,
   fetchPartners,
@@ -34,12 +33,13 @@ import {
   Customer,
   Partner,
 } from "../../services/api";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 
 export function ProductLabelStockPage() {
   const navigate = useNavigate();
+  const { chemicalTypes } = useProductCatalog();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   // Suppliers from partner_data (matches stock_movements.supplier_id FK)
@@ -245,12 +245,10 @@ export function ProductLabelStockPage() {
     try {
       setLoading(true);
       setError(null);
-      const [chemicalTypesRes, customersRes, partnersRes] = await Promise.all([
-        fetchChemicalTypes({ limit: 1000 }),
+      const [customersRes, partnersRes] = await Promise.all([
         fetchCustomers({ limit: 1000 }),
         fetchPartners({ limit: 1000 }),
       ]);
-      setChemicalTypes(chemicalTypesRes.chemicals || []);
       setCustomers(customersRes.customers);
       setPartners(partnersRes.partners);
     } catch (err: any) {

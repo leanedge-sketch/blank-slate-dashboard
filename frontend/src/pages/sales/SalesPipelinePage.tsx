@@ -11,18 +11,14 @@ import {
   SalesPipelineUpdate,
   PipelineStage,
   Currency,
-  fetchChemicalTypes,
   fetchTDS,
   Customer,
-  ChemicalType,
   Tds,
   api,
   CustomerListResponse,
   fetchBusinessModels,
   fetchCurrencies,
   fetchVendors,
-  fetchChemicalFullData,
-  ChemicalFullData,
   fetchPartnerChemicals,
   syncAllCustomerPipelines,
 } from "../../services/api";
@@ -49,6 +45,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { QuotationForm, QuotationFormData, QuotationFormType } from "../../components/QuotationForm";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { ProductMultiSelect } from "../../components/sales/ProductMultiSelect";
 import { ProductDealSpecFields } from "../../components/sales/ProductDealSpecFields";
 import {
@@ -199,8 +196,7 @@ export function SalesPipelinePage() {
 
   // Data for dropdowns
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
-  const [chemicalFullData, setChemicalFullData] = useState<ChemicalFullData[]>([]);
+  const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [vendors, setVendors] = useState<string[]>([]);
   const [partnerChemicals, setPartnerChemicals] = useState<any[]>([]);
@@ -242,7 +238,13 @@ export function SalesPipelinePage() {
     setProductSpecs((prev) => {
       const next = { ...prev };
       for (const id of ids) {
-        if (!next[id]) next[id] = emptyProductDealSpec();
+        if (!next[id]) {
+          const product = chemicalFullData.find((c) => c.uuid_id === id);
+          next[id] = {
+            ...emptyProductDealSpec(),
+            vendor_name: product?.vendor ?? null,
+          };
+        }
       }
       for (const key of Object.keys(next)) {
         if (!ids.includes(key)) delete next[key];
@@ -267,58 +269,61 @@ export function SalesPipelinePage() {
       currency: formData.currency,
       forex: formData.forex ?? null,
       incoterm: formData.incoterm ?? null,
+      vendor_name: formData.vendor_name ?? null,
     };
   }
 
-  function getVendorOptionsForForm(): string[] {
+  function getVendorOptionsForProduct(productId: string | null): string[] {
     const availableVendors = new Set<string>();
-    const isCreate = isCreateLeadPipelineForm(editingPipeline);
 
-    const productIds: string[] = isCreate
-      ? selectedProductIds
-      : formData.chemical_type_id
-        ? [formData.chemical_type_id]
-        : [];
-
-    if (isCreate && productIds.length === 0) {
+    if (!productId) {
       vendors.forEach((v) => availableVendors.add(v));
       return Array.from(availableVendors).sort();
     }
 
-    if (!isCreate && productIds.length === 0) {
+    const selectedProduct = chemicalFullData.find(
+      (c) => c.uuid_id === productId || c.id.toString() === productId,
+    );
+    if (!selectedProduct) {
       return [];
     }
 
-    for (const activeProductId of productIds) {
-      const selectedProduct = chemicalFullData.find(
-        (c) =>
-          c.uuid_id === activeProductId || c.id.toString() === activeProductId,
-      );
-      if (!selectedProduct) continue;
-
-      if (selectedProduct.vendor) {
-        availableVendors.add(selectedProduct.vendor);
-      }
-      if (selectedProduct.partner_id) {
-        const matchingPartner = partnerChemicals.find(
-          (pc) => pc.id === selectedProduct.partner_id,
-        );
-        if (matchingPartner?.vendor) {
-          availableVendors.add(matchingPartner.vendor);
-        }
-      }
-      partnerChemicals.forEach((pc) => {
-        if (
-          pc.vendor &&
-          selectedProduct.vendor &&
-          pc.vendor.toLowerCase() === selectedProduct.vendor.toLowerCase()
-        ) {
-          availableVendors.add(pc.vendor);
-        }
-      });
+    if (selectedProduct.vendor) {
+      availableVendors.add(selectedProduct.vendor);
     }
+    if (selectedProduct.partner_id) {
+      const matchingPartner = partnerChemicals.find(
+        (pc) => pc.id === selectedProduct.partner_id,
+      );
+      if (matchingPartner?.vendor) {
+        availableVendors.add(matchingPartner.vendor);
+      }
+    }
+    partnerChemicals.forEach((pc) => {
+      if (
+        pc.vendor &&
+        selectedProduct.vendor &&
+        pc.vendor.toLowerCase() === selectedProduct.vendor.toLowerCase()
+      ) {
+        availableVendors.add(pc.vendor);
+      }
+    });
 
     return Array.from(availableVendors).sort();
+  }
+
+  function getVendorOptionsForForm(): string[] {
+    if (
+      isCreateLeadPipelineForm(editingPipeline) &&
+      selectedProductIds.length > 0
+    ) {
+      return [];
+    }
+    const productId = formData.chemical_type_id || null;
+    if (!isCreateLeadPipelineForm(editingPipeline) && !productId) {
+      return [];
+    }
+    return getVendorOptionsForProduct(productId);
   }
 
 
@@ -339,13 +344,8 @@ export function SalesPipelinePage() {
   useEffect(() => {
     async function loadDropdownData() {
       try {
-        const [customersRes, chemicalTypesRes, chemicalFullDataRes, businessModelsRes, currenciesRes, vendorsRes, partnerChemicalsRes] = await Promise.all([
+        const [customersRes, businessModelsRes, currenciesRes, vendorsRes, partnerChemicalsRes] = await Promise.all([
           api.get<CustomerListResponse>("/crm/customers", { params: { limit: 500 } }),
-          fetchChemicalTypes({ limit: 500 }),
-          fetchChemicalFullData({ limit: 1000 }).catch((err) => {
-            console.warn("Failed to fetch chemical full data:", err);
-            return { chemicals: [], total: 0 };
-          }),
           fetchBusinessModels().catch((err) => {
             console.warn("Failed to fetch business models:", err);
             return [];
@@ -364,8 +364,6 @@ export function SalesPipelinePage() {
           }),
         ]);
         setCustomers(customersRes.data.customers);
-        setChemicalTypes(chemicalTypesRes.chemicals);
-        setChemicalFullData(chemicalFullDataRes.chemicals || []);
         setBusinessModels(businessModelsRes || []);
         setCurrencies((currenciesRes as Currency[]) || (["ETB", "KES", "USD", "EUR"] as Currency[]));
         setVendors(vendorsRes || []);
@@ -373,7 +371,6 @@ export function SalesPipelinePage() {
         console.log("Loaded dropdown data:", {
           businessModels: businessModelsRes?.length || 0,
           currencies: currenciesRes?.length || 0,
-          chemicalFullData: chemicalFullDataRes.chemicals?.length || 0,
         });
       } catch (err) {
         console.error("Failed to load dropdown data:", err);
@@ -817,8 +814,8 @@ export function SalesPipelinePage() {
           if (selectedProductIds.length > 0) {
             metadata.product_ids = selectedProductIds;
           }
-          if (formData.vendor_name) {
-            metadata.vendor = formData.vendor_name;
+          if (spec.vendor_name) {
+            metadata.vendor = spec.vendor_name;
           }
           if (product?.product_name) {
             metadata.product_name = product.product_name;
@@ -830,7 +827,7 @@ export function SalesPipelinePage() {
             ...(cid?.trim() ? { customer_id: cid } : {}),
             chemical_type_id: productId,
             stage: "Lead ID",
-            vendor_name: formData.vendor_name,
+            vendor_name: spec.vendor_name,
             expected_close_date: spec.expected_close_date,
             business_model: spec.business_model,
             business_unit: spec.business_unit,
@@ -1171,8 +1168,8 @@ export function SalesPipelinePage() {
               {isCreateLeadPipelineForm(editingPipeline) && (
                 <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
                   Lead ID pipelines: all fields are optional. Search and add one or more products —
-                  each product gets its own deal with separate lead sources, contacts, and commercial
-                  details. Vendor is shared across all products in this batch.
+                  each product gets its own deal with vendor, lead sources, contacts, and commercial
+                  details.
                 </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1316,45 +1313,46 @@ export function SalesPipelinePage() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Vendor
-                  </label>
-                  <select
-                    value={formData.vendor_name || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        vendor_name: e.target.value || null,
-                        metadata: {
-                          ...(formData.metadata || {}),
-                          vendor: e.target.value || null,
-                        },
-                      })
-                    }
-                    disabled={
-                      !isCreateLeadPipelineForm(editingPipeline) &&
-                      !formData.chemical_type_id &&
-                      selectedProductIds.length === 0
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
-                  >
-                    <option value="">Select vendor (optional)...</option>
-                    {getVendorOptionsForForm().map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                  {(formData.chemical_type_id || selectedProductIds.length > 0) && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      {isCreateLeadPipelineForm(editingPipeline) &&
-                      selectedProductIds.length > 1
-                        ? "Shared vendor for all products in this batch"
-                        : "Vendors filtered for selected product(s)"}
-                    </p>
-                  )}
-                </div>
+                {!(
+                  isCreateLeadPipelineForm(editingPipeline) &&
+                  selectedProductIds.length > 0
+                ) && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Vendor
+                    </label>
+                    <select
+                      value={formData.vendor_name || ""}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          vendor_name: e.target.value || null,
+                          metadata: {
+                            ...(formData.metadata || {}),
+                            vendor: e.target.value || null,
+                          },
+                        })
+                      }
+                      disabled={
+                        !isCreateLeadPipelineForm(editingPipeline) &&
+                        !formData.chemical_type_id
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Select vendor (optional)...</option>
+                      {getVendorOptionsForForm().map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                    {formData.chemical_type_id && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Vendors filtered for selected product
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {isCreateLeadPipelineForm(editingPipeline) &&
                   selectedProductIds.length > 0 && (
@@ -1408,6 +1406,7 @@ export function SalesPipelinePage() {
                               }
                               businessModels={businessModels}
                               currencies={currencies}
+                              vendorOptions={getVendorOptionsForProduct(productId)}
                             />
                           </div>
                         );

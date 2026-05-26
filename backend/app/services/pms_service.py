@@ -159,6 +159,15 @@ def create_chemical_type(body: ChemicalTypeCreate) -> ChemicalType:
         raise RuntimeError("Failed to create chemical type (chemical_full_data)")
 
     created = dict(response.data[0])
+    catalog_id = created.get("id")
+    if catalog_id is not None:
+        from app.services.catalog_sync_service import sync_catalog_product_links
+
+        sync_catalog_product_links(int(catalog_id))
+        refreshed = get_chemical_full_data_by_id(int(catalog_id))
+        if refreshed:
+            created = refreshed.model_dump()
+
     adapted = {
         "id": created.get("id"),
         "name": created.get("product_name") or "",
@@ -173,6 +182,10 @@ def create_chemical_type(body: ChemicalTypeCreate) -> ChemicalType:
             "typical_application": created.get("typical_application"),
             "product_description": created.get("product_description"),
             "price": created.get("price"),
+            "chemical_full_data_id": created.get("id"),
+            "uuid_id": (
+                str(created["uuid_id"]) if created.get("uuid_id") else None
+            ),
         },
         "created_at": None,
     }
@@ -1348,6 +1361,13 @@ def create_chemical_full_data(body: ChemicalFullDataCreate) -> ChemicalFullData:
     response = supabase.table("chemical_full_data").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create chemical_full_data")
+    created_id = response.data[0].get("id")
+    if created_id is not None:
+        from app.services.catalog_sync_service import refresh_catalog_row
+
+        refreshed = refresh_catalog_row(int(created_id))
+        if refreshed:
+            return refreshed
     return ChemicalFullData(**response.data[0])
 
 
@@ -1392,7 +1412,11 @@ def update_chemical_full_data(chemical_id: int, body: ChemicalFullDataUpdate) ->
     )
     if not response.data:
         raise RuntimeError(f"Failed to update chemical_full_data with id {chemical_id}")
-    return ChemicalFullData(**response.data[0])
+
+    from app.services.catalog_sync_service import refresh_catalog_row
+
+    refreshed = refresh_catalog_row(chemical_id)
+    return refreshed or ChemicalFullData(**response.data[0])
 
 
 def delete_chemical_full_data(chemical_id: int) -> bool:

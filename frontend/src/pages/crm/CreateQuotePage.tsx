@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ChemicalType, Customer, fetchChemicalTypes } from "../../services/api";
+import { api, Customer } from "../../services/api";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { FileText, Loader2, Sparkles, Package, Settings2 } from "lucide-react";
 
 type QuoteFormat = "Baracoda" | "Betchem";
@@ -35,8 +36,7 @@ const units = ["MT", "KG", "L", "Bag", "Carton", "Drum"];
 
 export function CreateQuotePage() {
   const [loading, setLoading] = useState(false);
-  const [chemLoading, setChemLoading] = useState(false);
-  const [chemicals, setChemicals] = useState<ChemicalType[]>([]);
+  const { chemicalTypes: chemicals, loading: chemLoading } = useProductCatalog();
   const [error, setError] = useState<string | null>(null);
   const [format, setFormat] = useState<QuoteFormat>("Baracoda");
 
@@ -53,22 +53,6 @@ export function CreateQuotePage() {
   const [notes, setNotes] = useState("");
   // Start empty; user adds the first product when ready
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
-
-  useEffect(() => {
-    async function loadChemicals() {
-      try {
-        setChemLoading(true);
-        const res = await fetchChemicalTypes({ limit: 200, offset: 0 });
-        setChemicals(res.chemicals);
-      } catch (err: any) {
-        console.error(err);
-        setError(err?.message ?? "Failed to load product list");
-      } finally {
-        setChemLoading(false);
-      }
-    }
-    loadChemicals();
-  }, []);
 
   // Lightweight, optional CRM customer lookup based on the typed name
   useEffect(() => {

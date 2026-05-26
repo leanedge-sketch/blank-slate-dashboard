@@ -5,8 +5,6 @@ import {
   fetchSalesPipelines,
   SalesPipeline,
   PipelineStage,
-  fetchChemicalTypes,
-  ChemicalType,
   fetchTDS,
   fetchTDSById,
   Tds,
@@ -53,6 +51,7 @@ import {
   Circle,
   Download,
 } from "lucide-react";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 
 // Stage colors mapping with enhanced colors
 const STAGE_COLORS: Record<PipelineStage, string> = {
@@ -101,7 +100,7 @@ export function PipelineDetailPage() {
 
   // Data for display
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
+  const { chemicalTypes } = useProductCatalog();
   const [tdsData, setTdsData] = useState<Tds | null>(null);
 
   // AI Chat state
@@ -125,19 +124,10 @@ export function PipelineDetailPage() {
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    async function loadDropdownData() {
-      try {
-        const [customersRes, chemicalTypesRes] = await Promise.all([
-          api.get<CustomerListResponse>("/crm/customers", { params: { limit: 500 } }),
-          fetchChemicalTypes({ limit: 500 }),
-        ]);
-        setCustomers(customersRes.data.customers);
-        setChemicalTypes(chemicalTypesRes.chemicals);
-      } catch (err) {
-        console.error("Failed to load dropdown data:", err);
-      }
-    }
-    loadDropdownData();
+    api
+      .get<CustomerListResponse>("/crm/customers", { params: { limit: 500 } })
+      .then((res) => setCustomers(res.data.customers))
+      .catch((err) => console.error("Failed to load customers:", err));
   }, []);
 
   async function loadPipelineDetails() {

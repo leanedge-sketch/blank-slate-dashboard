@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { fetchTDS, Tds, fetchChemicalTypes, ChemicalType, fetchCustomers, Customer, fetchPartnerChemicals, PartnerChemical } from "../services/api";
+import { fetchTDS, Tds, ChemicalType, fetchCustomers, Customer, fetchPartnerChemicals, PartnerChemical } from "../services/api";
+import { useProductCatalog } from "../contexts/ProductCatalogContext";
 import { X, Plus, Trash2, FileText, Download, Eye } from "lucide-react";
 
 export interface QuotationProduct {
@@ -68,11 +69,10 @@ const PAYMENT_TERMS_OPTIONS = [
 
 export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, onCancel, initialData, defaultFormType = "Baracoda" }: QuotationFormProps) {
   const [formType, setFormType] = useState<QuotationFormType>(initialData?.form_type || defaultFormType);
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
+  const { chemicalTypes, loading: loadingChemicalTypes } = useProductCatalog();
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [partnerChemicals, setPartnerChemicals] = useState<PartnerChemical[]>([]);
   const [loadingTds, setLoadingTds] = useState(false);
-  const [loadingChemicalTypes, setLoadingChemicalTypes] = useState(false);
   const [loadingPartnerChemicals, setLoadingPartnerChemicals] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [companyName, setCompanyName] = useState<string>("");
@@ -80,22 +80,6 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
     initialData?.products || []
   );
   const [paymentTerms, setPaymentTerms] = useState<string>(initialData?.payment_terms || "");
-
-  // Load Chemical Types
-  useEffect(() => {
-    async function loadChemicalTypes() {
-      try {
-        setLoadingChemicalTypes(true);
-        const res = await fetchChemicalTypes({ limit: 1000 });
-        setChemicalTypes(res.chemicals || []);
-      } catch (err) {
-        console.error("Failed to load chemical types:", err);
-      } finally {
-        setLoadingChemicalTypes(false);
-      }
-    }
-    loadChemicalTypes();
-  }, []);
 
   // Load Partner Chemicals (for vendor list)
   useEffect(() => {

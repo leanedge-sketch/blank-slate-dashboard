@@ -215,6 +215,8 @@ export async function fetchChemicalTypes(params?: { limit?: number; offset?: num
 
 export async function createChemicalType(data: ChemicalTypeCreate) {
   const res = await api.post<ChemicalType>("/pms/chemicals", data);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
   return res.data;
 }
 
@@ -534,8 +536,24 @@ export async function fetchChemicalFullData(params?: {
   return res.data;
 }
 
+/** Master catalog for Sales, CRM, PMS, Stock, and Reports (same table as PMS writes). */
+export async function fetchSharedCatalog(params?: {
+  limit?: number;
+  offset?: number;
+  sector?: string;
+  industry?: string;
+  vendor?: string;
+  product_category?: string;
+  sub_category?: string;
+}) {
+  const res = await api.get<ChemicalFullDataListResponse>("/catalog/products", { params });
+  return res.data;
+}
+
 export async function createChemicalFullData(data: ChemicalFullDataCreate & { id: number }) {
   const res = await api.post<ChemicalFullData>("/pms/chemical-full-data", data);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
   return res.data;
 }
 
@@ -544,11 +562,15 @@ export async function updateChemicalFullData(
   data: ChemicalFullDataUpdate
 ) {
   const res = await api.put<ChemicalFullData>(`/pms/chemical-full-data/${id}`, data);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
   return res.data;
 }
 
 export async function deleteChemicalFullData(id: number) {
   await api.delete(`/pms/chemical-full-data/${id}`);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
 }
 
 export async function fetchSectors() {

@@ -10,14 +10,39 @@ export function ProductDealSpecFields({
   onChange,
   businessModels,
   currencies,
+  vendorOptions = [],
 }: {
   spec: ProductDealSpec;
   onChange: (patch: Partial<ProductDealSpec>) => void;
   businessModels: string[];
   currencies: Currency[];
+  vendorOptions?: string[];
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="md:col-span-2">
+        <label className={labelClass}>Vendor</label>
+        <select
+          value={spec.vendor_name || ""}
+          onChange={(e) =>
+            onChange({ vendor_name: e.target.value || null })
+          }
+          className={inputClass}
+        >
+          <option value="">Select vendor (optional)…</option>
+          {vendorOptions.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+        {vendorOptions.length > 0 && (
+          <p className="text-xs text-slate-500 mt-1">
+            Vendors linked to this product
+          </p>
+        )}
+      </div>
+
       <div>
         <label className={labelClass}>Expected close date</label>
         <input

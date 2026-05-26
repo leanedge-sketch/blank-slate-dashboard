@@ -12,11 +12,8 @@ import {
   PipelineStage,
   fetchTDS,
   Tds,
-  fetchChemicalFullData,
-  fetchChemicalTypes,
-  ChemicalFullData,
-  ChemicalType,
 } from "../../services/api";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
   getPipelineProductLabel,
   PIPELINE_STAGE_COLORS,
@@ -60,8 +57,7 @@ export function CustomerDetailPage() {
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [syncingPipelines, setSyncingPipelines] = useState(false);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
-  const [chemicalFullData, setChemicalFullData] = useState<ChemicalFullData[]>([]);
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
+  const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
   const [selectedDealId, setSelectedDealId] = useState<string>("");
   const navigate = useNavigate();
 
@@ -136,21 +132,9 @@ export function CustomerDetailPage() {
   }
 
   useEffect(() => {
-    async function loadCatalog() {
-      try {
-        const [tdsRes, fullRes, typesRes] = await Promise.all([
-          fetchTDS({ limit: 500 }),
-          fetchChemicalFullData({ limit: 1000 }).catch(() => ({ chemicals: [], total: 0 })),
-          fetchChemicalTypes({ limit: 500 }).catch(() => []),
-        ]);
-        setTdsList(tdsRes.tds);
-        setChemicalFullData(fullRes.chemicals);
-        setChemicalTypes(typesRes.chemicals);
-      } catch (err) {
-        console.error("Failed to load product catalog:", err);
-      }
-    }
-    loadCatalog();
+    fetchTDS({ limit: 500 })
+      .then((res) => setTdsList(res.tds))
+      .catch((err) => console.error("Failed to load TDS list:", err));
   }, []);
 
   useEffect(() => {

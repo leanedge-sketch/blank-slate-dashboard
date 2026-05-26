@@ -6,7 +6,6 @@ import {
   updateProduct,
   deleteProduct,
   fetchTDS,
-  fetchChemicalFullData,
   LeanchemProduct,
   LeanchemProductCreate,
   LeanchemProductUpdate,
@@ -23,6 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 
 const emptyForm: LeanchemProductCreate = {
   category: "",
@@ -39,8 +39,11 @@ type ProductsTab = "leanchem" | "chemical_catalog";
 export function ProductsPage() {
   const [activeTab, setActiveTab] = useState<ProductsTab>("leanchem");
   const [products, setProducts] = useState<LeanchemProduct[]>([]);
-  const [chemicalCatalog, setChemicalCatalog] = useState<ChemicalFullData[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  const {
+    chemicals: chemicalCatalog,
+    loading: catalogLoading,
+    refreshCatalog,
+  } = useProductCatalog();
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -62,18 +65,6 @@ export function ProductsPage() {
       setTdsList(res.tds);
     } catch {
       setTdsList([]);
-    }
-  }
-
-  async function loadChemicalCatalog() {
-    try {
-      setCatalogLoading(true);
-      const res = await fetchChemicalFullData({ limit: 500, offset: 0 });
-      setChemicalCatalog(res.chemicals);
-    } catch {
-      setChemicalCatalog([]);
-    } finally {
-      setCatalogLoading(false);
     }
   }
 
@@ -102,8 +93,13 @@ export function ProductsPage() {
 
   useEffect(() => {
     loadTds();
-    loadChemicalCatalog();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "chemical_catalog") {
+      void refreshCatalog();
+    }
+  }, [activeTab, refreshCatalog]);
 
   useEffect(() => {
     loadProducts();

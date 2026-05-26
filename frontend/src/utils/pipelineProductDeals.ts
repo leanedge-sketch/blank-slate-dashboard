@@ -1,6 +1,7 @@
 import type { BusinessUnit, Currency, Forex, Incoterm } from "../services/api";
 
 export interface ProductDealSpec {
+  vendor_name: string | null;
   leadSourceEntries: string[];
   contactPerLeadEntries: string[];
   expected_close_date: string | null;
@@ -16,6 +17,7 @@ export interface ProductDealSpec {
 
 export function emptyProductDealSpec(): ProductDealSpec {
   return {
+    vendor_name: null,
     leadSourceEntries: [""],
     contactPerLeadEntries: [""],
     expected_close_date: null,

@@ -25,7 +25,7 @@ from app.config import settings
 from app.database.connection import get_supabase_client, get_supabase_service_client
 
 # Import API routers
-from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations
+from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations, catalog
 # from app.api.v1 import common  # We'll add this later
 
 # Load environment variables
@@ -224,6 +224,9 @@ app.include_router(crm.router, prefix="/api/v1/crm", tags=["CRM"])
 
 # Register PMS routes
 app.include_router(pms.router, prefix="/api/v1/pms", tags=["PMS"])
+
+# Shared product catalog (read by Sales, CRM, Stock, Reports)
+app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["Catalog"])
 
 # Register Sales Pipeline routes
 app.include_router(sales_pipeline.router, prefix="/api/v1", tags=["Sales Pipeline"])
