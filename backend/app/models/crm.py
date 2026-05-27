@@ -32,7 +32,8 @@ class CustomerBase(BaseModel):
 
 class CustomerCreate(CustomerBase):
     """Model for creating a new customer"""
-    pass
+    # Optional first sales pipeline stage (defaults to Lead ID in CRM service).
+    initial_pipeline_stage: Optional[str] = None
 
 
 class CustomerUpdate(BaseModel):

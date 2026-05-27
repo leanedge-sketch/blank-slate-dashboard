@@ -2,13 +2,17 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Customer, Interaction } from "../../services/api";
 
+type InitialPipelineStage = "Lead ID" | "Discovery" | "Sample";
+
 interface CustomerFormState {
   customer_name: string;
+  initial_pipeline_stage: InitialPipelineStage;
 }
 
 export function AddCustomerPage() {
   const [form, setForm] = useState<CustomerFormState>({
     customer_name: "",
+    initial_pipeline_stage: "Lead ID",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +37,7 @@ export function AddCustomerPage() {
 
       const payload: CustomerFormState = {
         customer_name: form.customer_name.trim(),
+        initial_pipeline_stage: form.initial_pipeline_stage,
       };
 
       const res = await api.post<Customer>("/crm/customers", payload);
@@ -165,6 +170,30 @@ export function AddCustomerPage() {
                 }
                 placeholder="e.g. Sika Abyssinia Chemicals PLC"
               />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="initial_pipeline_stage">
+                First sales pipeline stage
+              </label>
+              <select
+                id="initial_pipeline_stage"
+                value={form.initial_pipeline_stage}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    initial_pipeline_stage: e.target.value as InitialPipelineStage,
+                  }))
+                }
+              >
+                <option value="Lead ID">Lead ID (default)</option>
+                <option value="Discovery">Discovery</option>
+                <option value="Sample">Sample</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1" style={{ marginTop: "0.35rem" }}>
+                Creates one company pipeline at this stage. Product deals are added
+                separately in Sales — they will not duplicate this row.
+              </p>
             </div>
 
             <div className="form-actions">

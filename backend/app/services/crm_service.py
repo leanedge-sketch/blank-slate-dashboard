@@ -300,12 +300,29 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
             )
 
     try:
-        from app.services.pipeline_crm_sync import ensure_company_pipelines_for_customer
+        from app.services.pipeline_crm_sync import ensure_lead_pipeline_for_product
 
-        ensure_company_pipelines_for_customer(str(customer.customer_id))
+        allowed_stages = {
+            "Lead ID",
+            "Discovery",
+            "Sample",
+            "Validation",
+            "Proposal",
+            "Confirmation",
+            "Closed",
+            "Lost",
+        }
+        initial_stage = (customer_in.initial_pipeline_stage or "Lead ID").strip()
+        if initial_stage not in allowed_stages:
+            initial_stage = "Lead ID"
+        # One company umbrella deal only — avoids duplicate rows when Sales adds products later.
+        ensure_lead_pipeline_for_product(
+            str(customer.customer_id),
+            stage=initial_stage,
+        )
     except Exception as e:
         logging.warning(
-            "Sales pipeline Lead ID setup skipped for new customer %s: %s",
+            "Sales pipeline setup skipped for new customer %s: %s",
             customer.customer_id,
             e,
         )

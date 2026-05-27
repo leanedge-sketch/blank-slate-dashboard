@@ -181,6 +181,7 @@ def ensure_lead_pipeline_for_product(
     tds_id: Optional[Union[str, UUID]] = None,
     chemical_type_id: Optional[Union[str, UUID]] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    stage: str = "Lead ID",
 ) -> Optional[SalesPipeline]:
     """
     Ensure one Lead ID deal exists for this company + product (or company umbrella when no product).
@@ -220,12 +221,13 @@ def ensure_lead_pipeline_for_product(
                 customer_id,
                 tds_id=tds_id,
                 chemical_type_id=chemical_type_id,
-                stage="Lead ID",
+                stage=stage,
                 metadata=meta,
             )
         )
         logger.info(
-            "Created Lead ID pipeline %s for customer %s (tds=%s)",
+            "Created %s pipeline %s for customer %s (tds=%s)",
+            stage,
             pipeline.id,
             customer_id,
             tds_s or "umbrella",
