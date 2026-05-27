@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Customer } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import { CrmProductSelect } from "../../components/crm/CrmProductSelect";
+import { resolveCatalogProductName } from "../../utils/catalogProducts";
 import { FileText, Loader2, Sparkles, Package, Settings2 } from "lucide-react";
 
 type QuoteFormat = "Baracoda" | "Betchem";
@@ -36,7 +38,7 @@ const units = ["MT", "KG", "L", "Bag", "Carton", "Drum"];
 
 export function CreateQuotePage() {
   const [loading, setLoading] = useState(false);
-  const { chemicalTypes: chemicals, loading: chemLoading } = useProductCatalog();
+  const { chemicals, chemicalTypes } = useProductCatalog();
   const [error, setError] = useState<string | null>(null);
   const [format, setFormat] = useState<QuoteFormat>("Baracoda");
 
@@ -214,7 +216,7 @@ Notes: ${notes || "N/A"}`;
   }
 
   function getChemicalName(id: string) {
-    return chemicals.find((c) => c.id === id)?.name ?? "—";
+    return resolveCatalogProductName(id, chemicals, chemicalTypes);
   }
 
   return (
@@ -441,23 +443,13 @@ Notes: ${notes || "N/A"}`;
                       <label className="text-xs font-semibold text-slate-700">
                         Product (chemical type) *
                       </label>
-                      <select
+                      <CrmProductSelect
                         value={line.chemicalTypeId}
-                        onChange={(e) => updateLine(line.id, { chemicalTypeId: e.target.value })}
+                        onChange={(chemicalTypeId) =>
+                          updateLine(line.id, { chemicalTypeId })
+                        }
                         required
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                      >
-                        <option value="">Select product</option>
-                        {chemLoading ? (
-                          <option disabled>Loading...</option>
-                        ) : (
-                          chemicals.map((chem) => (
-                            <option key={chem.id} value={chem.id}>
-                              {chem.name} {chem.category ? `(${chem.category})` : ""}
-                            </option>
-                          ))
-                        )}
-                      </select>
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-slate-700">

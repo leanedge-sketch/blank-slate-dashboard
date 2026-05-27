@@ -53,6 +53,17 @@ import {
   updateProductSpec,
   type ProductDealSpec,
 } from "../../utils/pipelineProductDeals";
+import {
+  PipelineDealLinkFields,
+  DEAL_LINK_KEY_NONE,
+  emptyProductDealLink,
+  type ProductDealLink,
+} from "../../components/sales/PipelineDealLinkFields";
+const NEW_CUSTOMER_START_STAGES: PipelineStage[] = [
+  "Lead ID",
+  "Discovery",
+  "Sample",
+];
 
 // Stage colors mapping
 const STAGE_COLORS: Record<PipelineStage, string> = {
@@ -230,8 +241,51 @@ export function SalesPipelinePage() {
   const [reasonForAmountChange, setReasonForAmountChange] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [productSpecs, setProductSpecs] = useState<Record<string, ProductDealSpec>>({});
+  const [productDealLinks, setProductDealLinks] = useState<
+    Record<string, ProductDealLink>
+  >({});
+  const [customerPipelines, setCustomerPipelines] = useState<SalesPipeline[]>(
+    [],
+  );
+  const [loadingCustomerPipelines, setLoadingCustomerPipelines] =
+    useState(false);
+  const [customerHasProductDeals, setCustomerHasProductDeals] = useState(true);
+  const [newCustomerInitialStage, setNewCustomerInitialStage] =
+    useState<PipelineStage>("Lead ID");
   const [leadSourceEntries, setLeadSourceEntries] = useState<string[]>([""]);
-  const [contactPerLeadEntries, setContactPerLeadEntries] = useState<string[]>([""]);
+  const [contactPerLeadEntries, setContactPerLeadEntries] = useState<string[]>(
+    [""],
+  );
+
+  const pipelineLabelOptions = {
+    chemicalFullData,
+    chemicalTypes,
+    tdsList,
+  };
+
+  function dealLinkKey(productId: string | null): string {
+    return productId ?? DEAL_LINK_KEY_NONE;
+  }
+
+  function suggestDealLink(productId: string | null): ProductDealLink {
+    if (!productId) {
+      const umbrella = customerPipelines.find(
+        (p) => !p.chemical_type_id && !p.tds_id,
+      );
+      if (umbrella) {
+        return { mode: "existing", existingPipelineId: umbrella.id };
+      }
+      return emptyProductDealLink();
+    }
+    const match = customerPipelines.find(
+      (p) =>
+        p.chemical_type_id && String(p.chemical_type_id) === String(productId),
+    );
+    if (match) {
+      return { mode: "existing", existingPipelineId: match.id };
+    }
+    return emptyProductDealLink();
+  }
 
   function handleSelectedProductsChange(ids: string[]) {
     setSelectedProductIds(ids);
@@ -251,7 +305,69 @@ export function SalesPipelinePage() {
       }
       return next;
     });
+    setProductDealLinks((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        if (!next[id]) next[id] = suggestDealLink(id);
+      }
+      for (const key of Object.keys(next)) {
+        if (!ids.includes(key)) delete next[key];
+      }
+      return next;
+    });
   }
+
+  useEffect(() => {
+    if (
+      !formData.customer_id ||
+      !isCreateLeadPipelineForm(editingPipeline)
+    ) {
+      setCustomerPipelines([]);
+      setCustomerHasProductDeals(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingCustomerPipelines(true);
+      try {
+        const res = await fetchSalesPipelines({
+          customer_id: formData.customer_id,
+          limit: 1000,
+          latest_per_deal: true,
+        });
+        if (cancelled) return;
+        const rows = res.pipelines || [];
+        setCustomerPipelines(rows);
+        const withProduct = rows.filter(
+          (p) => p.chemical_type_id || p.tds_id,
+        );
+        setCustomerHasProductDeals(withProduct.length > 0);
+      } catch (err) {
+        console.warn("Failed to load customer pipelines for linking:", err);
+        if (!cancelled) setCustomerPipelines([]);
+      } finally {
+        if (!cancelled) setLoadingCustomerPipelines(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.customer_id, editingPipeline]);
+
+  useEffect(() => {
+    if (!formData.customer_id || customerPipelines.length === 0) return;
+    setProductDealLinks((prev) => {
+      const next = { ...prev };
+      for (const id of selectedProductIds) {
+        if (!next[id]) next[id] = suggestDealLink(id);
+      }
+      if (selectedProductIds.length === 0 && !next[DEAL_LINK_KEY_NONE]) {
+        next[DEAL_LINK_KEY_NONE] = suggestDealLink(null);
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerPipelines]);
 
   function specForCreate(productId: string | null): ProductDealSpec {
     if (productId) {
@@ -514,6 +630,9 @@ export function SalesPipelinePage() {
     setFormData(newFormData);
     setSelectedProductIds([]);
     setProductSpecs({});
+    setProductDealLinks({});
+    setNewCustomerInitialStage("Lead ID");
+    setCustomerPipelines([]);
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);
     setShowCreateForm(true);
@@ -705,6 +824,9 @@ export function SalesPipelinePage() {
     });
     setSelectedProductIds([]);
     setProductSpecs({});
+    setProductDealLinks({});
+    setNewCustomerInitialStage("Lead ID");
+    setCustomerPipelines([]);
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);
     // Reset the ref so we can process edit again if needed
@@ -783,13 +905,33 @@ export function SalesPipelinePage() {
           chemical_type_id: null,
           stage: "Lead ID",
         });
-        setCreating(true);
-        setEditingPipeline(null);
-
         const productIdsToCreate =
           selectedProductIds.length > 0 ? selectedProductIds : [null];
 
         for (const productId of productIdsToCreate) {
+          const linkKey = dealLinkKey(productId);
+          const link =
+            productDealLinks[linkKey] ?? suggestDealLink(productId);
+          if (link.mode === "existing" && !link.existingPipelineId) {
+            alert(
+              "Select an existing pipeline or choose “New pipeline deal” for each product.",
+            );
+            return;
+          }
+        }
+
+        setCreating(true);
+        setEditingPipeline(null);
+
+        const createStage: PipelineStage = !customerHasProductDeals
+          ? newCustomerInitialStage
+          : "Lead ID";
+
+        for (const productId of productIdsToCreate) {
+          const linkKey = dealLinkKey(productId);
+          const link =
+            productDealLinks[linkKey] ?? suggestDealLink(productId);
+
           const spec = specForCreate(productId);
           const leadSources = spec.leadSourceEntries
             .map((s) => s.trim())
@@ -821,12 +963,40 @@ export function SalesPipelinePage() {
             metadata.product_name = product.product_name;
           }
 
-          const { customer_id: cid, ...formRest } = formData;
+          const { customer_id: cid } = formData;
+
+          if (link.mode === "existing" && link.existingPipelineId) {
+            const updateData: SalesPipelineUpdate = {
+              customer_id: cid?.trim() ? cid : undefined,
+              chemical_type_id: productId,
+              expected_close_date: spec.expected_close_date,
+              business_model: spec.business_model,
+              business_unit: spec.business_unit,
+              unit: spec.unit,
+              amount: spec.amount,
+              unit_price: spec.unit_price,
+              currency: spec.currency,
+              forex: spec.forex,
+              incoterm: spec.incoterm,
+              lead_source: leadSources[0] || null,
+              contact_per_lead: contacts[0] || null,
+              metadata: metadata as Record<string, unknown>,
+            };
+            console.log(
+              "Updating existing pipeline:",
+              link.existingPipelineId,
+              updateData,
+            );
+            await updateSalesPipeline(link.existingPipelineId, updateData);
+            continue;
+          }
+
+          const { customer_id: _cid, ...formRest } = formData;
           const createData: SalesPipelineCreate = {
             ...formRest,
             ...(cid?.trim() ? { customer_id: cid } : {}),
             chemical_type_id: productId,
-            stage: "Lead ID",
+            stage: createStage,
             vendor_name: spec.vendor_name,
             expected_close_date: spec.expected_close_date,
             business_model: spec.business_model,
@@ -1167,9 +1337,11 @@ export function SalesPipelinePage() {
             <form onSubmit={handleCreate} className="space-y-4">
               {isCreateLeadPipelineForm(editingPipeline) && (
                 <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
-                  Lead ID pipelines: all fields are optional. Search and add one or more products —
-                  each product gets its own deal with vendor, lead sources, contacts, and commercial
-                  details.
+                  For each product, choose whether this save updates an{" "}
+                  <strong>existing pipeline</strong> or creates a{" "}
+                  <strong>new</strong> one — this avoids duplicate deals when CRM already
+                  created a Lead ID row. All fields remain optional unless you edit a deal
+                  on the update route.
                 </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1197,6 +1369,53 @@ export function SalesPipelinePage() {
                     ))}
                   </select>
                 </div>
+
+                {isCreateLeadPipelineForm(editingPipeline) &&
+                  formData.customer_id && (
+                    <div className="md:col-span-2 space-y-3">
+                      {loadingCustomerPipelines ? (
+                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading pipelines for this customer…
+                        </p>
+                      ) : (
+                        <p className="text-sm text-slate-600">
+                          {customerPipelines.length} pipeline
+                          {customerPipelines.length === 1 ? "" : "s"} on file
+                          {customerHasProductDeals
+                            ? " — link to an existing deal per product below when adding data."
+                            : " — new customer: pick a starting stage for new deals."}
+                        </p>
+                      )}
+                      {!customerHasProductDeals && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Starting stage for new product deals
+                          </label>
+                          <select
+                            value={newCustomerInitialStage}
+                            onChange={(e) =>
+                              setNewCustomerInitialStage(
+                                e.target.value as PipelineStage,
+                              )
+                            }
+                            className="w-full max-w-xs rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm"
+                          >
+                            {NEW_CUSTOMER_START_STAGES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Use Discovery or Sample when the customer is already past
+                            Lead ID. After the first product deals exist, new deals
+                            default to Lead ID unless you link to an existing pipeline.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1397,6 +1616,22 @@ export function SalesPipelinePage() {
                                 Remove
                               </button>
                             </div>
+                            <PipelineDealLinkFields
+                              link={
+                                productDealLinks[productId] ??
+                                suggestDealLink(productId)
+                              }
+                              onChange={(link) =>
+                                setProductDealLinks((prev) => ({
+                                  ...prev,
+                                  [productId]: link,
+                                }))
+                              }
+                              customerPipelines={customerPipelines}
+                              productId={productId}
+                              preferProductId={productId}
+                              labelOptions={pipelineLabelOptions}
+                            />
                             <ProductDealSpecFields
                               spec={spec}
                               onChange={(patch) =>
@@ -1411,6 +1646,27 @@ export function SalesPipelinePage() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                {isCreateLeadPipelineForm(editingPipeline) &&
+                  formData.customer_id &&
+                  selectedProductIds.length === 0 && (
+                    <div className="md:col-span-2">
+                      <PipelineDealLinkFields
+                        link={
+                          productDealLinks[DEAL_LINK_KEY_NONE] ??
+                          suggestDealLink(null)
+                        }
+                        onChange={(link) =>
+                          setProductDealLinks((prev) => ({
+                            ...prev,
+                            [DEAL_LINK_KEY_NONE]: link,
+                          }))
+                        }
+                        customerPipelines={customerPipelines}
+                        labelOptions={pipelineLabelOptions}
+                      />
                     </div>
                   )}
 

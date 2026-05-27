@@ -10,9 +10,12 @@ import {
 import {
   ChemicalFullData,
   ChemicalType,
-  fetchSharedCatalog,
 } from "../services/api";
-import { CATALOG_UPDATED_EVENT } from "../lib/catalogEvents";
+import {
+  CATALOG_PRODUCT_UPSERTED_EVENT,
+  CATALOG_UPDATED_EVENT,
+} from "../lib/catalogEvents";
+import { fetchAllCatalogProducts } from "../utils/fetchAllCatalog";
 
 interface ProductCatalogContextValue {
   chemicals: ChemicalFullData[];
@@ -49,6 +52,19 @@ function toChemicalType(c: ChemicalFullData): ChemicalType {
   };
 }
 
+function mergeCatalogRow(
+  list: ChemicalFullData[],
+  row: ChemicalFullData,
+): ChemicalFullData[] {
+  const idx = list.findIndex((c) => c.id === row.id);
+  if (idx >= 0) {
+    const next = [...list];
+    next[idx] = row;
+    return next;
+  }
+  return [...list, row];
+}
+
 export function ProductCatalogProvider({ children }: { children: ReactNode }) {
   const [chemicals, setChemicals] = useState<ChemicalFullData[]>([]);
   const [total, setTotal] = useState(0);
@@ -59,9 +75,9 @@ export function ProductCatalogProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchSharedCatalog({ limit: 5000, offset: 0 });
-      setChemicals(res.chemicals || []);
-      setTotal(res.total ?? res.chemicals?.length ?? 0);
+      const res = await fetchAllCatalogProducts();
+      setChemicals(res.chemicals);
+      setTotal(res.total);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to load product catalog";
@@ -73,12 +89,28 @@ export function ProductCatalogProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshCatalog();
+    void refreshCatalog();
+
     const onUpdated = () => {
       void refreshCatalog();
     };
+
+    const onUpserted = (event: Event) => {
+      const row = (event as CustomEvent<ChemicalFullData>).detail;
+      if (!row?.id) return;
+      setChemicals((prev) => {
+        const merged = mergeCatalogRow(prev, row);
+        setTotal(merged.length);
+        return merged;
+      });
+    };
+
     window.addEventListener(CATALOG_UPDATED_EVENT, onUpdated);
-    return () => window.removeEventListener(CATALOG_UPDATED_EVENT, onUpdated);
+    window.addEventListener(CATALOG_PRODUCT_UPSERTED_EVENT, onUpserted);
+    return () => {
+      window.removeEventListener(CATALOG_UPDATED_EVENT, onUpdated);
+      window.removeEventListener(CATALOG_PRODUCT_UPSERTED_EVENT, onUpserted);
+    };
   }, [refreshCatalog]);
 
   const chemicalTypes = useMemo(
@@ -113,7 +145,6 @@ export function useProductCatalog(): ProductCatalogContextValue {
   return ctx;
 }
 
-/** Safe when provider is optional (e.g. tests). */
 export function useProductCatalogOptional(): ProductCatalogContextValue | null {
   return useContext(ProductCatalogContext);
 }

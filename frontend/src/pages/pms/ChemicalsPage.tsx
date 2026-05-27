@@ -36,8 +36,10 @@ import {
   FileText,
   Hash,
 } from "lucide-react";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 
 export function ChemicalsPage() {
+  const { refreshCatalog } = useProductCatalog();
   const [chemicals, setChemicals] = useState<ChemicalFullData[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -335,6 +337,7 @@ export function ChemicalsPage() {
         price: formData.price,
       };
       await createChemicalFullData(createData);
+      await refreshCatalog();
       setShowCreateForm(false);
       setFormData({
         id: 0,
@@ -387,6 +390,7 @@ export function ChemicalsPage() {
     try {
       setUpdating(true);
       await updateChemicalFullData(id, editData);
+      await refreshCatalog();
       setEditingId(null);
       setEditData({});
       await loadChemicals();
@@ -414,6 +418,7 @@ export function ChemicalsPage() {
     try {
       setDeletingId(id);
       await deleteChemicalFullData(id);
+      await refreshCatalog();
       await loadChemicals();
     } catch (err: any) {
       console.error(err);

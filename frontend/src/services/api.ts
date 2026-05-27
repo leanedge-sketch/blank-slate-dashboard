@@ -220,6 +220,19 @@ export async function createChemicalType(data: ChemicalTypeCreate) {
   return res.data;
 }
 
+export async function updateChemicalType(id: string, data: ChemicalTypeUpdate) {
+  const res = await api.put<ChemicalType>(`/pms/chemicals/${id}`, data);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
+  return res.data;
+}
+
+export async function deleteChemicalType(id: string) {
+  await api.delete(`/pms/chemicals/${id}`);
+  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  notifyCatalogUpdated();
+}
+
 export interface ChemicalTypeUpdate {
   name?: string | null;
   category?: string | null;
@@ -227,15 +240,6 @@ export interface ChemicalTypeUpdate {
   applications?: string[] | null;
   spec_template?: Record<string, any> | null;
   metadata?: Record<string, any> | null;
-}
-
-export async function updateChemicalType(id: string, data: ChemicalTypeUpdate) {
-  const res = await api.put<ChemicalType>(`/pms/chemicals/${id}`, data);
-  return res.data;
-}
-
-export async function deleteChemicalType(id: string) {
-  await api.delete(`/pms/chemicals/${id}`);
 }
 
 // TDS
@@ -552,7 +556,10 @@ export async function fetchSharedCatalog(params?: {
 
 export async function createChemicalFullData(data: ChemicalFullDataCreate & { id: number }) {
   const res = await api.post<ChemicalFullData>("/pms/chemical-full-data", data);
-  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  const { notifyCatalogUpdated, notifyCatalogProductUpserted } = await import(
+    "../lib/catalogEvents"
+  );
+  notifyCatalogProductUpserted(res.data);
   notifyCatalogUpdated();
   return res.data;
 }
@@ -562,7 +569,10 @@ export async function updateChemicalFullData(
   data: ChemicalFullDataUpdate
 ) {
   const res = await api.put<ChemicalFullData>(`/pms/chemical-full-data/${id}`, data);
-  const { notifyCatalogUpdated } = await import("../lib/catalogEvents");
+  const { notifyCatalogUpdated, notifyCatalogProductUpserted } = await import(
+    "../lib/catalogEvents"
+  );
+  notifyCatalogProductUpserted(res.data);
   notifyCatalogUpdated();
   return res.data;
 }
