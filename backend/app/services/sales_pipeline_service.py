@@ -604,10 +604,20 @@ def validate_stage_progression(old_stage: str, new_stage: str, reason: Optional[
     if old_stage == new_stage:
         return  # No change, no validation needed
     
-    stage_order = [s for s in PIPELINE_STAGES if s != "Lost"]  # Sequential stages (Lost is special)
+    stage_order = [
+        s for s in PIPELINE_STAGES if s not in ("Lost",)
+    ]  # Lost is a special jump; Closed allowed as jump via rule above
     old_index = stage_order.index(old_stage) if old_stage in stage_order else None
     new_index = stage_order.index(new_stage) if new_stage in stage_order else None
     
+    # Moving to Closed from any stage (e.g. client pays immediately) — requires reason
+    if new_stage == "Closed":
+        if not reason or not reason.strip():
+            raise ValueError(
+                "reason_for_stage_change is required when moving to Closed stage"
+            )
+        return
+
     # Special case: Moving to "Lost" from any stage - always allowed but requires reason
     if new_stage == "Lost":
         if not reason or not reason.strip():
@@ -680,6 +690,12 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         validate_stage_progression(existing.stage, update_data["stage"], reason)
         if not reason or not reason.strip():
             raise ValueError("reason_for_stage_change is required when stage changes")
+        if update_data["stage"] == "Closed":
+            close_reason = update_data.get("close_reason")
+            if not close_reason or not str(close_reason).strip():
+                raise ValueError(
+                    "close_reason is required when stage is Closed (deal won)"
+                )
     
     # Validate amount change reason if amount changed
     if amount_changed:

@@ -65,9 +65,9 @@ const STAGE_COLORS: Record<PipelineStage, string> = {
   "Lost": "bg-red-500 text-white border-red-600",
 };
 
-// Stage progression order (sequential stages, Lost is special)
-const STAGE_ORDER: PipelineStage[] = [
-  "Lead",
+// Sequential progression (Lost / early Closed are special jumps in the update modal)
+const SEQUENTIAL_STAGES: PipelineStage[] = [
+  "Lead ID",
   "Discovery",
   "Sample",
   "Validation",
@@ -76,16 +76,33 @@ const STAGE_ORDER: PipelineStage[] = [
   "Closed",
 ];
 
-// Lost can be reached from any stage
-const SEQUENTIAL_STAGES: PipelineStage[] = [
-  "Lead",
-  "Discovery",
-  "Sample",
-  "Validation",
-  "Proposal",
-  "Confirmation",
-  "Closed",
-];
+/** Progress UI (excludes Lost). */
+const STAGE_ORDER = SEQUENTIAL_STAGES;
+
+type StageOptionHint = { stage: PipelineStage; hint: string };
+
+function getUpdateStageOptions(current: PipelineStage): StageOptionHint[] {
+  const options: StageOptionHint[] = [];
+  const idx = SEQUENTIAL_STAGES.indexOf(current);
+
+  if (idx >= 0 && idx < SEQUENTIAL_STAGES.length - 1) {
+    const next = SEQUENTIAL_STAGES[idx + 1];
+    options.push({ stage: next, hint: " (Next sequential)" });
+  }
+
+  if (current !== "Closed") {
+    options.push({
+      stage: "Closed",
+      hint: " (Closed deal — client paid / took product)",
+    });
+  }
+
+  if (current !== "Lost") {
+    options.push({ stage: "Lost", hint: " (Deal lost)" });
+  }
+
+  return options;
+}
 
 export function PipelineDetailPage() {
   const { pipelineId } = useParams<{ pipelineId: string }>();
@@ -118,6 +135,7 @@ export function PipelineDetailPage() {
   const [updateFormData, setUpdateFormData] = useState<{
     stage?: PipelineStage;
     amount?: number | null;
+    close_reason?: string | null;
     reason_for_stage_change?: string;
     reason_for_amount_change?: string;
   }>({});
@@ -434,6 +452,17 @@ export function PipelineDetailPage() {
       return;
     }
 
+    if (
+      stageChanged &&
+      updateFormData.stage === "Closed" &&
+      !updateFormData.close_reason?.trim()
+    ) {
+      alert(
+        "Close reason is required when marking the deal as Closed (e.g. client paid and collected product).",
+      );
+      return;
+    }
+
     if (amountChanged && !updateFormData.reason_for_amount_change?.trim()) {
       alert("Reason for amount change is required when amount changes");
       return;
@@ -449,6 +478,10 @@ export function PipelineDetailPage() {
       const updateData: SalesPipelineUpdate = {
         stage: updateFormData.stage,
         amount: updateFormData.amount,
+        close_reason:
+          stageChanged && updateFormData.stage === "Closed"
+            ? updateFormData.close_reason?.trim() || null
+            : undefined,
         reason_for_stage_change: stageChanged ? updateFormData.reason_for_stage_change : null,
         reason_for_amount_change: amountChanged ? updateFormData.reason_for_amount_change : null,
       };
@@ -1473,53 +1506,64 @@ export function PipelineDetailPage() {
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  {/* Show current stage */}
                   <option value={selectedPipeline.stage}>
                     {selectedPipeline.stage} (Current)
                   </option>
-                  {/* Show next sequential stage if not Lost or Closed */}
-                  {(() => {
-                    const currentIndex = SEQUENTIAL_STAGES.indexOf(selectedPipeline.stage);
-                    const availableStages: PipelineStage[] = [];
-                    
-                    // If current stage is in sequential order, show next stage
-                    if (currentIndex >= 0 && currentIndex < SEQUENTIAL_STAGES.length - 1) {
-                      availableStages.push(SEQUENTIAL_STAGES[currentIndex + 1]);
-                    }
-                    
-                    // Always allow Lost (can be reached from any stage)
-                    availableStages.push("Lost");
-                    
-                    return availableStages.map((stage) => (
+                  {getUpdateStageOptions(selectedPipeline.stage).map(
+                    ({ stage, hint }) => (
                       <option key={stage} value={stage}>
                         {stage}
-                        {stage === SEQUENTIAL_STAGES[currentIndex + 1] && " (Next Sequential)"}
-                        {stage === "Lost" && " (Can jump from any stage)"}
+                        {hint}
                       </option>
-                    ));
-                  })()}
+                    ),
+                  )}
                 </select>
                 <p className="text-xs text-slate-500 mt-2">
-                  You can only move to the next sequential stage or mark as Lost. Sequential progression: {SEQUENTIAL_STAGES.join(" → ")}
+                  Move one step forward, mark as{" "}
+                  <strong>Closed</strong> when the client pays and takes the product, or
+                  mark <strong>Lost</strong>. Sequential path:{" "}
+                  {SEQUENTIAL_STAGES.join(" → ")}
                 </p>
                 {updateFormData.stage && updateFormData.stage !== selectedPipeline.stage && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Reason for Stage Change <span className="text-red-500">*</span>
-                    </label>
-                    <textarea
-                      value={updateFormData.reason_for_stage_change || ""}
-                      onChange={(e) =>
-                        setUpdateFormData({
-                          ...updateFormData,
-                          reason_for_stage_change: e.target.value,
-                        })
-                      }
-                      required
-                      rows={3}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      placeholder="Explain why the stage is changing..."
-                    />
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Reason for Stage Change <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={updateFormData.reason_for_stage_change || ""}
+                        onChange={(e) =>
+                          setUpdateFormData({
+                            ...updateFormData,
+                            reason_for_stage_change: e.target.value,
+                          })
+                        }
+                        required
+                        rows={3}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Explain why the stage is changing..."
+                      />
+                    </div>
+                    {updateFormData.stage === "Closed" && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Close reason (won deal) <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={updateFormData.close_reason || ""}
+                          onChange={(e) =>
+                            setUpdateFormData({
+                              ...updateFormData,
+                              close_reason: e.target.value,
+                            })
+                          }
+                          required
+                          rows={2}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="e.g. Client paid in full and collected the product"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
