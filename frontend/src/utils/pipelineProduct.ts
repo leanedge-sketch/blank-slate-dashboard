@@ -51,6 +51,22 @@ export const PIPELINE_STAGE_COLORS: Record<string, string> = {
   Lost: "bg-red-100 text-red-700 border-red-300",
 };
 
+/** Seven main pipeline stages (excludes Lost). */
+export const SEVEN_PIPELINE_STAGES = [
+  "Lead ID",
+  "Discovery",
+  "Sample",
+  "Validation",
+  "Proposal",
+  "Confirmation",
+  "Closed",
+] as const;
+
+/** Amount change reason is optional while the deal is at Discovery. */
+export function amountChangeReasonRequired(currentStage: string): boolean {
+  return currentStage !== "Discovery";
+}
+
 export const PIPELINE_STAGE_ORDER = [
   "Lead ID",
   "Discovery",

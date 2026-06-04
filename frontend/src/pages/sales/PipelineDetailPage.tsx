@@ -52,6 +52,8 @@ import {
   Download,
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
+import { amountChangeReasonRequired } from "../../utils/pipelineProduct";
 
 // Stage colors mapping with enhanced colors
 const STAGE_COLORS: Record<PipelineStage, string> = {
@@ -81,7 +83,35 @@ const STAGE_ORDER = SEQUENTIAL_STAGES;
 
 type StageOptionHint = { stage: PipelineStage; hint: string };
 
+/** Sample and later: pick any of the seven main stages. */
+function usesFullStageDropdown(current: PipelineStage): boolean {
+  const sampleIdx = SEQUENTIAL_STAGES.indexOf("Sample");
+  const idx = SEQUENTIAL_STAGES.indexOf(current);
+  return idx >= sampleIdx && sampleIdx >= 0;
+}
+
 function getUpdateStageOptions(current: PipelineStage): StageOptionHint[] {
+  if (usesFullStageDropdown(current)) {
+    const options: StageOptionHint[] = [];
+    for (const stage of SEQUENTIAL_STAGES) {
+      if (stage !== current) {
+        const nextIdx = SEQUENTIAL_STAGES.indexOf(current) + 1;
+        const stageIdx = SEQUENTIAL_STAGES.indexOf(stage);
+        const hint =
+          stageIdx === nextIdx
+            ? " (Next sequential)"
+            : stage === "Closed"
+              ? " (Closed deal)"
+              : "";
+        options.push({ stage, hint });
+      }
+    }
+    if (current !== "Lost") {
+      options.push({ stage: "Lost", hint: " (Deal lost)" });
+    }
+    return options;
+  }
+
   const options: StageOptionHint[] = [];
   const idx = SEQUENTIAL_STAGES.indexOf(current);
 
@@ -132,6 +162,7 @@ export function PipelineDetailPage() {
 
   // Update Pipeline form state
   const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [updateFormData, setUpdateFormData] = useState<{
     stage?: PipelineStage;
     amount?: number | null;
@@ -463,7 +494,11 @@ export function PipelineDetailPage() {
       return;
     }
 
-    if (amountChanged && !updateFormData.reason_for_amount_change?.trim()) {
+    if (
+      amountChanged &&
+      amountChangeReasonRequired(selectedPipeline.stage) &&
+      !updateFormData.reason_for_amount_change?.trim()
+    ) {
       alert("Reason for amount change is required when amount changes");
       return;
     }
@@ -658,7 +693,11 @@ export function PipelineDetailPage() {
                 </button>
               )}
               <button
-                onClick={() => navigate(`/sales/pipeline/${selectedPipeline.id}/edit`)}
+                type="button"
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setShowEditForm(true);
+                }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/30 hover:shadow-blue-600/50"
               >
                 <Edit2 className="w-4 h-4" />
@@ -1454,6 +1493,17 @@ export function PipelineDetailPage() {
         </div>
       </main>
 
+      {showEditForm && selectedPipeline && (
+        <PipelineEditModal
+          pipeline={selectedPipeline}
+          onClose={() => setShowEditForm(false)}
+          onSaved={(updated) => {
+            setSelectedPipeline(updated);
+            void loadPipelineDetails();
+          }}
+        />
+      )}
+
       {/* Update Pipeline Modal */}
       {showUpdateForm && selectedPipeline && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1475,7 +1525,20 @@ export function PipelineDetailPage() {
                 </button>
               </div>
               <p className="text-sm text-slate-600 mt-2">
-                Update the stage or amount. A new version will be created with your change reasons.
+                Change stage or quantity with audit reasons (creates a new version).
+                To update product, vendor, pricing, and other fields without a stage
+                change, use{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateForm(false);
+                    setShowEditForm(true);
+                  }}
+                  className="text-blue-600 font-medium hover:underline"
+                >
+                  Edit Pipeline
+                </button>
+                .
               </p>
             </div>
             <form onSubmit={handleUpdatePipeline} className="p-6 space-y-6">
@@ -1519,10 +1582,17 @@ export function PipelineDetailPage() {
                   )}
                 </select>
                 <p className="text-xs text-slate-500 mt-2">
-                  Move one step forward, mark as{" "}
-                  <strong>Closed</strong> when the client pays and takes the product, or
-                  mark <strong>Lost</strong>. Sequential path:{" "}
-                  {SEQUENTIAL_STAGES.join(" → ")}
+                  {usesFullStageDropdown(selectedPipeline.stage) ? (
+                    <>
+                      Choose any of the seven pipeline stages, or mark{" "}
+                      <strong>Lost</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Move one step forward, mark as <strong>Closed</strong> when the
+                      client pays, or mark <strong>Lost</strong>.
+                    </>
+                  )}
                 </p>
                 {updateFormData.stage && updateFormData.stage !== selectedPipeline.stage && (
                   <div className="mt-3 space-y-3">
@@ -1598,7 +1668,9 @@ export function PipelineDetailPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   placeholder="Enter new amount..."
                 />
-                {updateFormData.amount !== undefined && updateFormData.amount !== selectedPipeline.amount && (
+                {updateFormData.amount !== undefined &&
+                  updateFormData.amount !== selectedPipeline.amount &&
+                  amountChangeReasonRequired(selectedPipeline.stage) && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-slate-700 mb-2">
                       Reason for Amount Change <span className="text-red-500">*</span>

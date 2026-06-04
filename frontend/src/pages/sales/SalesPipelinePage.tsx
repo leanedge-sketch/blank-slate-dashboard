@@ -59,6 +59,8 @@ import {
   emptyProductDealLink,
   type ProductDealLink,
 } from "../../components/sales/PipelineDealLinkFields";
+import { amountChangeReasonRequired } from "../../utils/pipelineProduct";
+
 const NEW_CUSTOMER_START_STAGES: PipelineStage[] = [
   "Lead ID",
   "Discovery",
@@ -894,7 +896,11 @@ export function SalesPipelinePage() {
           return;
         }
         
-        if (amountChanged && !reasonForAmountChange.trim()) {
+        if (
+          amountChanged &&
+          amountChangeReasonRequired(editingPipeline.stage) &&
+          !reasonForAmountChange.trim()
+        ) {
           alert("Reason for amount change is required when amount changes");
           return;
         }
@@ -1877,7 +1883,9 @@ export function SalesPipelinePage() {
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     placeholder="Enter quantity..."
                   />
-                  {editingPipeline && editingPipeline.amount !== formData.amount && (
+                  {editingPipeline &&
+                    editingPipeline.amount !== formData.amount &&
+                    amountChangeReasonRequired(editingPipeline.stage) && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">
                         Reason for Amount Change <span className="text-red-500">*</span>
