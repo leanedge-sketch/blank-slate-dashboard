@@ -102,7 +102,7 @@ export function PipelineEditModal({
 
     if (
       amountChanged &&
-      amountChangeReasonRequired(pipeline.stage) &&
+      amountChangeReasonRequired(pipeline.stage, amountVal) &&
       !amountReason.trim()
     ) {
       alert("Reason for amount change is required when quantity changes.");
@@ -151,10 +151,11 @@ export function PipelineEditModal({
     }
   }
 
-  const amountChanged =
-    (form.amount === "" ? null : Number(form.amount)) !== pipeline.amount;
+  const amountVal =
+    form.amount === "" || form.amount === null ? null : Number(form.amount);
+  const amountChanged = amountVal !== pipeline.amount;
   const showAmountReason =
-    amountChanged && amountChangeReasonRequired(pipeline.stage);
+    amountChanged && amountChangeReasonRequired(pipeline.stage, amountVal);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

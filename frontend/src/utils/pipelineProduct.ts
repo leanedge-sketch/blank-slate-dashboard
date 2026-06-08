@@ -105,9 +105,40 @@ export function getUpdateStageOptions(current: string): UpdateStageOption[] {
   return options;
 }
 
-/** Amount change reason is optional while the deal is at Discovery. */
-export function amountChangeReasonRequired(currentStage: string): boolean {
-  return currentStage !== "Discovery";
+/** Effective stage after update (pre-selected next stage when unchanged). */
+export function getEffectiveTargetStage(
+  currentStage: string,
+  formStage?: string | null,
+): string {
+  const picked = formStage?.trim() || currentStage;
+  if (picked !== currentStage) return picked;
+  return getNextPipelineStage(currentStage) ?? currentStage;
+}
+
+/** Display value for quantity inputs — preserves 0 (not treated as empty). */
+export function formatPipelineAmountInput(
+  formAmount: number | null | undefined,
+  fallbackAmount?: number | null,
+): string {
+  if (formAmount !== undefined && formAmount !== null) {
+    return String(formAmount);
+  }
+  if (fallbackAmount !== undefined && fallbackAmount !== null) {
+    return String(fallbackAmount);
+  }
+  return "";
+}
+
+/**
+ * Amount change reason is optional at Discovery/Sample or when quantity is 0 (TBD).
+ */
+export function amountChangeReasonRequired(
+  currentStage: string,
+  newAmount?: number | null,
+): boolean {
+  if (currentStage === "Discovery" || currentStage === "Sample") return false;
+  if (newAmount === 0) return false;
+  return true;
 }
 
 export type PipelineStageUpdateEntry = {

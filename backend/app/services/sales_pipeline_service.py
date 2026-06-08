@@ -697,11 +697,17 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
                     "close_reason is required when stage is Closed (deal won)"
                 )
     
-    # Validate amount change reason if amount changed (optional at Discovery)
-    if amount_changed and existing.stage != "Discovery":
-        reason = update_data.get("reason_for_amount_change")
-        if not reason or not reason.strip():
-            raise ValueError("reason_for_amount_change is required when amount changes")
+    # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
+    if amount_changed:
+        new_amount = update_data.get("amount")
+        skip_amount_reason = (
+            existing.stage in ("Discovery", "Sample")
+            or new_amount == 0
+        )
+        if not skip_amount_reason:
+            reason = update_data.get("reason_for_amount_change")
+            if not reason or not reason.strip():
+                raise ValueError("reason_for_amount_change is required when amount changes")
     
     # If stage or amount changed, create new version instead of updating
     if stage_changed or amount_changed:

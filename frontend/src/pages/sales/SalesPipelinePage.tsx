@@ -59,7 +59,7 @@ import {
   emptyProductDealLink,
   type ProductDealLink,
 } from "../../components/sales/PipelineDealLinkFields";
-import { amountChangeReasonRequired } from "../../utils/pipelineProduct";
+import { amountChangeReasonRequired, formatPipelineAmountInput } from "../../utils/pipelineProduct";
 
 const NEW_CUSTOMER_START_STAGES: PipelineStage[] = [
   "Lead ID",
@@ -898,7 +898,7 @@ export function SalesPipelinePage() {
         
         if (
           amountChanged &&
-          amountChangeReasonRequired(editingPipeline.stage) &&
+          amountChangeReasonRequired(editingPipeline.stage, formData.amount) &&
           !reasonForAmountChange.trim()
         ) {
           alert("Reason for amount change is required when amount changes");
@@ -1872,20 +1872,23 @@ export function SalesPipelinePage() {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={formData.amount !== null && formData.amount !== undefined ? formData.amount : ""}
+                    value={formatPipelineAmountInput(formData.amount)}
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({
                         ...formData,
-                        amount: value && value !== "" ? parseFloat(value) : null,
+                        amount: value === "" ? null : parseFloat(value),
                       });
                     }}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Enter quantity..."
+                    placeholder="0 if not yet determined (Sample)"
                   />
                   {editingPipeline &&
                     editingPipeline.amount !== formData.amount &&
-                    amountChangeReasonRequired(editingPipeline.stage) && (
+                    amountChangeReasonRequired(
+                      editingPipeline.stage,
+                      formData.amount,
+                    ) && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">
                         Reason for Amount Change <span className="text-red-500">*</span>

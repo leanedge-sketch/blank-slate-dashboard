@@ -57,6 +57,8 @@ import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpd
 import {
   amountChangeReasonRequired,
   buildPipelineStageUpdateMap,
+  formatPipelineAmountInput,
+  getEffectiveTargetStage,
   getNextPipelineStage,
   getUpdateStageOptions,
   PIPELINE_STAGE_COLORS,
@@ -452,7 +454,7 @@ export function PipelineDetailPage() {
 
     if (
       amountChanged &&
-      amountChangeReasonRequired(selectedPipeline.stage) &&
+      amountChangeReasonRequired(selectedPipeline.stage, updateFormData.amount) &&
       !updateFormData.reason_for_amount_change?.trim()
     ) {
       alert("Reason for amount change is required when amount changes");
@@ -1481,6 +1483,28 @@ export function PipelineDetailPage() {
               </p>
             </div>
             <form onSubmit={handleUpdatePipeline} className="p-6 space-y-6">
+              {(() => {
+                const targetStageForForm = getEffectiveTargetStage(
+                  selectedPipeline.stage,
+                  updateFormData.stage,
+                ) as PipelineStage;
+                const willAdvanceStage =
+                  targetStageForForm !== selectedPipeline.stage;
+                const movingToSample = targetStageForForm === "Sample";
+                const amountValue = formatPipelineAmountInput(
+                  updateFormData.amount,
+                  selectedPipeline.amount,
+                );
+                const showAmountReason =
+                  updateFormData.amount !== undefined &&
+                  updateFormData.amount !== selectedPipeline.amount &&
+                  amountChangeReasonRequired(
+                    selectedPipeline.stage,
+                    updateFormData.amount,
+                  );
+
+                return (
+                  <>
               {/* Current Stage Display */}
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Stage</p>
@@ -1504,8 +1528,7 @@ export function PipelineDetailPage() {
                     const stageIdx = STAGE_ORDER.indexOf(stage);
                     const isCurrent = selectedPipeline.stage === stage;
                     const isPast = currentIdx >= 0 && stageIdx < currentIdx;
-                    const isSelected =
-                      (updateFormData.stage || selectedPipeline.stage) === stage;
+                    const isSelected = targetStageForForm === stage;
                     const isNext =
                       getNextPipelineStage(selectedPipeline.stage) === stage;
                     return (
@@ -1584,15 +1607,18 @@ export function PipelineDetailPage() {
                 <p className="text-xs text-slate-500 mt-2">
                   Updates advance the deal one stage at a time. The next stage is
                   pre-selected; you can also jump ahead, close, or mark{" "}
-                  <strong>Lost</strong>.
+                  <strong>Lost</strong>. A reason is required for every stage move.
                 </p>
-                {updateFormData.stage &&
-                  updateFormData.stage !== selectedPipeline.stage && (
+                {willAdvanceStage && (
                   <div className="mt-3 space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">
                         Reason for Stage Change <span className="text-red-500">*</span>
                       </label>
+                      <p className="text-xs text-slate-500 mb-2">
+                        Moving from <strong>{selectedPipeline.stage}</strong> to{" "}
+                        <strong>{targetStageForForm}</strong>
+                      </p>
                       <textarea
                         value={updateFormData.reason_for_stage_change || ""}
                         onChange={(e) =>
@@ -1607,7 +1633,7 @@ export function PipelineDetailPage() {
                         placeholder="Explain why the stage is changing..."
                       />
                     </div>
-                    {updateFormData.stage === "Closed" && (
+                    {targetStageForForm === "Closed" && (
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">
                           Close reason (won deal) <span className="text-red-500">*</span>
@@ -1635,7 +1661,7 @@ export function PipelineDetailPage() {
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Amount</p>
                 <p className="text-lg font-bold text-slate-900">
-                  {selectedPipeline.amount 
+                  {selectedPipeline.amount != null
                     ? `${selectedPipeline.amount.toLocaleString()} ${selectedPipeline.unit || "units"}`
                     : "—"}
                 </p>
@@ -1646,24 +1672,40 @@ export function PipelineDetailPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   New Amount (Quantity)
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={updateFormData.amount !== undefined ? (updateFormData.amount || "") : (selectedPipeline.amount || "")}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setUpdateFormData({
-                      ...updateFormData,
-                      amount: value && value !== "" ? parseFloat(value) : null,
-                    });
-                  }}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="Enter new amount..."
-                />
-                {updateFormData.amount !== undefined &&
-                  updateFormData.amount !== selectedPipeline.amount &&
-                  amountChangeReasonRequired(selectedPipeline.stage) && (
+                {(movingToSample || selectedPipeline.stage === "Sample") && (
+                  <p className="text-xs text-slate-500 mb-2">
+                    Quantity may be unknown at Sample — enter <strong>0</strong> if not
+                    yet determined.
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amountValue}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setUpdateFormData({
+                        ...updateFormData,
+                        amount: value === "" ? null : parseFloat(value),
+                      });
+                    }}
+                    className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="0 if not yet determined"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUpdateFormData({ ...updateFormData, amount: 0 })
+                    }
+                    className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    title="Use when quantity is not yet determined"
+                  >
+                    0
+                  </button>
+                </div>
+                {showAmountReason && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-slate-700 mb-2">
                       Reason for Amount Change <span className="text-red-500">*</span>
@@ -1715,6 +1757,9 @@ export function PipelineDetailPage() {
                   )}
                 </button>
               </div>
+                  </>
+                );
+              })()}
             </form>
           </div>
         </div>
