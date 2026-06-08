@@ -186,20 +186,29 @@ def validate_sales_pipeline_row(row: Mapping[str, Any]) -> Dict[str, str]:
     _check_non_negative(errors, "unit_price", row.get("unit_price"))
     _check_non_negative(errors, "quantity",   row.get("quantity"))
 
-    # Composite: late-stage rows must carry full commercial detail.
+    # Composite: Proposal+ requires full commercial detail.
     stage = row.get("stage")
-    if stage in STAGES_REQUIRING_BUSINESS_DETAILS:
+    from app.models.enums import STAGES_REQUIRING_FULL_COMMERCIAL
+
+    if stage in STAGES_REQUIRING_FULL_COMMERCIAL:
         for required_field, label in (
             ("business_model", "Business model"),
-            ("unit",           "Unit"),
-            ("unit_price",     "Unit price"),
+            ("unit", "Unit"),
+            ("unit_price", "Unit price"),
+            ("currency", "Currency"),
+            ("forex", "Forex"),
+            ("business_unit", "Business unit"),
+            ("incoterm", "Incoterm"),
+            ("chemical_type_id", "Product"),
+            ("expected_close_date", "Expected close date"),
+            ("amount", "Amount"),
         ):
             if _is_blank(row.get(required_field)):
                 errors[required_field] = (
                     f"{label} is required once the deal reaches '{stage}'"
                 )
-        if row.get("unit") is not None and not _is_blank(row.get("unit")):
-            _check_enum(errors, "unit", row.get("unit"), Unit.values())
+    if row.get("unit") is not None and not _is_blank(row.get("unit")):
+        _check_enum(errors, "unit", row.get("unit"), Unit.values())
 
     # SCD2 hint (DB enforces uniqueness; we surface a friendly form warning).
     if row.get("is_current_version") is True and row.get("version_number") in (None, 0):

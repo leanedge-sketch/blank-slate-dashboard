@@ -65,13 +65,22 @@ class PipelineStage(_BaseStrEnum):
     LOST          = "Lost"
 
 
-# Stages that require business_model, unit, and unit_price to be populated.
-STAGES_REQUIRING_BUSINESS_DETAILS: List[str] = [
-    PipelineStage.VALIDATION.value,
+# Proposal and later need the full commercial form (same as Edit Pipeline).
+STAGES_REQUIRING_FULL_COMMERCIAL: List[str] = [
     PipelineStage.PROPOSAL.value,
     PipelineStage.CONFIRMATION.value,
     PipelineStage.CLOSED.value,
 ]
+
+# Lead ID through Validation: all commercial fields optional.
+STAGES_WITH_OPTIONAL_COMMERCIAL: List[str] = [
+    PipelineStage.LEAD_ID.value,
+    PipelineStage.DISCOVERY.value,
+    PipelineStage.SAMPLE.value,
+    PipelineStage.VALIDATION.value,
+]
+
+STAGES_REQUIRING_BUSINESS_DETAILS: List[str] = list(STAGES_REQUIRING_FULL_COMMERCIAL)
 
 
 class Currency(_BaseStrEnum):

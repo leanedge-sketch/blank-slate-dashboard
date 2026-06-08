@@ -30,8 +30,8 @@ PIPELINE_STAGES = [
     "Lost",
 ]
 
-# Stages that require business_model, unit, and unit_price
-STAGES_REQUIRING_BUSINESS_DETAILS = ["Validation", "Proposal", "Confirmation", "Closed"]
+STAGES_REQUIRING_FULL_COMMERCIAL = ["Proposal", "Confirmation", "Closed"]
+STAGES_REQUIRING_BUSINESS_DETAILS = list(STAGES_REQUIRING_FULL_COMMERCIAL)
 
 # Currency options
 CURRENCIES = ["ETB", "KES", "USD", "EUR"]
@@ -122,16 +122,29 @@ class SalesPipelineBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_business_details_for_validation_plus(self):
-        """Validate that business_model, unit, and unit_price are provided for Validation+ stages."""
-        if self.stage == "Lead ID":
+        """Proposal+ requires full commercial fields; earlier stages are optional."""
+        if self.stage not in STAGES_REQUIRING_FULL_COMMERCIAL:
             return self
-        if self.stage in STAGES_REQUIRING_BUSINESS_DETAILS:
-            if not self.business_model or not self.business_model.strip():
-                raise ValueError("business_model is required for stages: Validation, Proposal, Confirmation, Closed")
-            if not self.unit or not self.unit.strip():
-                raise ValueError("unit is required for stages: Validation, Proposal, Confirmation, Closed")
-            if self.unit_price is None or self.unit_price < 0:
-                raise ValueError("unit_price is required and must be >= 0 for stages: Validation, Proposal, Confirmation, Closed")
+        if not self.business_model or not self.business_model.strip():
+            raise ValueError("business_model is required for Proposal stage and later")
+        if not self.unit or not self.unit.strip():
+            raise ValueError("unit is required for Proposal stage and later")
+        if self.unit_price is None or self.unit_price < 0:
+            raise ValueError("unit_price is required for Proposal stage and later")
+        if not self.currency or not str(self.currency).strip():
+            raise ValueError("currency is required for Proposal stage and later")
+        if not self.forex or not str(self.forex).strip():
+            raise ValueError("forex is required for Proposal stage and later")
+        if not self.business_unit or not str(self.business_unit).strip():
+            raise ValueError("business_unit is required for Proposal stage and later")
+        if not self.incoterm or not str(self.incoterm).strip():
+            raise ValueError("incoterm is required for Proposal stage and later")
+        if not self.chemical_type_id:
+            raise ValueError("chemical_type_id (product) is required for Proposal stage and later")
+        if not self.expected_close_date:
+            raise ValueError("expected_close_date is required for Proposal stage and later")
+        if self.amount is None or self.amount < 0:
+            raise ValueError("amount is required for Proposal stage and later")
         return self
 
     @model_validator(mode="after")

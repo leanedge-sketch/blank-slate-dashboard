@@ -51,13 +51,132 @@ export const PIPELINE_STAGE_COLORS: Record<string, string> = {
   Lost: "bg-red-100 text-red-700 border-red-300",
 };
 
-/** Seven main pipeline stages (excludes Lost). */
-export const STAGES_REQUIRING_BUSINESS_DETAILS = [
-  "Validation",
+/** Proposal and later need the full commercial form (same as Edit Pipeline). */
+export const STAGES_REQUIRING_FULL_COMMERCIAL = [
   "Proposal",
   "Confirmation",
   "Closed",
 ] as const;
+
+/** Lead ID through Validation: all commercial fields optional. */
+export const STAGES_WITH_OPTIONAL_COMMERCIAL = [
+  "Lead ID",
+  "Discovery",
+  "Sample",
+  "Validation",
+] as const;
+
+/** Alias for Proposal+ business requirements (used by list/edit pages). */
+export const STAGES_REQUIRING_BUSINESS_DETAILS = [
+  ...STAGES_REQUIRING_FULL_COMMERCIAL,
+] as const;
+
+export type PipelineDealFormValues = {
+  chemical_type_id: string;
+  vendor_name: string;
+  expected_close_date: string;
+  lead_source: string;
+  contact_per_lead: string;
+  business_model: string;
+  business_unit: string;
+  unit: string;
+  amount: number | "" | null;
+  unit_price: number | "" | null;
+  currency: string;
+  forex: string;
+  incoterm: string;
+};
+
+export function pipelineToDealFormValues(
+  pipeline: SalesPipeline,
+): PipelineDealFormValues {
+  const meta = (pipeline.metadata || {}) as Record<string, unknown>;
+  const vendor =
+    (meta.vendor as string) || (meta.vendor_name as string) || "";
+
+  return {
+    chemical_type_id: pipeline.chemical_type_id || "",
+    vendor_name: vendor,
+    expected_close_date: pipeline.expected_close_date
+      ? String(pipeline.expected_close_date).slice(0, 10)
+      : "",
+    lead_source: pipeline.lead_source || "",
+    contact_per_lead: pipeline.contact_per_lead || "",
+    business_model: pipeline.business_model || "",
+    business_unit: pipeline.business_unit || "",
+    unit: pipeline.unit || "",
+    amount: pipeline.amount ?? ("" as number | ""),
+    unit_price: pipeline.unit_price ?? ("" as number | ""),
+    currency: pipeline.currency || "",
+    forex: pipeline.forex || "",
+    incoterm: pipeline.incoterm || "",
+  };
+}
+
+export function pipelineTargetRequiresFullCommercial(stage: string): boolean {
+  return STAGES_REQUIRING_FULL_COMMERCIAL.includes(
+    stage as (typeof STAGES_REQUIRING_FULL_COMMERCIAL)[number],
+  );
+}
+
+/** Update Pipeline shows the full commercial form only when entering Proposal. */
+export function pipelineUpdateShowsCommercialForm(targetStage: string): boolean {
+  return targetStage === "Proposal";
+}
+
+/** Client-side validation for the full commercial form (Proposal entry only). */
+export function validateDealFormForProposal(
+  form: PipelineDealFormValues,
+): string | null {
+  if (!form.chemical_type_id.trim()) {
+    return "Product is required when moving to Proposal.";
+  }
+  if (!form.vendor_name.trim()) {
+    return "Vendor is required when moving to Proposal.";
+  }
+  if (!form.expected_close_date.trim()) {
+    return "Expected close date is required when moving to Proposal.";
+  }
+  if (!form.business_model.trim()) {
+    return "Business model is required when moving to Proposal.";
+  }
+  if (!form.business_unit.trim()) {
+    return "Business unit is required when moving to Proposal.";
+  }
+  if (!form.unit.trim()) {
+    return "Unit is required when moving to Proposal.";
+  }
+  if (form.amount === "" || form.amount === null || form.amount === undefined) {
+    return "Amount (quantity) is required when moving to Proposal.";
+  }
+  if (
+    form.unit_price === "" ||
+    form.unit_price === null ||
+    form.unit_price === undefined
+  ) {
+    return "Unit price is required when moving to Proposal.";
+  }
+  if (!form.currency.trim()) {
+    return "Currency is required when moving to Proposal.";
+  }
+  if (!form.forex.trim()) {
+    return "Forex is required when moving to Proposal.";
+  }
+  if (!form.incoterm.trim()) {
+    return "Incoterm is required when moving to Proposal.";
+  }
+  return null;
+}
+
+export function validateDealFormForTargetStage(
+  form: PipelineDealFormValues,
+  targetStage: string,
+): string | null {
+  if (!pipelineUpdateShowsCommercialForm(targetStage)) {
+    return null;
+  }
+  return validateDealFormForProposal(form);
+}
 
 export const SEVEN_PIPELINE_STAGES = [
   "Lead ID",

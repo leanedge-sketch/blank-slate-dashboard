@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
+import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
@@ -62,9 +63,12 @@ import {
   getEffectiveTargetStage,
   getNextPipelineStage,
   getUpdateStageOptions,
+  pipelineUpdateShowsCommercialForm,
+  pipelineToDealFormValues,
   PIPELINE_STAGE_COLORS,
   SEVEN_PIPELINE_STAGES,
-  STAGES_REQUIRING_BUSINESS_DETAILS,
+  validateDealFormForTargetStage,
+  type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
 
 // Stage colors mapping with enhanced colors
@@ -111,6 +115,9 @@ export function PipelineDetailPage() {
     reason_for_stage_change?: string;
     reason_for_amount_change?: string;
   }>({});
+  const [updateDealForm, setUpdateDealForm] = useState<PipelineDealFormValues | null>(
+    null,
+  );
   const [updating, setUpdating] = useState(false);
 
   const stageUpdateMap = useMemo(
@@ -434,9 +441,17 @@ export function PipelineDetailPage() {
     }
 
     const stageChanged = targetStage !== selectedPipeline.stage;
-    const amountChanged =
-      updateFormData.amount !== undefined &&
-      updateFormData.amount !== selectedPipeline.amount;
+    const dealForm =
+      updateDealForm ?? pipelineToDealFormValues(selectedPipeline);
+    const dealAmount =
+      dealForm.amount === "" || dealForm.amount === null
+        ? null
+        : Number(dealForm.amount);
+    const effectiveAmount = pipelineUpdateShowsCommercialForm(targetStage)
+      ? dealAmount
+      : updateFormData.amount;
+    const effectiveAmountChanged =
+      effectiveAmount !== undefined && effectiveAmount !== selectedPipeline.amount;
 
     if (stageChanged && !updateFormData.reason_for_stage_change?.trim()) {
       alert("Reason for stage change is required when stage changes");
@@ -454,16 +469,7 @@ export function PipelineDetailPage() {
       return;
     }
 
-    if (
-      amountChanged &&
-      amountChangeReasonRequired(selectedPipeline.stage, updateFormData.amount) &&
-      !updateFormData.reason_for_amount_change?.trim()
-    ) {
-      alert("Reason for amount change is required when amount changes");
-      return;
-    }
-
-    if (!stageChanged && !amountChanged) {
+    if (!stageChanged && !effectiveAmountChanged) {
       const next = getNextPipelineStage(selectedPipeline.stage);
       alert(
         next
@@ -473,39 +479,62 @@ export function PipelineDetailPage() {
       return;
     }
 
-    if (
-      stageChanged &&
-      STAGES_REQUIRING_BUSINESS_DETAILS.includes(
-        targetStage as (typeof STAGES_REQUIRING_BUSINESS_DETAILS)[number],
-      ) &&
-      (!selectedPipeline.business_model?.trim() ||
-        !selectedPipeline.unit?.trim() ||
-        selectedPipeline.unit_price == null ||
-        selectedPipeline.unit_price < 0)
-    ) {
-      alert(
-        "Validation and later stages need business model, unit, and unit price. " +
-          "Use Edit Pipeline to add them, then update the stage again.",
+    if (stageChanged) {
+      const commercialError = validateDealFormForTargetStage(
+        dealForm,
+        targetStage,
       );
+      if (commercialError) {
+        alert(commercialError);
+        return;
+      }
+    }
+
+    if (
+      effectiveAmountChanged &&
+      amountChangeReasonRequired(selectedPipeline.stage, effectiveAmount) &&
+      !updateFormData.reason_for_amount_change?.trim()
+    ) {
+      alert("Reason for amount change is required when amount changes");
       return;
     }
 
     try {
       setUpdating(true);
+      const metadata: Record<string, unknown> = {
+        ...(selectedPipeline.metadata || {}),
+      };
+      if (dealForm.vendor_name) metadata.vendor = dealForm.vendor_name;
+
+      const commercialPayload =
+        stageChanged && pipelineUpdateShowsCommercialForm(targetStage)
+          ? {
+              chemical_type_id: dealForm.chemical_type_id || null,
+              expected_close_date: dealForm.expected_close_date || null,
+              lead_source: dealForm.lead_source.trim() || null,
+              contact_per_lead: dealForm.contact_per_lead.trim() || null,
+              business_model: dealForm.business_model || null,
+              business_unit:
+                (dealForm.business_unit as SalesPipelineUpdate["business_unit"]) ||
+                null,
+              unit: dealForm.unit || null,
+              unit_price:
+                dealForm.unit_price === "" || dealForm.unit_price === null
+                  ? null
+                  : Number(dealForm.unit_price),
+              currency:
+                (dealForm.currency as SalesPipelineUpdate["currency"]) || null,
+              forex: (dealForm.forex as SalesPipelineUpdate["forex"]) || null,
+              incoterm:
+                (dealForm.incoterm as SalesPipelineUpdate["incoterm"]) || null,
+              metadata,
+            }
+          : {};
+
       const updateData: SalesPipelineUpdate = {
         ...(stageChanged ? { stage: targetStage } : {}),
-        ...(amountChanged ? { amount: updateFormData.amount } : {}),
-        ...(stageChanged &&
-        STAGES_REQUIRING_BUSINESS_DETAILS.includes(
-          targetStage as (typeof STAGES_REQUIRING_BUSINESS_DETAILS)[number],
-        )
-          ? {
-              business_model: selectedPipeline.business_model,
-              unit: selectedPipeline.unit,
-              unit_price: selectedPipeline.unit_price,
-              currency: selectedPipeline.currency,
-            }
-          : {}),
+        ...(effectiveAmountChanged ? { amount: effectiveAmount } : {}),
+        ...commercialPayload,
         close_reason:
           stageChanged && targetStage === "Closed"
             ? updateFormData.close_reason?.trim() || null
@@ -513,7 +542,7 @@ export function PipelineDetailPage() {
         reason_for_stage_change: stageChanged
           ? updateFormData.reason_for_stage_change
           : undefined,
-        reason_for_amount_change: amountChanged
+        reason_for_amount_change: effectiveAmountChanged
           ? updateFormData.reason_for_amount_change
           : undefined,
       };
@@ -521,6 +550,7 @@ export function PipelineDetailPage() {
       await updateSalesPipeline(selectedPipeline.id, updateData);
       setShowUpdateForm(false);
       setUpdateFormData({});
+      setUpdateDealForm(null);
       await loadPipelineDetails();
     } catch (err: unknown) {
       console.error("Error updating pipeline:", err);
@@ -708,6 +738,7 @@ export function PipelineDetailPage() {
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
                   });
+                  setUpdateDealForm(pipelineToDealFormValues(selectedPipeline));
                   setShowUpdateForm(true);
                 }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/30 hover:shadow-emerald-600/50"
@@ -1476,9 +1507,20 @@ export function PipelineDetailPage() {
       )}
 
       {/* Update Pipeline Modal */}
-      {showUpdateForm && selectedPipeline && (
+      {showUpdateForm && selectedPipeline && updateDealForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div
+            className={`bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto ${
+              pipelineUpdateShowsCommercialForm(
+                getEffectiveTargetStage(
+                  selectedPipeline.stage,
+                  updateFormData.stage,
+                ),
+              )
+                ? "max-w-3xl"
+                : "max-w-2xl"
+            }`}
+          >
             <div className="p-6 border-b border-slate-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
@@ -1489,6 +1531,7 @@ export function PipelineDetailPage() {
                   onClick={() => {
                     setShowUpdateForm(false);
                     setUpdateFormData({});
+                    setUpdateDealForm(null);
                   }}
                   className="text-slate-400 hover:text-slate-600 transition-colors"
                 >
@@ -1496,9 +1539,11 @@ export function PipelineDetailPage() {
                 </button>
               </div>
               <p className="text-sm text-slate-600 mt-2">
-                Change stage or quantity with audit reasons (creates a new version).
-                To update product, vendor, pricing, and other fields without a stage
-                change, use{" "}
+                Change stage with a reason (creates a new version). Through
+                Validation, nothing is required except the stage-change reason.
+                When you move to <strong>Proposal</strong>, complete the full
+                commercial form below (same as Edit Pipeline).
+                To edit without a stage change, use{" "}
                 <button
                   type="button"
                   onClick={() => {
@@ -1525,12 +1570,19 @@ export function PipelineDetailPage() {
                   updateFormData.amount,
                   selectedPipeline.amount,
                 );
+                const showFullCommercial =
+                  pipelineUpdateShowsCommercialForm(targetStageForForm);
+                const effectiveAmountForReason = showFullCommercial
+                  ? updateDealForm.amount === "" || updateDealForm.amount === null
+                    ? null
+                    : Number(updateDealForm.amount)
+                  : updateFormData.amount;
                 const showAmountReason =
-                  updateFormData.amount !== undefined &&
-                  updateFormData.amount !== selectedPipeline.amount &&
+                  effectiveAmountForReason !== undefined &&
+                  effectiveAmountForReason !== selectedPipeline.amount &&
                   amountChangeReasonRequired(
                     selectedPipeline.stage,
-                    updateFormData.amount,
+                    effectiveAmountForReason,
                   );
 
                 return (
@@ -1687,6 +1739,31 @@ export function PipelineDetailPage() {
                 )}
               </div>
 
+              {showFullCommercial && willAdvanceStage && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Commercial details <span className="text-red-500">*</span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    All fields are required when entering the Proposal stage.
+                  </p>
+                  <PipelineDealFields
+                    form={updateDealForm}
+                    onChange={(next) => {
+                      setUpdateDealForm(next);
+                      const amt =
+                        next.amount === "" || next.amount === null
+                          ? null
+                          : Number(next.amount);
+                      setUpdateFormData((prev) => ({ ...prev, amount: amt }));
+                    }}
+                    requiredLevel="full"
+                  />
+                </div>
+              )}
+
+              {!showFullCommercial && (
+                <>
               {/* Current Amount Display */}
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Amount</p>
@@ -1735,27 +1812,30 @@ export function PipelineDetailPage() {
                     0
                   </button>
                 </div>
-                {showAmountReason && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Reason for Amount Change <span className="text-red-500">*</span>
-                    </label>
-                    <textarea
-                      value={updateFormData.reason_for_amount_change || ""}
-                      onChange={(e) =>
-                        setUpdateFormData({
-                          ...updateFormData,
-                          reason_for_amount_change: e.target.value,
-                        })
-                      }
-                      required
-                      rows={3}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      placeholder="Explain why the amount is changing..."
-                    />
-                  </div>
-                )}
               </div>
+                </>
+              )}
+
+              {showAmountReason && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Reason for Amount Change <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={updateFormData.reason_for_amount_change || ""}
+                    onChange={(e) =>
+                      setUpdateFormData({
+                        ...updateFormData,
+                        reason_for_amount_change: e.target.value,
+                      })
+                    }
+                    required
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Explain why the amount is changing..."
+                  />
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
@@ -1764,6 +1844,7 @@ export function PipelineDetailPage() {
                   onClick={() => {
                     setShowUpdateForm(false);
                     setUpdateFormData({});
+                    setUpdateDealForm(null);
                   }}
                   className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
                 >

@@ -135,9 +135,8 @@ function deduplicatePipelines(rows: SalesPipeline[]): SalesPipeline[] {
   );
 }
 
-// Stages that require business_model, unit, and unit_price
+// Full commercial fields required from Proposal onward (not at Validation)
 const STAGES_REQUIRING_BUSINESS_DETAILS: PipelineStage[] = [
-  "Validation",
   "Proposal",
   "Confirmation",
   "Closed",

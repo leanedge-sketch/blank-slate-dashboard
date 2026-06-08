@@ -22,7 +22,7 @@ from app.models.sales_pipeline import (
     PipelineForecast,
     PipelineInsights,
     PIPELINE_STAGES,
-    STAGES_REQUIRING_BUSINESS_DETAILS,
+    STAGES_REQUIRING_FULL_COMMERCIAL,
 )
 from app.services.ai_service import gemini_chat, gemini_embed, GeminiError, log_conversation_to_rag
 from app.models.crm import InteractionCreate
@@ -584,6 +584,15 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     return SalesPipeline(**row)
 
 
+def _vendor_from_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not metadata:
+        return None
+    vendor = metadata.get("vendor") or metadata.get("vendor_name")
+    if vendor and str(vendor).strip():
+        return str(vendor).strip()
+    return None
+
+
 def validate_pipeline_stage_requirements(
     *,
     stage: str,
@@ -591,23 +600,60 @@ def validate_pipeline_stage_requirements(
     unit: Optional[str],
     unit_price: Optional[float],
     close_reason: Optional[str] = None,
+    currency: Optional[str] = None,
+    forex: Optional[str] = None,
+    business_unit: Optional[str] = None,
+    incoterm: Optional[str] = None,
+    chemical_type_id: Optional[str] = None,
+    expected_close_date: Optional[date] = None,
+    amount: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Validate business fields for Validation+ and close_reason for Closed."""
-    if stage in STAGES_REQUIRING_BUSINESS_DETAILS:
+    """Validate full commercial fields at Proposal+ and close_reason for Closed."""
+    if stage in STAGES_REQUIRING_FULL_COMMERCIAL:
+        if not chemical_type_id:
+            raise ValueError(
+                "Product is required before moving to Proposal or later."
+            )
+        if not _vendor_from_metadata(metadata):
+            raise ValueError(
+                "Vendor is required before moving to Proposal or later."
+            )
+        if not expected_close_date:
+            raise ValueError(
+                "expected_close_date is required before moving to Proposal or later."
+            )
         if not business_model or not str(business_model).strip():
             raise ValueError(
-                "business_model is required before moving to Validation or later. "
-                "Use Edit Pipeline to add business model, unit, and unit price."
+                "business_model is required before moving to Proposal or later."
+            )
+        if not business_unit or not str(business_unit).strip():
+            raise ValueError(
+                "business_unit is required before moving to Proposal or later."
             )
         if not unit or not str(unit).strip():
             raise ValueError(
-                "unit is required before moving to Validation or later. "
-                "Use Edit Pipeline to add business model, unit, and unit price."
+                "unit is required before moving to Proposal or later."
+            )
+        if amount is None or amount < 0:
+            raise ValueError(
+                "amount is required before moving to Proposal or later."
             )
         if unit_price is None or unit_price < 0:
             raise ValueError(
-                "unit_price is required before moving to Validation or later. "
-                "Use Edit Pipeline to add business model, unit, and unit price."
+                "unit_price is required before moving to Proposal or later."
+            )
+        if not currency or not str(currency).strip():
+            raise ValueError(
+                "currency is required before moving to Proposal or later."
+            )
+        if not forex or not str(forex).strip():
+            raise ValueError(
+                "forex is required before moving to Proposal or later."
+            )
+        if not incoterm or not str(incoterm).strip():
+            raise ValueError(
+                "incoterm is required before moving to Proposal or later."
             )
     if stage == "Closed":
         if not close_reason or not str(close_reason).strip():
@@ -728,12 +774,26 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         merged_unit = update_data.get("unit", existing.unit)
         merged_unit_price = update_data.get("unit_price", existing.unit_price)
         merged_close_reason = update_data.get("close_reason", existing.close_reason)
+        merged_metadata = update_data.get("metadata", existing.metadata)
         validate_pipeline_stage_requirements(
             stage=merged_stage,
             business_model=merged_business_model,
             unit=merged_unit,
             unit_price=merged_unit_price,
             close_reason=merged_close_reason,
+            currency=update_data.get("currency", existing.currency),
+            forex=update_data.get("forex", existing.forex),
+            business_unit=update_data.get("business_unit", existing.business_unit),
+            incoterm=update_data.get("incoterm", existing.incoterm),
+            chemical_type_id=str(
+                update_data.get("chemical_type_id", existing.chemical_type_id) or ""
+            )
+            or None,
+            expected_close_date=update_data.get(
+                "expected_close_date", existing.expected_close_date
+            ),
+            amount=update_data.get("amount", existing.amount),
+            metadata=merged_metadata,
         )
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
