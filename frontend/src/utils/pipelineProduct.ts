@@ -62,18 +62,50 @@ export const SEVEN_PIPELINE_STAGES = [
   "Closed",
 ] as const;
 
+export type SevenPipelineStage = (typeof SEVEN_PIPELINE_STAGES)[number];
+
+export const PIPELINE_STAGE_ORDER = [
+  ...SEVEN_PIPELINE_STAGES,
+  "Lost",
+] as const;
+
+export function pipelineStageIndex(stage: string): number {
+  return SEVEN_PIPELINE_STAGES.indexOf(stage as SevenPipelineStage);
+}
+
+/** Next sequential stage, or null if already at Closed / unknown. */
+export function getNextPipelineStage(stage: string): SevenPipelineStage | null {
+  const idx = pipelineStageIndex(stage);
+  if (idx < 0 || idx >= SEVEN_PIPELINE_STAGES.length - 1) return null;
+  return SEVEN_PIPELINE_STAGES[idx + 1];
+}
+
+export type UpdateStageOption = {
+  stage: SevenPipelineStage | "Lost";
+  hint: string;
+};
+
+/** All seven stages except current, plus Lost. Next stage is marked recommended. */
+export function getUpdateStageOptions(current: string): UpdateStageOption[] {
+  const next = getNextPipelineStage(current);
+  const options: UpdateStageOption[] = SEVEN_PIPELINE_STAGES.filter(
+    (s) => s !== current,
+  ).map((stage) => ({
+    stage,
+    hint:
+      stage === next
+        ? " (Recommended — next stage)"
+        : stage === "Closed"
+          ? " (Close deal)"
+          : "",
+  }));
+  if (current !== "Lost") {
+    options.push({ stage: "Lost", hint: " (Deal lost)" });
+  }
+  return options;
+}
+
 /** Amount change reason is optional while the deal is at Discovery. */
 export function amountChangeReasonRequired(currentStage: string): boolean {
   return currentStage !== "Discovery";
 }
-
-export const PIPELINE_STAGE_ORDER = [
-  "Lead ID",
-  "Discovery",
-  "Sample",
-  "Validation",
-  "Proposal",
-  "Confirmation",
-  "Closed",
-  "Lost",
-] as const;

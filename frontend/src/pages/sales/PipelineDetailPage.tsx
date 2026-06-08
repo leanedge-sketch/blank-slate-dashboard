@@ -53,86 +53,21 @@ import {
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
-import { amountChangeReasonRequired } from "../../utils/pipelineProduct";
+import {
+  amountChangeReasonRequired,
+  getNextPipelineStage,
+  getUpdateStageOptions,
+  PIPELINE_STAGE_COLORS,
+  SEVEN_PIPELINE_STAGES,
+} from "../../utils/pipelineProduct";
 
 // Stage colors mapping with enhanced colors
 const STAGE_COLORS: Record<PipelineStage, string> = {
-  "Lead ID": "bg-slate-100 text-slate-700 border-slate-300",
-  "Discovery": "bg-blue-100 text-blue-700 border-blue-300",
-  "Sample": "bg-yellow-100 text-yellow-700 border-yellow-300",
-  "Validation": "bg-orange-100 text-orange-700 border-orange-300",
-  "Proposal": "bg-indigo-100 text-indigo-700 border-indigo-300",
-  "Confirmation": "bg-green-100 text-green-700 border-green-300",
-  "Closed": "bg-emerald-500 text-white border-emerald-600",
-  "Lost": "bg-red-500 text-white border-red-600",
+  ...(PIPELINE_STAGE_COLORS as Record<PipelineStage, string>),
+  Lost: "bg-red-500 text-white border-red-600",
 };
 
-// Sequential progression (Lost / early Closed are special jumps in the update modal)
-const SEQUENTIAL_STAGES: PipelineStage[] = [
-  "Lead ID",
-  "Discovery",
-  "Sample",
-  "Validation",
-  "Proposal",
-  "Confirmation",
-  "Closed",
-];
-
-/** Progress UI (excludes Lost). */
-const STAGE_ORDER = SEQUENTIAL_STAGES;
-
-type StageOptionHint = { stage: PipelineStage; hint: string };
-
-/** Sample and later: pick any of the seven main stages. */
-function usesFullStageDropdown(current: PipelineStage): boolean {
-  const sampleIdx = SEQUENTIAL_STAGES.indexOf("Sample");
-  const idx = SEQUENTIAL_STAGES.indexOf(current);
-  return idx >= sampleIdx && sampleIdx >= 0;
-}
-
-function getUpdateStageOptions(current: PipelineStage): StageOptionHint[] {
-  if (usesFullStageDropdown(current)) {
-    const options: StageOptionHint[] = [];
-    for (const stage of SEQUENTIAL_STAGES) {
-      if (stage !== current) {
-        const nextIdx = SEQUENTIAL_STAGES.indexOf(current) + 1;
-        const stageIdx = SEQUENTIAL_STAGES.indexOf(stage);
-        const hint =
-          stageIdx === nextIdx
-            ? " (Next sequential)"
-            : stage === "Closed"
-              ? " (Closed deal)"
-              : "";
-        options.push({ stage, hint });
-      }
-    }
-    if (current !== "Lost") {
-      options.push({ stage: "Lost", hint: " (Deal lost)" });
-    }
-    return options;
-  }
-
-  const options: StageOptionHint[] = [];
-  const idx = SEQUENTIAL_STAGES.indexOf(current);
-
-  if (idx >= 0 && idx < SEQUENTIAL_STAGES.length - 1) {
-    const next = SEQUENTIAL_STAGES[idx + 1];
-    options.push({ stage: next, hint: " (Next sequential)" });
-  }
-
-  if (current !== "Closed") {
-    options.push({
-      stage: "Closed",
-      hint: " (Closed deal — client paid / took product)",
-    });
-  }
-
-  if (current !== "Lost") {
-    options.push({ stage: "Lost", hint: " (Deal lost)" });
-  }
-
-  return options;
-}
+const STAGE_ORDER = [...SEVEN_PIPELINE_STAGES];
 
 export function PipelineDetailPage() {
   const { pipelineId } = useParams<{ pipelineId: string }>();
@@ -475,8 +410,22 @@ export function PipelineDetailPage() {
     e.preventDefault();
     if (!selectedPipeline) return;
 
-    const stageChanged = updateFormData.stage && updateFormData.stage !== selectedPipeline.stage;
-    const amountChanged = updateFormData.amount !== undefined && updateFormData.amount !== selectedPipeline.amount;
+    let targetStage =
+      (updateFormData.stage as PipelineStage | undefined) ??
+      selectedPipeline.stage;
+
+    // Default: advance to the next sequential stage when still on current
+    if (targetStage === selectedPipeline.stage) {
+      const next = getNextPipelineStage(selectedPipeline.stage);
+      if (next) {
+        targetStage = next;
+      }
+    }
+
+    const stageChanged = targetStage !== selectedPipeline.stage;
+    const amountChanged =
+      updateFormData.amount !== undefined &&
+      updateFormData.amount !== selectedPipeline.amount;
 
     if (stageChanged && !updateFormData.reason_for_stage_change?.trim()) {
       alert("Reason for stage change is required when stage changes");
@@ -485,7 +434,7 @@ export function PipelineDetailPage() {
 
     if (
       stageChanged &&
-      updateFormData.stage === "Closed" &&
+      targetStage === "Closed" &&
       !updateFormData.close_reason?.trim()
     ) {
       alert(
@@ -504,27 +453,35 @@ export function PipelineDetailPage() {
     }
 
     if (!stageChanged && !amountChanged) {
-      alert("Please change either stage or amount to update the pipeline");
+      const next = getNextPipelineStage(selectedPipeline.stage);
+      alert(
+        next
+          ? "Select the next stage or change the amount to update this pipeline."
+          : "This deal is already at the final stage. Change the amount to update, or mark as Lost.",
+      );
       return;
     }
 
     try {
       setUpdating(true);
       const updateData: SalesPipelineUpdate = {
-        stage: updateFormData.stage,
+        stage: stageChanged ? targetStage : undefined,
         amount: updateFormData.amount,
         close_reason:
-          stageChanged && updateFormData.stage === "Closed"
+          stageChanged && targetStage === "Closed"
             ? updateFormData.close_reason?.trim() || null
             : undefined,
-        reason_for_stage_change: stageChanged ? updateFormData.reason_for_stage_change : null,
-        reason_for_amount_change: amountChanged ? updateFormData.reason_for_amount_change : null,
+        reason_for_stage_change: stageChanged
+          ? updateFormData.reason_for_stage_change
+          : null,
+        reason_for_amount_change: amountChanged
+          ? updateFormData.reason_for_amount_change
+          : null,
       };
 
       await updateSalesPipeline(selectedPipeline.id, updateData);
       setShowUpdateForm(false);
       setUpdateFormData({});
-      // Reload pipeline details to show new version
       await loadPipelineDetails();
     } catch (err: any) {
       console.error("Error updating pipeline:", err);
@@ -705,8 +662,9 @@ export function PipelineDetailPage() {
               </button>
               <button
                 onClick={() => {
+                  const next = getNextPipelineStage(selectedPipeline.stage);
                   setUpdateFormData({
-                    stage: selectedPipeline.stage,
+                    stage: (next ?? selectedPipeline.stage) as PipelineStage,
                     amount: selectedPipeline.amount || null,
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
@@ -1554,13 +1512,67 @@ export function PipelineDetailPage() {
                 </span>
               </div>
 
-              {/* Stage Selection */}
+              {/* All seven stages — current, next, and pick target */}
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-3">
+                  Pipeline stages
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+                  {SEVEN_PIPELINE_STAGES.map((stage) => {
+                    const currentIdx = STAGE_ORDER.indexOf(selectedPipeline.stage);
+                    const stageIdx = STAGE_ORDER.indexOf(stage);
+                    const isCurrent = selectedPipeline.stage === stage;
+                    const isPast = currentIdx >= 0 && stageIdx < currentIdx;
+                    const isSelected =
+                      (updateFormData.stage || selectedPipeline.stage) === stage;
+                    const isNext =
+                      getNextPipelineStage(selectedPipeline.stage) === stage;
+                    return (
+                      <button
+                        key={stage}
+                        type="button"
+                        disabled={isCurrent}
+                        onClick={() =>
+                          setUpdateFormData({
+                            ...updateFormData,
+                            stage: stage as PipelineStage,
+                          })
+                        }
+                        className={`rounded-lg border-2 px-2 py-2 text-xs font-semibold text-center transition-all ${
+                          isCurrent
+                            ? "border-emerald-600 bg-emerald-50 text-emerald-800 cursor-default ring-2 ring-emerald-400"
+                            : isSelected
+                              ? "border-blue-600 bg-blue-50 text-blue-900 ring-2 ring-blue-400"
+                              : isPast
+                                ? "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-emerald-400 hover:bg-emerald-50/50"
+                        }`}
+                      >
+                        {stage}
+                        {isCurrent && (
+                          <span className="block text-[10px] font-normal mt-0.5">
+                            Current
+                          </span>
+                        )}
+                        {isNext && !isCurrent && (
+                          <span className="block text-[10px] font-normal text-emerald-700 mt-0.5">
+                            Next
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  New Stage <span className="text-red-500">*</span>
+                  Move to stage <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={updateFormData.stage || selectedPipeline.stage}
+                  value={
+                    updateFormData.stage ||
+                    getNextPipelineStage(selectedPipeline.stage) ||
+                    selectedPipeline.stage
+                  }
                   onChange={(e) =>
                     setUpdateFormData({
                       ...updateFormData,
@@ -1569,32 +1581,32 @@ export function PipelineDetailPage() {
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value={selectedPipeline.stage}>
-                    {selectedPipeline.stage} (Current)
-                  </option>
-                  {getUpdateStageOptions(selectedPipeline.stage).map(
-                    ({ stage, hint }) => (
+                  {getNextPipelineStage(selectedPipeline.stage) && (
+                    <option
+                      value={getNextPipelineStage(selectedPipeline.stage)!}
+                    >
+                      {getNextPipelineStage(selectedPipeline.stage)} (Next — recommended)
+                    </option>
+                  )}
+                  {getUpdateStageOptions(selectedPipeline.stage)
+                    .filter(
+                      ({ stage }) =>
+                        stage !== getNextPipelineStage(selectedPipeline.stage),
+                    )
+                    .map(({ stage, hint }) => (
                       <option key={stage} value={stage}>
                         {stage}
                         {hint}
                       </option>
-                    ),
-                  )}
+                    ))}
                 </select>
                 <p className="text-xs text-slate-500 mt-2">
-                  {usesFullStageDropdown(selectedPipeline.stage) ? (
-                    <>
-                      Choose any of the seven pipeline stages, or mark{" "}
-                      <strong>Lost</strong>.
-                    </>
-                  ) : (
-                    <>
-                      Move one step forward, mark as <strong>Closed</strong> when the
-                      client pays, or mark <strong>Lost</strong>.
-                    </>
-                  )}
+                  Updates advance the deal one stage at a time. The next stage is
+                  pre-selected; you can also jump ahead, close, or mark{" "}
+                  <strong>Lost</strong>.
                 </p>
-                {updateFormData.stage && updateFormData.stage !== selectedPipeline.stage && (
+                {updateFormData.stage &&
+                  updateFormData.stage !== selectedPipeline.stage && (
                   <div className="mt-3 space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">
