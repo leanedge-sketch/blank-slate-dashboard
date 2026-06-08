@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   fetchSalesPipelineById,
@@ -53,8 +53,10 @@ import {
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
+import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import {
   amountChangeReasonRequired,
+  buildPipelineStageUpdateMap,
   getNextPipelineStage,
   getUpdateStageOptions,
   PIPELINE_STAGE_COLORS,
@@ -106,6 +108,11 @@ export function PipelineDetailPage() {
     reason_for_amount_change?: string;
   }>({});
   const [updating, setUpdating] = useState(false);
+
+  const stageUpdateMap = useMemo(
+    () => buildPipelineStageUpdateMap(pipelineVersions),
+    [pipelineVersions],
+  );
 
   useEffect(() => {
     api
@@ -790,20 +797,7 @@ export function PipelineDetailPage() {
                           const isLatestReached = latestStageReached === stage;
                           const isViewing = viewingStage === stage;
                           const isPast = STAGE_ORDER.indexOf(latestStageReached) > index;
-                          
-                          // Check if this stage was changed (moved to) in version history
-                          const wasChanged = (() => {
-                            if (pipelineVersions.length <= 1) return false;
-                            // Find if any version moved to this stage
-                            for (let i = 1; i < pipelineVersions.length; i++) {
-                              const version = pipelineVersions[i];
-                              const prevVersion = pipelineVersions[i - 1];
-                              if (version.stage === stage && prevVersion.stage !== stage && version.reason_for_stage_change) {
-                                return true;
-                              }
-                            }
-                            return false;
-                          })();
+                          const stageUpdates = stageUpdateMap[stage] ?? [];
                           
                           return (
                             <div key={stage} className="relative flex items-start gap-4">
@@ -845,13 +839,12 @@ export function PipelineDetailPage() {
                                     </span>
                                   )}
                                 </div>
-                                {wasChanged && (
-                                  <div className="mt-2">
-                                    <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                                      CHANGED
-                                    </span>
-                                  </div>
-                                )}
+                                <PipelineStageUpdateList
+                                  updates={stageUpdates}
+                                  onSelectVersion={(versionId) =>
+                                    navigate(`/sales/pipeline/${versionId}`)
+                                  }
+                                />
                               </div>
                             </div>
                           );
@@ -877,24 +870,12 @@ export function PipelineDetailPage() {
                                   </span>
                                 )}
                               </div>
-                              {/* Check if Lost was changed to */}
-                              {(() => {
-                                if (pipelineVersions.length <= 1) return null;
-                                for (let i = 1; i < pipelineVersions.length; i++) {
-                                  const version = pipelineVersions[i];
-                                  const prevVersion = pipelineVersions[i - 1];
-                                  if (version.stage === "Lost" && prevVersion.stage !== "Lost" && version.reason_for_stage_change) {
-                                    return (
-                                      <div className="mt-2">
-                                        <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                                          CHANGED
-                                        </span>
-                                      </div>
-                                    );
-                                  }
+                              <PipelineStageUpdateList
+                                updates={stageUpdateMap["Lost"] ?? []}
+                                onSelectVersion={(versionId) =>
+                                  navigate(`/sales/pipeline/${versionId}`)
                                 }
-                                return null;
-                              })()}
+                              />
                             </div>
                           </div>
                         )}

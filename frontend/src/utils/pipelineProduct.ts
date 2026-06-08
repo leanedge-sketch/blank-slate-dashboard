@@ -109,3 +109,86 @@ export function getUpdateStageOptions(current: string): UpdateStageOption[] {
 export function amountChangeReasonRequired(currentStage: string): boolean {
   return currentStage !== "Discovery";
 }
+
+export type PipelineStageUpdateEntry = {
+  versionNumber: number;
+  versionId: string;
+  createdAt: string | null;
+  fromStage?: string;
+  stage: string;
+  stageChanged: boolean;
+  amountChanged: boolean;
+  stageChangeReason?: string | null;
+  amount?: number | null;
+  previousAmount?: number | null;
+  unit?: string | null;
+  amountChangeReason?: string | null;
+  isInitial?: boolean;
+  closeReason?: string | null;
+};
+
+export function sortPipelineVersions(versions: SalesPipeline[]): SalesPipeline[] {
+  return [...versions].sort((a, b) => {
+    const va = a.version_number ?? 0;
+    const vb = b.version_number ?? 0;
+    if (va !== vb) return va - vb;
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return ta - tb;
+  });
+}
+
+/** Group version history into per-stage update lists (Lead ID through Lost). */
+export function buildPipelineStageUpdateMap(
+  versions: SalesPipeline[],
+): Record<string, PipelineStageUpdateEntry[]> {
+  const result: Record<string, PipelineStageUpdateEntry[]> = {};
+  const add = (stage: string, entry: PipelineStageUpdateEntry) => {
+    if (!result[stage]) result[stage] = [];
+    result[stage].push(entry);
+  };
+
+  const sorted = sortPipelineVersions(versions);
+  for (let i = 0; i < sorted.length; i++) {
+    const version = sorted[i];
+    const prev = i > 0 ? sorted[i - 1] : null;
+    const stage = version.stage;
+    const stageChanged = !prev || prev.stage !== version.stage;
+    const amountChanged = !!prev && prev.amount !== version.amount;
+
+    if (i === 0) {
+      add(stage, {
+        versionNumber: version.version_number ?? 1,
+        versionId: version.id,
+        createdAt: version.created_at ?? null,
+        stage,
+        stageChanged: false,
+        amountChanged: false,
+        amount: version.amount ?? null,
+        unit: version.unit ?? null,
+        isInitial: true,
+      });
+      continue;
+    }
+
+    if (stageChanged || amountChanged) {
+      add(stage, {
+        versionNumber: version.version_number ?? i + 1,
+        versionId: version.id,
+        createdAt: version.created_at ?? null,
+        fromStage: prev?.stage,
+        stage,
+        stageChanged,
+        amountChanged,
+        stageChangeReason: version.reason_for_stage_change,
+        amount: version.amount ?? null,
+        previousAmount: prev?.amount ?? null,
+        unit: version.unit ?? null,
+        amountChangeReason: version.reason_for_amount_change,
+        closeReason: version.close_reason ?? null,
+      });
+    }
+  }
+
+  return result;
+}
