@@ -293,7 +293,7 @@ async def update_pipeline(
     try:
         return update_sales_pipeline(pipeline_id, body)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating pipeline: {str(e)}")
 

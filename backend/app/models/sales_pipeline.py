@@ -222,26 +222,6 @@ class SalesPipelineUpdate(BaseModel):
             )
         return v
 
-    @model_validator(mode="after")
-    def validate_business_details_for_validation_plus(self):
-        """Validate that business_model, unit, and unit_price are provided for Validation+ stages."""
-        if self.stage in STAGES_REQUIRING_BUSINESS_DETAILS:
-            if not self.business_model or not self.business_model.strip():
-                raise ValueError("business_model is required for stages: Validation, Proposal, Confirmation, Closed")
-            if not self.unit or not self.unit.strip():
-                raise ValueError("unit is required for stages: Validation, Proposal, Confirmation, Closed")
-            if self.unit_price is None or self.unit_price < 0:
-                raise ValueError("unit_price is required and must be >= 0 for stages: Validation, Proposal, Confirmation, Closed")
-        return self
-
-    @model_validator(mode="after")
-    def validate_close_reason_for_closed(self):
-        """Validate that close_reason is provided when stage is Closed."""
-        if self.stage == "Closed" and (not self.close_reason or not self.close_reason.strip()):
-            raise ValueError("close_reason is required when stage is 'Closed'")
-        return self
-
-
 class SalesPipeline(SalesPipelineBase):
     """Full sales pipeline model with id and timestamps."""
     id: UUID

@@ -52,6 +52,13 @@ export const PIPELINE_STAGE_COLORS: Record<string, string> = {
 };
 
 /** Seven main pipeline stages (excludes Lost). */
+export const STAGES_REQUIRING_BUSINESS_DETAILS = [
+  "Validation",
+  "Proposal",
+  "Confirmation",
+  "Closed",
+] as const;
+
 export const SEVEN_PIPELINE_STAGES = [
   "Lead ID",
   "Discovery",

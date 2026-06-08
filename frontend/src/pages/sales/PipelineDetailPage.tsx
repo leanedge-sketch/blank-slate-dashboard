@@ -54,6 +54,7 @@ import {
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
+import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
   buildPipelineStageUpdateMap,
@@ -63,6 +64,7 @@ import {
   getUpdateStageOptions,
   PIPELINE_STAGE_COLORS,
   SEVEN_PIPELINE_STAGES,
+  STAGES_REQUIRING_BUSINESS_DETAILS,
 } from "../../utils/pipelineProduct";
 
 // Stage colors mapping with enhanced colors
@@ -471,30 +473,58 @@ export function PipelineDetailPage() {
       return;
     }
 
+    if (
+      stageChanged &&
+      STAGES_REQUIRING_BUSINESS_DETAILS.includes(
+        targetStage as (typeof STAGES_REQUIRING_BUSINESS_DETAILS)[number],
+      ) &&
+      (!selectedPipeline.business_model?.trim() ||
+        !selectedPipeline.unit?.trim() ||
+        selectedPipeline.unit_price == null ||
+        selectedPipeline.unit_price < 0)
+    ) {
+      alert(
+        "Validation and later stages need business model, unit, and unit price. " +
+          "Use Edit Pipeline to add them, then update the stage again.",
+      );
+      return;
+    }
+
     try {
       setUpdating(true);
       const updateData: SalesPipelineUpdate = {
-        stage: stageChanged ? targetStage : undefined,
-        amount: updateFormData.amount,
+        ...(stageChanged ? { stage: targetStage } : {}),
+        ...(amountChanged ? { amount: updateFormData.amount } : {}),
+        ...(stageChanged &&
+        STAGES_REQUIRING_BUSINESS_DETAILS.includes(
+          targetStage as (typeof STAGES_REQUIRING_BUSINESS_DETAILS)[number],
+        )
+          ? {
+              business_model: selectedPipeline.business_model,
+              unit: selectedPipeline.unit,
+              unit_price: selectedPipeline.unit_price,
+              currency: selectedPipeline.currency,
+            }
+          : {}),
         close_reason:
           stageChanged && targetStage === "Closed"
             ? updateFormData.close_reason?.trim() || null
             : undefined,
         reason_for_stage_change: stageChanged
           ? updateFormData.reason_for_stage_change
-          : null,
+          : undefined,
         reason_for_amount_change: amountChanged
           ? updateFormData.reason_for_amount_change
-          : null,
+          : undefined,
       };
 
       await updateSalesPipeline(selectedPipeline.id, updateData);
       setShowUpdateForm(false);
       setUpdateFormData({});
       await loadPipelineDetails();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating pipeline:", err);
-      alert(err?.response?.data?.detail ?? err?.message ?? "Failed to update pipeline");
+      alert(formatApiErrorDetail(err, "Failed to update pipeline"));
     } finally {
       setUpdating(false);
     }
@@ -674,7 +704,7 @@ export function PipelineDetailPage() {
                   const next = getNextPipelineStage(selectedPipeline.stage);
                   setUpdateFormData({
                     stage: (next ?? selectedPipeline.stage) as PipelineStage,
-                    amount: selectedPipeline.amount || null,
+                    amount: selectedPipeline.amount ?? null,
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
                   });

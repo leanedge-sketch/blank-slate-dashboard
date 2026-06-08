@@ -22,6 +22,7 @@ from app.models.sales_pipeline import (
     PipelineForecast,
     PipelineInsights,
     PIPELINE_STAGES,
+    STAGES_REQUIRING_BUSINESS_DETAILS,
 )
 from app.services.ai_service import gemini_chat, gemini_embed, GeminiError, log_conversation_to_rag
 from app.models.crm import InteractionCreate
@@ -583,6 +584,38 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     return SalesPipeline(**row)
 
 
+def validate_pipeline_stage_requirements(
+    *,
+    stage: str,
+    business_model: Optional[str],
+    unit: Optional[str],
+    unit_price: Optional[float],
+    close_reason: Optional[str] = None,
+) -> None:
+    """Validate business fields for Validation+ and close_reason for Closed."""
+    if stage in STAGES_REQUIRING_BUSINESS_DETAILS:
+        if not business_model or not str(business_model).strip():
+            raise ValueError(
+                "business_model is required before moving to Validation or later. "
+                "Use Edit Pipeline to add business model, unit, and unit price."
+            )
+        if not unit or not str(unit).strip():
+            raise ValueError(
+                "unit is required before moving to Validation or later. "
+                "Use Edit Pipeline to add business model, unit, and unit price."
+            )
+        if unit_price is None or unit_price < 0:
+            raise ValueError(
+                "unit_price is required before moving to Validation or later. "
+                "Use Edit Pipeline to add business model, unit, and unit price."
+            )
+    if stage == "Closed":
+        if not close_reason or not str(close_reason).strip():
+            raise ValueError(
+                "close_reason is required when stage is Closed (deal won)"
+            )
+
+
 def validate_stage_progression(old_stage: str, new_stage: str, reason: Optional[str]) -> None:
     """
     Validate that stage progression is valid and reason is provided when needed.
@@ -690,12 +723,18 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         validate_stage_progression(existing.stage, update_data["stage"], reason)
         if not reason or not reason.strip():
             raise ValueError("reason_for_stage_change is required when stage changes")
-        if update_data["stage"] == "Closed":
-            close_reason = update_data.get("close_reason")
-            if not close_reason or not str(close_reason).strip():
-                raise ValueError(
-                    "close_reason is required when stage is Closed (deal won)"
-                )
+        merged_stage = update_data["stage"]
+        merged_business_model = update_data.get("business_model", existing.business_model)
+        merged_unit = update_data.get("unit", existing.unit)
+        merged_unit_price = update_data.get("unit_price", existing.unit_price)
+        merged_close_reason = update_data.get("close_reason", existing.close_reason)
+        validate_pipeline_stage_requirements(
+            stage=merged_stage,
+            business_model=merged_business_model,
+            unit=merged_unit,
+            unit_price=merged_unit_price,
+            close_reason=merged_close_reason,
+        )
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
     if amount_changed:
