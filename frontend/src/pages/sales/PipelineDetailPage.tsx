@@ -67,6 +67,7 @@ import {
   pipelineToDealFormValues,
   PIPELINE_STAGE_COLORS,
   SEVEN_PIPELINE_STAGES,
+  buildPipelineCommercialUpdatePayload,
   validateDealFormForTargetStage,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
@@ -123,6 +124,11 @@ export function PipelineDetailPage() {
   const stageUpdateMap = useMemo(
     () => buildPipelineStageUpdateMap(pipelineVersions),
     [pipelineVersions],
+  );
+
+  const currentPipeline = useMemo(
+    () => pipelineVersions.find((v) => v.is_current_version) ?? selectedPipeline,
+    [pipelineVersions, selectedPipeline],
   );
 
   useEffect(() => {
@@ -426,32 +432,35 @@ export function PipelineDetailPage() {
 
   async function handleUpdatePipeline(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedPipeline) return;
+    if (!selectedPipeline || !currentPipeline) return;
 
     let targetStage =
       (updateFormData.stage as PipelineStage | undefined) ??
-      selectedPipeline.stage;
+      currentPipeline.stage;
 
     // Default: advance to the next sequential stage when still on current
-    if (targetStage === selectedPipeline.stage) {
-      const next = getNextPipelineStage(selectedPipeline.stage);
+    if (targetStage === currentPipeline.stage) {
+      const next = getNextPipelineStage(currentPipeline.stage);
       if (next) {
         targetStage = next;
       }
     }
 
-    const stageChanged = targetStage !== selectedPipeline.stage;
+    const stageChanged = targetStage !== currentPipeline.stage;
     const dealForm =
-      updateDealForm ?? pipelineToDealFormValues(selectedPipeline);
+      updateDealForm ?? pipelineToDealFormValues(currentPipeline);
+    const showCommercial = pipelineUpdateShowsCommercialForm(
+      targetStage,
+      dealForm,
+    );
     const dealAmount =
       dealForm.amount === "" || dealForm.amount === null
         ? null
         : Number(dealForm.amount);
-    const effectiveAmount = pipelineUpdateShowsCommercialForm(targetStage)
-      ? dealAmount
-      : updateFormData.amount;
+    const effectiveAmount = showCommercial ? dealAmount : updateFormData.amount;
     const effectiveAmountChanged =
-      effectiveAmount !== undefined && effectiveAmount !== selectedPipeline.amount;
+      effectiveAmount !== undefined &&
+      effectiveAmount !== currentPipeline.amount;
 
     if (stageChanged && !updateFormData.reason_for_stage_change?.trim()) {
       alert("Reason for stage change is required when stage changes");
@@ -470,7 +479,7 @@ export function PipelineDetailPage() {
     }
 
     if (!stageChanged && !effectiveAmountChanged) {
-      const next = getNextPipelineStage(selectedPipeline.stage);
+      const next = getNextPipelineStage(currentPipeline.stage);
       alert(
         next
           ? "Select the next stage or change the amount to update this pipeline."
@@ -492,7 +501,7 @@ export function PipelineDetailPage() {
 
     if (
       effectiveAmountChanged &&
-      amountChangeReasonRequired(selectedPipeline.stage, effectiveAmount) &&
+      amountChangeReasonRequired(currentPipeline.stage, effectiveAmount) &&
       !updateFormData.reason_for_amount_change?.trim()
     ) {
       alert("Reason for amount change is required when amount changes");
@@ -501,34 +510,12 @@ export function PipelineDetailPage() {
 
     try {
       setUpdating(true);
-      const metadata: Record<string, unknown> = {
-        ...(selectedPipeline.metadata || {}),
-      };
-      if (dealForm.vendor_name) metadata.vendor = dealForm.vendor_name;
-
       const commercialPayload =
-        stageChanged && pipelineUpdateShowsCommercialForm(targetStage)
-          ? {
-              chemical_type_id: dealForm.chemical_type_id || null,
-              expected_close_date: dealForm.expected_close_date || null,
-              lead_source: dealForm.lead_source.trim() || null,
-              contact_per_lead: dealForm.contact_per_lead.trim() || null,
-              business_model: dealForm.business_model || null,
-              business_unit:
-                (dealForm.business_unit as SalesPipelineUpdate["business_unit"]) ||
-                null,
-              unit: dealForm.unit || null,
-              unit_price:
-                dealForm.unit_price === "" || dealForm.unit_price === null
-                  ? null
-                  : Number(dealForm.unit_price),
-              currency:
-                (dealForm.currency as SalesPipelineUpdate["currency"]) || null,
-              forex: (dealForm.forex as SalesPipelineUpdate["forex"]) || null,
-              incoterm:
-                (dealForm.incoterm as SalesPipelineUpdate["incoterm"]) || null,
-              metadata,
-            }
+        stageChanged && showCommercial
+          ? (buildPipelineCommercialUpdatePayload(
+              dealForm,
+              (currentPipeline.metadata || {}) as Record<string, unknown>,
+            ) as SalesPipelineUpdate)
           : {};
 
       const updateData: SalesPipelineUpdate = {
@@ -547,11 +534,15 @@ export function PipelineDetailPage() {
           : undefined,
       };
 
-      await updateSalesPipeline(selectedPipeline.id, updateData);
+      const updated = await updateSalesPipeline(selectedPipeline.id, updateData);
       setShowUpdateForm(false);
       setUpdateFormData({});
       setUpdateDealForm(null);
-      await loadPipelineDetails();
+      if (updated.id && updated.id !== selectedPipeline.id) {
+        navigate(`/sales/pipeline/${updated.id}`, { replace: true });
+      } else {
+        await loadPipelineDetails();
+      }
     } catch (err: unknown) {
       console.error("Error updating pipeline:", err);
       alert(formatApiErrorDetail(err, "Failed to update pipeline"));
@@ -731,14 +722,15 @@ export function PipelineDetailPage() {
               </button>
               <button
                 onClick={() => {
-                  const next = getNextPipelineStage(selectedPipeline.stage);
+                  const head = currentPipeline ?? selectedPipeline;
+                  const next = getNextPipelineStage(head.stage);
                   setUpdateFormData({
-                    stage: (next ?? selectedPipeline.stage) as PipelineStage,
-                    amount: selectedPipeline.amount ?? null,
+                    stage: (next ?? head.stage) as PipelineStage,
+                    amount: head.amount ?? null,
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
                   });
-                  setUpdateDealForm(pipelineToDealFormValues(selectedPipeline));
+                  setUpdateDealForm(pipelineToDealFormValues(head));
                   setShowUpdateForm(true);
                 }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/30 hover:shadow-emerald-600/50"
@@ -1507,15 +1499,16 @@ export function PipelineDetailPage() {
       )}
 
       {/* Update Pipeline Modal */}
-      {showUpdateForm && selectedPipeline && updateDealForm && (
+      {showUpdateForm && selectedPipeline && updateDealForm && currentPipeline && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div
             className={`bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto ${
               pipelineUpdateShowsCommercialForm(
                 getEffectiveTargetStage(
-                  selectedPipeline.stage,
+                  currentPipeline.stage,
                   updateFormData.stage,
                 ),
+                updateDealForm,
               )
                 ? "max-w-3xl"
                 : "max-w-2xl"
@@ -1540,9 +1533,9 @@ export function PipelineDetailPage() {
               </div>
               <p className="text-sm text-slate-600 mt-2">
                 Change stage with a reason (creates a new version). Through
-                Validation, nothing is required except the stage-change reason.
-                When you move to <strong>Proposal</strong>, complete the full
-                commercial form below (same as Edit Pipeline).
+                Validation, only the reason is required. The full commercial form
+                appears when entering <strong>Proposal</strong>, or when moving
+                to Confirmation/Closed before those details are on file.
                 To edit without a stage change, use{" "}
                 <button
                   type="button"
@@ -1560,18 +1553,20 @@ export function PipelineDetailPage() {
             <form onSubmit={handleUpdatePipeline} className="p-6 space-y-6">
               {(() => {
                 const targetStageForForm = getEffectiveTargetStage(
-                  selectedPipeline.stage,
+                  currentPipeline.stage,
                   updateFormData.stage,
                 ) as PipelineStage;
                 const willAdvanceStage =
-                  targetStageForForm !== selectedPipeline.stage;
+                  targetStageForForm !== currentPipeline.stage;
                 const movingToSample = targetStageForForm === "Sample";
                 const amountValue = formatPipelineAmountInput(
                   updateFormData.amount,
-                  selectedPipeline.amount,
+                  currentPipeline.amount,
                 );
-                const showFullCommercial =
-                  pipelineUpdateShowsCommercialForm(targetStageForForm);
+                const showFullCommercial = pipelineUpdateShowsCommercialForm(
+                  targetStageForForm,
+                  updateDealForm,
+                );
                 const effectiveAmountForReason = showFullCommercial
                   ? updateDealForm.amount === "" || updateDealForm.amount === null
                     ? null
@@ -1579,9 +1574,9 @@ export function PipelineDetailPage() {
                   : updateFormData.amount;
                 const showAmountReason =
                   effectiveAmountForReason !== undefined &&
-                  effectiveAmountForReason !== selectedPipeline.amount &&
+                  effectiveAmountForReason !== currentPipeline.amount &&
                   amountChangeReasonRequired(
-                    selectedPipeline.stage,
+                    currentPipeline.stage,
                     effectiveAmountForReason,
                   );
 
@@ -1592,11 +1587,17 @@ export function PipelineDetailPage() {
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Stage</p>
                 <span
                   className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold border ${
-                    STAGE_COLORS[selectedPipeline.stage]
+                    STAGE_COLORS[currentPipeline.stage]
                   }`}
                 >
-                  {selectedPipeline.stage}
+                  {currentPipeline.stage}
                 </span>
+                {selectedPipeline.id !== currentPipeline.id && (
+                  <p className="text-xs text-amber-700 mt-2">
+                    You are viewing an older version — updates apply from the
+                    latest version ({currentPipeline.stage}).
+                  </p>
+                )}
               </div>
 
               {/* All seven stages — current, next, and pick target */}
@@ -1606,13 +1607,13 @@ export function PipelineDetailPage() {
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
                   {SEVEN_PIPELINE_STAGES.map((stage) => {
-                    const currentIdx = STAGE_ORDER.indexOf(selectedPipeline.stage);
+                    const currentIdx = STAGE_ORDER.indexOf(currentPipeline.stage);
                     const stageIdx = STAGE_ORDER.indexOf(stage);
-                    const isCurrent = selectedPipeline.stage === stage;
+                    const isCurrent = currentPipeline.stage === stage;
                     const isPast = currentIdx >= 0 && stageIdx < currentIdx;
                     const isSelected = targetStageForForm === stage;
                     const isNext =
-                      getNextPipelineStage(selectedPipeline.stage) === stage;
+                      getNextPipelineStage(currentPipeline.stage) === stage;
                     return (
                       <button
                         key={stage}
@@ -1656,8 +1657,8 @@ export function PipelineDetailPage() {
                 <select
                   value={
                     updateFormData.stage ||
-                    getNextPipelineStage(selectedPipeline.stage) ||
-                    selectedPipeline.stage
+                    getNextPipelineStage(currentPipeline.stage) ||
+                    currentPipeline.stage
                   }
                   onChange={(e) =>
                     setUpdateFormData({
@@ -1667,17 +1668,17 @@ export function PipelineDetailPage() {
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  {getNextPipelineStage(selectedPipeline.stage) && (
+                  {getNextPipelineStage(currentPipeline.stage) && (
                     <option
-                      value={getNextPipelineStage(selectedPipeline.stage)!}
+                      value={getNextPipelineStage(currentPipeline.stage)!}
                     >
-                      {getNextPipelineStage(selectedPipeline.stage)} (Next — recommended)
+                      {getNextPipelineStage(currentPipeline.stage)} (Next — recommended)
                     </option>
                   )}
-                  {getUpdateStageOptions(selectedPipeline.stage)
+                  {getUpdateStageOptions(currentPipeline.stage)
                     .filter(
                       ({ stage }) =>
-                        stage !== getNextPipelineStage(selectedPipeline.stage),
+                        stage !== getNextPipelineStage(currentPipeline.stage),
                     )
                     .map(({ stage, hint }) => (
                       <option key={stage} value={stage}>
@@ -1698,7 +1699,7 @@ export function PipelineDetailPage() {
                         Reason for Stage Change <span className="text-red-500">*</span>
                       </label>
                       <p className="text-xs text-slate-500 mb-2">
-                        Moving from <strong>{selectedPipeline.stage}</strong> to{" "}
+                        Moving from <strong>{currentPipeline.stage}</strong> to{" "}
                         <strong>{targetStageForForm}</strong>
                       </p>
                       <textarea
@@ -1745,7 +1746,8 @@ export function PipelineDetailPage() {
                     Commercial details <span className="text-red-500">*</span>
                   </h3>
                   <p className="text-xs text-slate-500">
-                    All fields are required when entering the Proposal stage.
+                    All fields are required before the deal can reach Proposal or
+                    later stages.
                   </p>
                   <PipelineDealFields
                     form={updateDealForm}
@@ -1768,8 +1770,8 @@ export function PipelineDetailPage() {
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Amount</p>
                 <p className="text-lg font-bold text-slate-900">
-                  {selectedPipeline.amount != null
-                    ? `${selectedPipeline.amount.toLocaleString()} ${selectedPipeline.unit || "units"}`
+                  {currentPipeline.amount != null
+                    ? `${currentPipeline.amount.toLocaleString()} ${currentPipeline.unit || "units"}`
                     : "—"}
                 </p>
               </div>
@@ -1779,7 +1781,7 @@ export function PipelineDetailPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   New Amount (Quantity)
                 </label>
-                {(movingToSample || selectedPipeline.stage === "Sample") && (
+                {(movingToSample || currentPipeline.stage === "Sample") && (
                   <p className="text-xs text-slate-500 mb-2">
                     Quantity may be unknown at Sample — enter <strong>0</strong> if not
                     yet determined.

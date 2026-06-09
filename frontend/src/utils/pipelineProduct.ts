@@ -119,9 +119,21 @@ export function pipelineTargetRequiresFullCommercial(stage: string): boolean {
   );
 }
 
-/** Update Pipeline shows the full commercial form only when entering Proposal. */
-export function pipelineUpdateShowsCommercialForm(targetStage: string): boolean {
-  return targetStage === "Proposal";
+/**
+ * Show the full commercial form when entering Proposal, or when jumping to
+ * Confirmation/Closed before commercial data exists on the deal.
+ */
+export function pipelineUpdateShowsCommercialForm(
+  targetStage: string,
+  dealForm: PipelineDealFormValues,
+): boolean {
+  if (!pipelineTargetRequiresFullCommercial(targetStage)) {
+    return false;
+  }
+  if (targetStage === "Proposal") {
+    return true;
+  }
+  return validateDealFormForProposal(dealForm) !== null;
 }
 
 /** Client-side validation for the full commercial form (Proposal entry only). */
@@ -172,10 +184,42 @@ export function validateDealFormForTargetStage(
   form: PipelineDealFormValues,
   targetStage: string,
 ): string | null {
-  if (!pipelineUpdateShowsCommercialForm(targetStage)) {
+  if (!pipelineUpdateShowsCommercialForm(targetStage, form)) {
     return null;
   }
   return validateDealFormForProposal(form);
+}
+
+/** Build commercial fields payload for a pipeline stage update. */
+export function buildPipelineCommercialUpdatePayload(
+  dealForm: PipelineDealFormValues,
+  existingMetadata: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = { ...existingMetadata };
+  if (dealForm.vendor_name.trim()) {
+    metadata.vendor = dealForm.vendor_name.trim();
+  }
+  return {
+    chemical_type_id: dealForm.chemical_type_id.trim() || null,
+    expected_close_date: dealForm.expected_close_date.trim() || null,
+    lead_source: dealForm.lead_source.trim() || null,
+    contact_per_lead: dealForm.contact_per_lead.trim() || null,
+    business_model: dealForm.business_model.trim() || null,
+    business_unit: dealForm.business_unit.trim() || null,
+    unit: dealForm.unit.trim() || null,
+    amount:
+      dealForm.amount === "" || dealForm.amount === null
+        ? null
+        : Number(dealForm.amount),
+    unit_price:
+      dealForm.unit_price === "" || dealForm.unit_price === null
+        ? null
+        : Number(dealForm.unit_price),
+    currency: dealForm.currency.trim() || null,
+    forex: dealForm.forex.trim() || null,
+    incoterm: dealForm.incoterm.trim() || null,
+    metadata,
+  };
 }
 
 export const SEVEN_PIPELINE_STAGES = [

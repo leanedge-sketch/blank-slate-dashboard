@@ -736,6 +736,39 @@ def validate_stage_progression(old_stage: str, new_stage: str, reason: Optional[
         return
 
 
+def _chain_root_id(pipeline: SalesPipeline) -> str:
+    return str(pipeline.parent_pipeline_id or pipeline.id)
+
+
+def _clear_chain_current_flags(supabase: Client, root_id: str) -> None:
+    """Ensure only one row per chain can be current before inserting a new version."""
+    (
+        supabase.table("sales_pipeline")
+        .update({"is_current_version": False})
+        .or_(f"parent_pipeline_id.eq.{root_id},id.eq.{root_id}")
+        .eq("is_current_version", True)
+        .execute()
+    )
+
+
+def _get_current_pipeline_in_chain(
+    supabase: Client, root_id: str
+) -> Optional[SalesPipeline]:
+    response = (
+        supabase.table("sales_pipeline")
+        .select("*")
+        .or_(f"parent_pipeline_id.eq.{root_id},id.eq.{root_id}")
+        .eq("is_current_version", True)
+        .order("version_number", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return None
+    row = normalize_pipeline_row_from_db(response.data[0])
+    return SalesPipeline(**row)
+
+
 def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesPipeline:
     """
     Update an existing sales pipeline record.
@@ -754,45 +787,50 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     existing = get_sales_pipeline_by_id(pipeline_id)
     if not existing:
         raise ValueError("Sales pipeline record not found")
+
+    root_id = _chain_root_id(existing)
+    current_in_chain = _get_current_pipeline_in_chain(supabase, root_id)
+    # Branch from the chain's current version so stale detail-page URLs stay safe.
+    base = current_in_chain if current_in_chain else existing
     
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
-        return existing
+        return base
     
-    # Check if stage or amount changed
-    stage_changed = "stage" in update_data and update_data["stage"] != existing.stage
-    amount_changed = "amount" in update_data and update_data.get("amount") != existing.amount
+    # Check if stage or amount changed (relative to the current version in chain)
+    stage_changed = "stage" in update_data and update_data["stage"] != base.stage
+    amount_changed = "amount" in update_data and update_data.get("amount") != base.amount
     
     # Validate stage progression if stage changed
     if stage_changed:
         reason = update_data.get("reason_for_stage_change")
-        validate_stage_progression(existing.stage, update_data["stage"], reason)
+        validate_stage_progression(base.stage, update_data["stage"], reason)
         if not reason or not reason.strip():
             raise ValueError("reason_for_stage_change is required when stage changes")
         merged_stage = update_data["stage"]
-        merged_business_model = update_data.get("business_model", existing.business_model)
-        merged_unit = update_data.get("unit", existing.unit)
-        merged_unit_price = update_data.get("unit_price", existing.unit_price)
-        merged_close_reason = update_data.get("close_reason", existing.close_reason)
-        merged_metadata = update_data.get("metadata", existing.metadata)
+        merged_business_model = update_data.get("business_model", base.business_model)
+        merged_unit = update_data.get("unit", base.unit)
+        merged_unit_price = update_data.get("unit_price", base.unit_price)
+        merged_close_reason = update_data.get("close_reason", base.close_reason)
+        merged_metadata = update_data.get("metadata", base.metadata)
         validate_pipeline_stage_requirements(
             stage=merged_stage,
             business_model=merged_business_model,
             unit=merged_unit,
             unit_price=merged_unit_price,
             close_reason=merged_close_reason,
-            currency=update_data.get("currency", existing.currency),
-            forex=update_data.get("forex", existing.forex),
-            business_unit=update_data.get("business_unit", existing.business_unit),
-            incoterm=update_data.get("incoterm", existing.incoterm),
+            currency=update_data.get("currency", base.currency),
+            forex=update_data.get("forex", base.forex),
+            business_unit=update_data.get("business_unit", base.business_unit),
+            incoterm=update_data.get("incoterm", base.incoterm),
             chemical_type_id=str(
-                update_data.get("chemical_type_id", existing.chemical_type_id) or ""
+                update_data.get("chemical_type_id", base.chemical_type_id) or ""
             )
             or None,
             expected_close_date=update_data.get(
-                "expected_close_date", existing.expected_close_date
+                "expected_close_date", base.expected_close_date
             ),
-            amount=update_data.get("amount", existing.amount),
+            amount=update_data.get("amount", base.amount),
             metadata=merged_metadata,
         )
     
@@ -800,7 +838,7 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     if amount_changed:
         new_amount = update_data.get("amount")
         skip_amount_reason = (
-            existing.stage in ("Discovery", "Sample")
+            base.stage in ("Discovery", "Sample")
             or new_amount == 0
         )
         if not skip_amount_reason:
@@ -810,13 +848,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     
     # If stage or amount changed, create new version instead of updating
     if stage_changed or amount_changed:
-        # Mark old version as not current
-        supabase.table("sales_pipeline").update({
-            "is_current_version": False
-        }).eq("id", pipeline_id).execute()
+        _clear_chain_current_flags(supabase, root_id)
         
         # Get next version number
-        parent_id = existing.parent_pipeline_id or existing.id
+        parent_id = root_id
         version_query = supabase.table("sales_pipeline").select("version_number").or_(
             f"parent_pipeline_id.eq.{parent_id},id.eq.{parent_id}"
         ).order("version_number", desc=True).limit(1).execute()
@@ -825,9 +860,8 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         if version_query.data:
             next_version = (version_query.data[0].get("version_number") or 0) + 1
         
-        # Create new version with all existing data + updates
-        # Get all fields from existing pipeline, excluding metadata fields
-        existing_dict = existing.model_dump(
+        # Create new version with all data from current chain head + updates
+        existing_dict = base.model_dump(
             exclude={
                 "id",
                 "created_at",
@@ -868,6 +902,11 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             response = supabase.table("sales_pipeline").insert(new_pipeline_data).execute()
         except Exception as e:
             error_str = str(e).lower()
+            if "23505" in error_str or "one_current_per_chain" in error_str:
+                raise ValueError(
+                    "Could not save the pipeline update because the deal version is out of date. "
+                    "Refresh the page and try again from the latest version."
+                ) from e
             # Handle missing column errors by removing those fields
             if "column" in error_str and "does not exist" in error_str:
                 logger.warning(f"Column error detected: {str(e)}")
