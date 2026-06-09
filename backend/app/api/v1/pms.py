@@ -38,6 +38,11 @@ from app.models.pms import (
     LeanchemProductCreate,
     LeanchemProductUpdate,
     LeanchemProductListResponse,
+    LeanChemRecommendedProduct,
+    LeanChemRecommendedProductCreate,
+    LeanChemRecommendedProductUpdate,
+    LeanChemRecommendedProductListResponse,
+    MasterDataProductSuggestion,
     CostingPricing,
     CostingPricingCreate,
     CostingPricingUpdate,
@@ -533,6 +538,137 @@ async def delete_leanchem_product_endpoint(product_id: str):
         return None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting product: {str(e)}")
+
+
+# =============================
+# LEANCHEM RECOMMENDED PRODUCTS (curated catalog)
+# =============================
+
+
+@router.get(
+    "/lean-chem-products/suggestions",
+    response_model=List[MasterDataProductSuggestion],
+)
+async def lean_chem_product_suggestions_endpoint(
+    search: str = Query(..., min_length=2),
+    limit: int = Query(10, ge=1, le=25),
+):
+    """Suggest similar rows from Chemical_Master_Data while adding a recommended product."""
+    from app.services.lean_chem_recommended_products import (
+        suggest_from_chemical_master_data,
+    )
+
+    try:
+        return suggest_from_chemical_master_data(search=search, limit=limit)
+    except Exception as e:
+        logger.exception("Error fetching master data suggestions")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/lean-chem-products",
+    response_model=LeanChemRecommendedProductListResponse,
+)
+async def list_lean_chem_recommended_products_endpoint(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    sector: Optional[str] = Query(None),
+    vendor: Optional[str] = Query(None),
+    product_category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+):
+    """List LeanChem recommended products (curated manual catalog)."""
+    from app.services.lean_chem_recommended_products import (
+        count_lean_chem_recommended_products,
+        list_lean_chem_recommended_products,
+    )
+
+    try:
+        products = list_lean_chem_recommended_products(
+            limit=limit,
+            offset=offset,
+            sector=sector,
+            vendor=vendor,
+            product_category=product_category,
+            search=search,
+        )
+        total = count_lean_chem_recommended_products(
+            sector=sector,
+            vendor=vendor,
+            product_category=product_category,
+            search=search,
+        )
+        return LeanChemRecommendedProductListResponse(products=products, total=total)
+    except Exception as e:
+        logger.exception("Error listing LeanChem recommended products")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post(
+    "/lean-chem-products",
+    response_model=LeanChemRecommendedProduct,
+    status_code=201,
+)
+async def create_lean_chem_recommended_product_endpoint(
+    body: LeanChemRecommendedProductCreate,
+):
+    from app.services.lean_chem_recommended_products import (
+        create_lean_chem_recommended_product,
+    )
+
+    try:
+        return create_lean_chem_recommended_product(body)
+    except Exception as e:
+        logger.exception("Error creating LeanChem recommended product")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/lean-chem-products/{product_id}",
+    response_model=LeanChemRecommendedProduct,
+)
+async def get_lean_chem_recommended_product_endpoint(product_id: int):
+    from app.services.lean_chem_recommended_products import (
+        get_lean_chem_recommended_product_by_id,
+    )
+
+    product = get_lean_chem_recommended_product_by_id(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+
+@router.put(
+    "/lean-chem-products/{product_id}",
+    response_model=LeanChemRecommendedProduct,
+)
+async def update_lean_chem_recommended_product_endpoint(
+    product_id: int, body: LeanChemRecommendedProductUpdate
+):
+    from app.services.lean_chem_recommended_products import (
+        update_lean_chem_recommended_product,
+    )
+
+    try:
+        return update_lean_chem_recommended_product(product_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Error updating LeanChem recommended product")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/lean-chem-products/{product_id}", status_code=204)
+async def delete_lean_chem_recommended_product_endpoint(product_id: int):
+    from app.services.lean_chem_recommended_products import (
+        delete_lean_chem_recommended_product,
+    )
+
+    try:
+        delete_lean_chem_recommended_product(product_id)
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =============================

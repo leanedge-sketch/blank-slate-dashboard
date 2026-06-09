@@ -730,6 +730,128 @@ export interface LeanchemProductCreate {
 }
 
 // =============================
+// PMS: LeanChem Recommended Products (curated)
+// =============================
+export interface LeanChemRecommendedProduct {
+  id: number;
+  sector?: string | null;
+  vendor?: string | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  product_name: string;
+  generic_name?: string | null;
+  product_type?: string | null;
+  packing?: string | null;
+  hs_code?: string | null;
+  country_of_origin?: string | null;
+  industry?: string | null;
+  source_master_row_no?: number | null;
+  recommendation_notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface LeanChemRecommendedProductListResponse {
+  products: LeanChemRecommendedProduct[];
+  total: number;
+}
+
+export interface LeanChemRecommendedProductCreate {
+  sector?: string | null;
+  vendor?: string | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  product_name: string;
+  generic_name?: string | null;
+  product_type?: string | null;
+  packing?: string | null;
+  hs_code?: string | null;
+  country_of_origin?: string | null;
+  industry?: string | null;
+  source_master_row_no?: number | null;
+  recommendation_notes?: string | null;
+}
+
+export interface LeanChemRecommendedProductUpdate {
+  sector?: string | null;
+  vendor?: string | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  product_name?: string | null;
+  generic_name?: string | null;
+  product_type?: string | null;
+  packing?: string | null;
+  hs_code?: string | null;
+  country_of_origin?: string | null;
+  industry?: string | null;
+  source_master_row_no?: number | null;
+  recommendation_notes?: string | null;
+}
+
+export interface MasterDataProductSuggestion {
+  master_row_no?: number | null;
+  product_name?: string | null;
+  generic_name?: string | null;
+  product_type?: string | null;
+  sector?: string | null;
+  vendor?: string | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  packing?: string | null;
+  hs_code?: string | null;
+  country_of_origin?: string | null;
+  match_label?: string | null;
+}
+
+export async function fetchLeanChemRecommendedProducts(params?: {
+  limit?: number;
+  offset?: number;
+  sector?: string;
+  vendor?: string;
+  product_category?: string;
+  search?: string;
+}) {
+  const res = await api.get<LeanChemRecommendedProductListResponse>(
+    "/pms/lean-chem-products",
+    { params },
+  );
+  return res.data;
+}
+
+export async function createLeanChemRecommendedProduct(
+  data: LeanChemRecommendedProductCreate,
+) {
+  const res = await api.post<LeanChemRecommendedProduct>(
+    "/pms/lean-chem-products",
+    data,
+  );
+  return res.data;
+}
+
+export async function updateLeanChemRecommendedProduct(
+  id: number,
+  data: LeanChemRecommendedProductUpdate,
+) {
+  const res = await api.put<LeanChemRecommendedProduct>(
+    `/pms/lean-chem-products/${id}`,
+    data,
+  );
+  return res.data;
+}
+
+export async function deleteLeanChemRecommendedProduct(id: number) {
+  await api.delete(`/pms/lean-chem-products/${id}`);
+}
+
+export async function fetchMasterDataProductSuggestions(search: string, limit = 10) {
+  const res = await api.get<MasterDataProductSuggestion[]>(
+    "/pms/lean-chem-products/suggestions",
+    { params: { search, limit } },
+  );
+  return res.data;
+}
+
+// =============================
 // PMS: Costing/Pricing
 // =============================
 export interface CostingPricingRow {

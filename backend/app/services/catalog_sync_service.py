@@ -35,12 +35,23 @@ def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
         supabase = get_supabase_service_client()
     except RuntimeError:
         supabase = get_supabase_client()
-    response = (
-        supabase.table(TABLE)
-        .update({"uuid_id": new_uuid})
-        .eq("Row_No", chemical_id)
-        .execute()
-    )
+    try:
+        response = (
+            supabase.table(TABLE)
+            .update({"uuid_id": new_uuid})
+            .eq("Row_No", chemical_id)
+            .execute()
+        )
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "uuid_id" in msg or "pgrst204" in msg or "schema cache" in msg:
+            logger.warning(
+                "uuid_id column not available on %s; skipping assignment for id %s",
+                TABLE,
+                chemical_id,
+            )
+            return None
+        raise
     if not response.data:
         logger.warning("Failed to assign uuid_id for catalog id %s", chemical_id)
         return None

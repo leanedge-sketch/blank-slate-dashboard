@@ -1157,13 +1157,24 @@ def get_interaction_by_id(interaction_id: str) -> Optional[Interaction]:
     return None
 
 
+def _interaction_db_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert UUID fields to strings for Supabase JSON inserts/updates."""
+    out: Dict[str, Any] = {}
+    for key, value in payload.items():
+        if isinstance(value, UUIDType):
+            out[key] = str(value)
+        else:
+            out[key] = value
+    return out
+
+
 def create_interaction(
     customer_id: str, interaction_in: InteractionCreate, user_id: Optional[str] = None
 ) -> Interaction:
     """Create a new interaction linked to a customer (and optional user)."""
     supabase: Client = get_supabase_client()
 
-    payload = interaction_in.model_dump(exclude_unset=True)
+    payload = _interaction_db_payload(interaction_in.model_dump(exclude_unset=True))
     payload["customer_id"] = customer_id
     if user_id:
         payload["user_id"] = user_id
@@ -1385,7 +1396,9 @@ def update_interaction(
     """Update an existing interaction and return the updated record."""
     supabase: Client = get_supabase_client()
 
-    update_data = interaction_in.model_dump(exclude_unset=True)
+    update_data = _interaction_db_payload(
+        interaction_in.model_dump(exclude_unset=True)
+    )
     if not update_data:
         # Nothing to update; just return the current record
         return get_interaction_by_id(interaction_id)

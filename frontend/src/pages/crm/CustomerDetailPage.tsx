@@ -155,20 +155,22 @@ export function CustomerDetailPage() {
       // Create FormData for file upload
       const formData = new FormData();
       formData.append("input_text", chatInput.trim());
+      if (selectedDealId) {
+        formData.append("pipeline_id", selectedDealId);
+      }
       if (selectedFile) {
         formData.append("file", selectedFile);
       }
 
-      // Don't set Content-Type manually - axios will set it with boundary for FormData
       const res = await api.post<Interaction>(
         `/crm/customers/${customerId}/chat`,
-        formData
+        formData,
+        { timeout: 120_000 },
       );
 
-      setInteractions((prev) => [res.data, ...prev]);
       setChatInput("");
       setSelectedFile(null);
-      await fetchPipelines();
+      await Promise.all([fetchCustomerAndInteractions(), fetchPipelines()]);
     } catch (err: any) {
       console.error("Chat error:", err);
       console.error("Error response:", err?.response?.data);
@@ -231,7 +233,11 @@ export function CustomerDetailPage() {
         ai_response: editResponse || null,
       };
 
-      const res = await api.put<Interaction>(`/crm/interactions/${interactionId}`, update);
+      const res = await api.put<Interaction>(
+        `/crm/interactions/${interactionId}`,
+        update,
+        { timeout: 120_000 },
+      );
       
       setInteractions((prev) =>
         prev.map((it) => (it.id === interactionId ? res.data : it))

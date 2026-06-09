@@ -176,6 +176,73 @@ class LeanchemProductListResponse(BaseModel):
 
 
 # =============================
+# LEANCHEM RECOMMENDED PRODUCTS (curated list)
+# =============================
+
+
+class LeanChemRecommendedProductBase(BaseModel):
+    sector: Optional[str] = None
+    vendor: Optional[str] = None
+    product_category: Optional[str] = None
+    sub_category: Optional[str] = None
+    product_name: str
+    generic_name: Optional[str] = None
+    product_type: Optional[str] = None
+    packing: Optional[str] = None
+    hs_code: Optional[str] = None
+    country_of_origin: Optional[str] = None
+    industry: Optional[str] = None
+    source_master_row_no: Optional[int] = None
+    recommendation_notes: Optional[str] = None
+
+
+class LeanChemRecommendedProductCreate(LeanChemRecommendedProductBase):
+    pass
+
+
+class LeanChemRecommendedProductUpdate(BaseModel):
+    sector: Optional[str] = None
+    vendor: Optional[str] = None
+    product_category: Optional[str] = None
+    sub_category: Optional[str] = None
+    product_name: Optional[str] = None
+    generic_name: Optional[str] = None
+    product_type: Optional[str] = None
+    packing: Optional[str] = None
+    hs_code: Optional[str] = None
+    country_of_origin: Optional[str] = None
+    industry: Optional[str] = None
+    source_master_row_no: Optional[int] = None
+    recommendation_notes: Optional[str] = None
+
+
+class LeanChemRecommendedProduct(LeanChemRecommendedProductBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class LeanChemRecommendedProductListResponse(BaseModel):
+    products: List[LeanChemRecommendedProduct]
+    total: int
+
+
+class MasterDataProductSuggestion(BaseModel):
+    master_row_no: Optional[int] = None
+    product_name: Optional[str] = None
+    generic_name: Optional[str] = None
+    product_type: Optional[str] = None
+    sector: Optional[str] = None
+    vendor: Optional[str] = None
+    product_category: Optional[str] = None
+    sub_category: Optional[str] = None
+    packing: Optional[str] = None
+    hs_code: Optional[str] = None
+    country_of_origin: Optional[str] = None
+    match_label: Optional[str] = None
+
+
+# =============================
 # COSTING / PRICING DATA
 # =============================
 

@@ -62,8 +62,8 @@ const modules = [
   {
     icon: Package,
     title: "LeanChem Products",
-    subtitle: "leanchem_products",
-    description: "leanchem_products SKUs + read-only chemical_full_data catalog (sales pipeline products)",
+    subtitle: "LeanChem_Recommended_Products",
+    description: "Curated products LeanChem suggests — add manually with smart pulls from Chemical Master Data",
     href: "/pms/products",
     cta: "Manage products",
     accent: "from-amber-600 via-orange-500 to-yellow-500",
