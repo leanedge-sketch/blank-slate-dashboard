@@ -65,13 +65,13 @@ ALTER TABLE public.sales_pipeline
 ADD CONSTRAINT sales_pipeline_business_model_check
 CHECK (business_model IS NULL OR business_model IN ('SEZ Import', 'Local Stock')) NOT VALID;
 
--- Stage-dependent rule: Validation+ require model/unit/price.
+-- Stage-dependent rule: Proposal+ require model/unit/price (Validation is optional).
 ALTER TABLE public.sales_pipeline DROP CONSTRAINT IF EXISTS sales_pipeline_stage_requires_business_details;
 
 ALTER TABLE public.sales_pipeline
 ADD CONSTRAINT sales_pipeline_stage_requires_business_details
 CHECK (
-    stage NOT IN ('Validation','Proposal','Confirmation','Closed')
+    stage NOT IN ('Proposal','Confirmation','Closed')
     OR (
         business_model IS NOT NULL
         AND unit IS NOT NULL

@@ -31,7 +31,6 @@ import {
   Filter,
   Edit2,
   Trash2,
-  DollarSign,
   Calendar,
   User,
   Package,
@@ -62,6 +61,7 @@ import {
 import {
   amountChangeReasonRequired,
   formatPipelineAmountInput,
+  formatPipelineQuantity,
   stageChangeReasonRequired,
 } from "../../utils/pipelineProduct";
 
@@ -1129,16 +1129,6 @@ export function SalesPipelinePage() {
     }
   }
 
-
-  function formatCurrency(amount: number | null | undefined): string {
-    if (!amount) return "—";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  }
 
   function formatDate(dateString: string | null | undefined): string {
     if (!dateString) return "—";
@@ -2299,15 +2289,16 @@ export function SalesPipelinePage() {
                                   </span>
                                 </div>
 
-                                {/* Amount */}
+                                {/* Quantity */}
                                 <div className="flex items-center gap-2">
-                                  <DollarSign className="w-5 h-5 text-emerald-600" />
+                                  <Package className="w-5 h-5 text-emerald-600" />
                                   <div>
-                                    <p className="text-xs text-slate-500">Amount</p>
+                                    <p className="text-xs text-slate-500">Quantity</p>
                                     <p className="text-lg font-bold text-slate-900">
-                                      {pipeline.amount
-                                        ? `${pipeline.amount.toLocaleString()} ${pipeline.currency || "USD"}`
-                                        : "—"}
+                                      {formatPipelineQuantity(
+                                        pipeline.amount,
+                                        pipeline.unit,
+                                      )}
                                     </p>
                                   </div>
                                 </div>

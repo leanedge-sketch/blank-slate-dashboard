@@ -285,6 +285,17 @@ export function getEffectiveTargetStage(
   return getNextPipelineStage(currentStage) ?? currentStage;
 }
 
+/** Human-readable quantity with unit (amount field = quantity, not currency). */
+export function formatPipelineQuantity(
+  amount: number | null | undefined,
+  unit?: string | null,
+): string {
+  if (amount === null || amount === undefined) return "—";
+  const label = unit?.trim() || "units";
+  if (amount === 0) return `0 ${label} (TBD)`;
+  return `${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${label}`;
+}
+
 /** Display value for quantity inputs — preserves 0 (not treated as empty). */
 export function formatPipelineAmountInput(
   formAmount: number | null | undefined,

@@ -23,7 +23,8 @@ import {
   fetchAllCustomerInteractions,
   isPipelineArchiveRow,
 } from "../../utils/interactions";
-import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package, DollarSign } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package } from "lucide-react";
+import { formatPipelineQuantity } from "../../utils/pipelineProduct";
 
 export function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
@@ -289,16 +290,6 @@ export function CustomerDetailPage() {
     if (!tdsId) return "—";
     const tds = tdsList.find((t) => t.id === tdsId);
     return tds ? `${tds.brand || ""} ${tds.grade || ""}`.trim() || tdsId : tdsId;
-  }
-
-  function formatCurrency(amount: number | null | undefined): string {
-    if (!amount) return "—";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
   }
 
   function formatDate(dateString: string | null | undefined): string {
@@ -895,7 +886,7 @@ export function CustomerDetailPage() {
                       <tr>
                         <th className="px-4 py-3">Product / project</th>
                         <th className="px-4 py-3">Stage</th>
-                        <th className="px-4 py-3">Value</th>
+                        <th className="px-4 py-3">Quantity</th>
                         <th className="px-4 py-3">Expected close</th>
                         <th className="px-4 py-3" />
                       </tr>
@@ -923,9 +914,10 @@ export function CustomerDetailPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {pipeline.amount
-                              ? formatCurrency(pipeline.amount)
-                              : "—"}
+                            {formatPipelineQuantity(
+                              pipeline.amount,
+                              pipeline.unit,
+                            )}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             {pipeline.expected_close_date

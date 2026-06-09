@@ -836,7 +836,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
                 raise ValueError(
                     "reason_for_stage_change is required for this stage change"
                 )
-        merged_stage = update_data["stage"]
+
+    # New versions must satisfy commercial rules for the effective stage (stage or amount change).
+    if stage_changed or amount_changed:
+        merged_stage = update_data.get("stage", base.stage)
         merged_business_model = update_data.get("business_model", base.business_model)
         merged_unit = update_data.get("unit", base.unit)
         merged_unit_price = update_data.get("unit_price", base.unit_price)
@@ -931,6 +934,13 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             response = supabase.table("sales_pipeline").insert(new_pipeline_data).execute()
         except Exception as e:
             error_str = str(e).lower()
+            if "business_model" in error_str and "required" in error_str:
+                raise ValueError(
+                    "business_model is required before moving to Proposal or later. "
+                    "Validation and earlier stages do not require it — if you see this at "
+                    "Validation, run docs/0007_sales_pipeline_validation_optional_commercial.sql "
+                    "in Supabase."
+                ) from e
             if "23505" in error_str or "one_current_per_chain" in error_str:
                 raise ValueError(
                     "Could not save the pipeline update because the deal version is out of date. "

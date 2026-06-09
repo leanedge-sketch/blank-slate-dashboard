@@ -1,9 +1,7 @@
-import type { PipelineStageUpdateEntry } from "../../utils/pipelineProduct";
-
-function formatAmount(value: number | null | undefined, unit?: string | null): string {
-  if (value == null) return "—";
-  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit || "units"}`;
-}
+import {
+  formatPipelineQuantity,
+  type PipelineStageUpdateEntry,
+} from "../../utils/pipelineProduct";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
@@ -57,14 +55,14 @@ export function PipelineStageUpdateList({
 
               {entry.amountChanged && (
                 <p className="text-xs text-slate-600 mt-1">
-                  Amount: {formatAmount(entry.previousAmount, entry.unit)} →{" "}
-                  {formatAmount(entry.amount, entry.unit)}
+                  Amount: {formatPipelineQuantity(entry.previousAmount, entry.unit)} →{" "}
+                  {formatPipelineQuantity(entry.amount, entry.unit)}
                 </p>
               )}
 
               {!entry.amountChanged && entry.amount != null && entry.isInitial && (
                 <p className="text-xs text-slate-600 mt-1">
-                  Amount: {formatAmount(entry.amount, entry.unit)}
+                  Amount: {formatPipelineQuantity(entry.amount, entry.unit)}
                 </p>
               )}
 

@@ -61,6 +61,7 @@ import {
   stageChangeReasonRequired,
   buildPipelineStageUpdateMap,
   formatPipelineAmountInput,
+  formatPipelineQuantity,
   getEffectiveTargetStage,
   getNextPipelineStage,
   getUpdateStageOptions,
@@ -750,18 +751,19 @@ export function PipelineDetailPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
         {/* Summary Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Amount Card */}
+          {/* Quantity Card */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className="p-2 bg-emerald-100 rounded-lg">
-                <DollarSign className="w-5 h-5 text-emerald-600" />
+                <Package className="w-5 h-5 text-emerald-600" />
               </div>
-              <span className="text-xs font-medium text-slate-500">Amount (Quantity)</span>
+              <span className="text-xs font-medium text-slate-500">Quantity</span>
             </div>
             <p className="text-2xl font-bold text-slate-900 mb-1">
-              {selectedPipeline.amount 
-                ? `${selectedPipeline.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${selectedPipeline.unit || "units"}`
-                : "—"}
+              {formatPipelineQuantity(
+                selectedPipeline.amount,
+                selectedPipeline.unit,
+              )}
             </p>
             {selectedPipeline.unit_price && selectedPipeline.unit && (
               <p className="text-xs text-slate-500">
@@ -1022,9 +1024,10 @@ export function PipelineDetailPage() {
                     <div className="p-4 bg-gradient-to-br from-emerald-50 to-blue-50 rounded-lg border border-emerald-200">
                       <label className="text-xs font-medium text-slate-500 mb-1 block">Amount (Quantity)</label>
                       <p className="text-2xl font-bold text-slate-900">
-                        {selectedPipeline.amount 
-                          ? `${selectedPipeline.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${selectedPipeline.unit || "units"}`
-                          : "—"}
+                        {formatPipelineQuantity(
+                          selectedPipeline.amount,
+                          selectedPipeline.unit,
+                        )}
                       </p>
                       {selectedPipeline.unit_price && (
                         <p className="text-xs text-slate-500 mt-1">
@@ -1062,7 +1065,10 @@ export function PipelineDetailPage() {
                         <div className="flex items-center justify-between pb-2 border-b border-blue-200">
                           <span className="text-sm font-medium text-slate-700">Quantity (Amount)</span>
                           <span className="text-lg font-bold text-slate-900">
-                            {calculateTotalAmount()!.quantity?.toLocaleString(undefined, { maximumFractionDigits: 2 })} {selectedPipeline.unit || "units"}
+                            {formatPipelineQuantity(
+                              calculateTotalAmount()!.quantity,
+                              selectedPipeline.unit,
+                            )}
                           </span>
                         </div>
                         <div className="flex items-center justify-between pb-2 border-b border-blue-200">
@@ -1359,15 +1365,15 @@ export function PipelineDetailPage() {
                         <div className="mb-4">
                           <p className="text-xs text-slate-500 mb-1">Amount</p>
                           <p className="text-lg font-bold text-slate-900">
-                            {version.amount 
-                              ? `${version.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${version.unit || "units"}`
-                              : "—"}
+                            {formatPipelineQuantity(version.amount, version.unit)}
                           </p>
                           {amountChanged && prevVersion && (
                             <p className="text-xs text-slate-500 mt-1">
-                              <span className="font-semibold">From:</span> {prevVersion.amount 
-                                ? `${prevVersion.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${prevVersion.unit || "units"}`
-                                : "—"}
+                              <span className="font-semibold">From:</span>{" "}
+                              {formatPipelineQuantity(
+                                prevVersion.amount,
+                                prevVersion.unit,
+                              )}
                             </p>
                           )}
                         </div>
@@ -1782,9 +1788,10 @@ export function PipelineDetailPage() {
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 mb-1">Current Amount</p>
                 <p className="text-lg font-bold text-slate-900">
-                  {currentPipeline.amount != null
-                    ? `${currentPipeline.amount.toLocaleString()} ${currentPipeline.unit || "units"}`
-                    : "—"}
+                  {formatPipelineQuantity(
+                    currentPipeline.amount,
+                    currentPipeline.unit,
+                  )}
                 </p>
               </div>
 
