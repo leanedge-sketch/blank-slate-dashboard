@@ -58,6 +58,7 @@ import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpd
 import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
+  stageChangeReasonRequired,
   buildPipelineStageUpdateMap,
   formatPipelineAmountInput,
   getEffectiveTargetStage,
@@ -462,8 +463,11 @@ export function PipelineDetailPage() {
       effectiveAmount !== undefined &&
       effectiveAmount !== currentPipeline.amount;
 
-    if (stageChanged && !updateFormData.reason_for_stage_change?.trim()) {
-      alert("Reason for stage change is required when stage changes");
+    const needsStageReason =
+      stageChanged &&
+      stageChangeReasonRequired(currentPipeline.stage, targetStage);
+    if (needsStageReason && !updateFormData.reason_for_stage_change?.trim()) {
+      alert("A reason is required for this stage change (skip, move back, close, or mark lost).");
       return;
     }
 
@@ -526,7 +530,7 @@ export function PipelineDetailPage() {
           stageChanged && targetStage === "Closed"
             ? updateFormData.close_reason?.trim() || null
             : undefined,
-        reason_for_stage_change: stageChanged
+        reason_for_stage_change: needsStageReason
           ? updateFormData.reason_for_stage_change
           : undefined,
         reason_for_amount_change: effectiveAmountChanged
@@ -1532,8 +1536,9 @@ export function PipelineDetailPage() {
                 </button>
               </div>
               <p className="text-sm text-slate-600 mt-2">
-                Change stage with a reason (creates a new version). Through
-                Validation, only the reason is required. The full commercial form
+                Advancing one stage at a time does not require a reason. A reason is
+                needed when skipping stages, moving backward, closing, or marking Lost.
+                The full commercial form
                 appears when entering <strong>Proposal</strong>, or when moving
                 to Confirmation/Closed before those details are on file.
                 To edit without a stage change, use{" "}
@@ -1578,6 +1583,12 @@ export function PipelineDetailPage() {
                   amountChangeReasonRequired(
                     currentPipeline.stage,
                     effectiveAmountForReason,
+                  );
+                const needsStageReason =
+                  willAdvanceStage &&
+                  stageChangeReasonRequired(
+                    currentPipeline.stage,
+                    targetStageForForm,
                   );
 
                 return (
@@ -1690,9 +1701,10 @@ export function PipelineDetailPage() {
                 <p className="text-xs text-slate-500 mt-2">
                   Updates advance the deal one stage at a time. The next stage is
                   pre-selected; you can also jump ahead, close, or mark{" "}
-                  <strong>Lost</strong>. A reason is required for every stage move.
+                  <strong>Lost</strong>. A reason is only required when skipping,
+                  moving backward, closing, or marking lost.
                 </p>
-                {willAdvanceStage && (
+                {willAdvanceStage && needsStageReason && (
                   <div className="mt-3 space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">

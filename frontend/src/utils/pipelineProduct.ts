@@ -300,6 +300,29 @@ export function formatPipelineAmountInput(
 }
 
 /**
+ * Stage-change reason is required when moving backward, skipping stages, closing,
+ * marking Lost, or reopening from Lost. Normal +1 forward progression does not
+ * require a reason.
+ */
+export function stageChangeReasonRequired(
+  oldStage: string,
+  newStage: string,
+): boolean {
+  if (oldStage === newStage) return false;
+  if (newStage === "Closed" || newStage === "Lost") return true;
+  if (oldStage === "Lost") return true;
+
+  const order = SEVEN_PIPELINE_STAGES as readonly string[];
+  const oldIndex = order.indexOf(oldStage);
+  const newIndex = order.indexOf(newStage);
+  if (oldIndex < 0 || newIndex < 0) return false;
+  if (newIndex === oldIndex + 1) return false;
+  if (newIndex < oldIndex) return true;
+  if (newIndex > oldIndex + 1) return true;
+  return false;
+}
+
+/**
  * Amount change reason is optional at Discovery/Sample or when quantity is 0 (TBD).
  */
 export function amountChangeReasonRequired(

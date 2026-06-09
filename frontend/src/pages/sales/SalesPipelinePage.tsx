@@ -59,7 +59,11 @@ import {
   emptyProductDealLink,
   type ProductDealLink,
 } from "../../components/sales/PipelineDealLinkFields";
-import { amountChangeReasonRequired, formatPipelineAmountInput } from "../../utils/pipelineProduct";
+import {
+  amountChangeReasonRequired,
+  formatPipelineAmountInput,
+  stageChangeReasonRequired,
+} from "../../utils/pipelineProduct";
 
 const NEW_CUSTOMER_START_STAGES: PipelineStage[] = [
   "Lead ID",
@@ -890,8 +894,14 @@ export function SalesPipelinePage() {
         const stageChanged = editingPipeline.stage !== formData.stage;
         const amountChanged = editingPipeline.amount !== formData.amount;
         
-        if (stageChanged && !reasonForStageChange.trim()) {
-          alert("Reason for stage change is required when stage changes");
+        if (
+          stageChanged &&
+          stageChangeReasonRequired(editingPipeline.stage, formData.stage) &&
+          !reasonForStageChange.trim()
+        ) {
+          alert(
+            "A reason is required for this stage change (skip, move back, close, or mark lost).",
+          );
           return;
         }
         
@@ -923,7 +933,10 @@ export function SalesPipelinePage() {
           business_unit: formData.business_unit,
           incoterm: formData.incoterm,
           metadata: formData.metadata,
-          reason_for_stage_change: stageChanged ? reasonForStageChange : null,
+          reason_for_stage_change:
+            stageChanged && stageChangeReasonRequired(editingPipeline.stage, formData.stage)
+              ? reasonForStageChange
+              : null,
           reason_for_amount_change: amountChanged ? reasonForAmountChange : null,
         };
         await updateSalesPipeline(editingPipeline.id, updateData);
@@ -948,6 +961,11 @@ export function SalesPipelinePage() {
             );
             return;
           }
+        }
+
+        if (!reasonForStageChange.trim()) {
+          alert("A reason is required when creating a new pipeline deal.");
+          return;
         }
 
         setCreating(true);
@@ -1036,6 +1054,7 @@ export function SalesPipelinePage() {
             lead_source: leadSources[0] || null,
             contact_per_lead: contacts[0] || null,
             metadata: metadata as Record<string, unknown>,
+            reason_for_stage_change: reasonForStageChange.trim(),
           };
           console.log("Creating pipeline with payload:", createData);
           await createSalesPipeline(createData);
@@ -1487,7 +1506,25 @@ export function SalesPipelinePage() {
                       customer is already past lead stage.
                     </p>
                   )}
-                  {editingPipeline && editingPipeline.stage !== formData.stage && (
+                  {isCreateLeadPipelineForm(editingPipeline) && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Reason for creating this deal{" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={reasonForStageChange}
+                        onChange={(e) => setReasonForStageChange(e.target.value)}
+                        required
+                        rows={2}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Why is this product deal being opened?"
+                      />
+                    </div>
+                  )}
+                  {editingPipeline &&
+                    editingPipeline.stage !== formData.stage &&
+                    stageChangeReasonRequired(editingPipeline.stage, formData.stage) && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">
                         Reason for Stage Change <span className="text-red-500">*</span>

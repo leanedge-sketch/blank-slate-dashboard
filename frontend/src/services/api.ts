@@ -998,6 +998,8 @@ export interface SalesPipelineCreate {
   metadata?: Record<string, any> | null;
   // Optional vendor name from partner_chemicals (we'll store it in metadata on the backend)
   vendor_name?: string | null;
+  /** Required when creating a new pipeline deal */
+  reason_for_stage_change?: string | null;
 }
 
 export interface SalesPipelineUpdate {

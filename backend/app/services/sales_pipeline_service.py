@@ -513,6 +513,13 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     if not payload.get("stage"):
         payload["stage"] = "Lead ID"
 
+    creation_reason = (payload.get("reason_for_stage_change") or "").strip()
+    if not creation_reason:
+        raise ValueError(
+            "reason_for_stage_change is required when creating a new pipeline deal"
+        )
+    payload["reason_for_stage_change"] = creation_reason
+
     # Merge list fields from metadata into primary columns when present
     meta = payload.get("metadata") or {}
     if isinstance(meta, dict):
@@ -655,6 +662,30 @@ def validate_pipeline_stage_requirements(
             raise ValueError(
                 "close_reason is required when stage is Closed (deal won)"
             )
+
+
+def stage_change_reason_required(old_stage: str, new_stage: str) -> bool:
+    """True when reason_for_stage_change must be provided for this transition."""
+    if old_stage == new_stage:
+        return False
+    if new_stage in ("Closed", "Lost"):
+        return True
+    if old_stage == "Lost":
+        return True
+
+    stage_order = [s for s in PIPELINE_STAGES if s not in ("Lost",)]
+    try:
+        old_index = stage_order.index(old_stage)
+        new_index = stage_order.index(new_stage)
+    except ValueError:
+        return False
+    if new_index == old_index + 1:
+        return False
+    if new_index < old_index:
+        return True
+    if new_index > old_index + 1:
+        return True
+    return False
 
 
 def validate_stage_progression(old_stage: str, new_stage: str, reason: Optional[str]) -> None:
@@ -800,8 +831,11 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     if stage_changed:
         reason = update_data.get("reason_for_stage_change")
         validate_stage_progression(base.stage, update_data["stage"], reason)
-        if not reason or not reason.strip():
-            raise ValueError("reason_for_stage_change is required when stage changes")
+        if stage_change_reason_required(base.stage, update_data["stage"]):
+            if not reason or not reason.strip():
+                raise ValueError(
+                    "reason_for_stage_change is required for this stage change"
+                )
         merged_stage = update_data["stage"]
         merged_business_model = update_data.get("business_model", base.business_model)
         merged_unit = update_data.get("unit", base.unit)

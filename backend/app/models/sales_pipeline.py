@@ -160,6 +160,10 @@ class SalesPipelineCreate(SalesPipelineBase):
 
     # Lead ID create form: customer and product are optional in the UI
     customer_id: Optional[UUID] = None
+    reason_for_stage_change: Optional[str] = Field(
+        None,
+        description="Required when creating a new pipeline deal",
+    )
 
 
 class SalesPipelineUpdate(BaseModel):
