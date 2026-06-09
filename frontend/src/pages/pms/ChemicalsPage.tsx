@@ -8,7 +8,6 @@ import {
   ChemicalFullData,
   ChemicalFullDataCreate,
   ChemicalFullDataUpdate,
-  fetchSectors,
   fetchIndustries,
   fetchPartners,
   createPartner,
@@ -37,6 +36,11 @@ import {
   Hash,
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import {
+  CHEMICAL_MASTER_COLUMNS,
+  chemicalCellValue,
+  PMS_SECTOR_OPTIONS,
+} from "../../utils/chemicalMasterColumns";
 
 export function ChemicalsPage() {
   const { refreshCatalog } = useProductCatalog();
@@ -57,7 +61,6 @@ export function ChemicalsPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   // Options for dropdowns
-  const [sectors, setSectors] = useState<string[]>([]);
   const [industries, setIndustries] = useState<string[]>([]);
   const [vendors, setVendors] = useState<Array<{ id: string; vendor: string }>>([]);
   const [productCategories, setProductCategories] = useState<string[]>([]);
@@ -80,6 +83,9 @@ export function ChemicalsPage() {
     product_description: "",
     hs_code: "",
     price: null,
+    generic_name: "",
+    product_type: "",
+    country_of_origin: "",
   });
 
   // Edit state
@@ -98,7 +104,6 @@ export function ChemicalsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   type AddOptionType =
-    | "sector"
     | "industry"
     | "vendor"
     | "product_category"
@@ -124,13 +129,7 @@ export function ChemicalsPage() {
 
     const normalize = (v: string) => v.trim().toLowerCase();
 
-    if (addOptionType === "sector") {
-      setSectors((prev) => {
-        if (prev.some((s) => normalize(s) === normalize(value))) return prev;
-        return [...prev, value].sort((a, b) => a.localeCompare(b));
-      });
-      setFormData((prev) => ({ ...prev, sector: value }));
-    } else if (addOptionType === "industry") {
+    if (addOptionType === "industry") {
       setIndustries((prev) => {
         if (prev.some((s) => normalize(s) === normalize(value))) return prev;
         return [...prev, value].sort((a, b) => a.localeCompare(b));
@@ -179,21 +178,11 @@ export function ChemicalsPage() {
     try {
       // Load each option separately to handle individual failures
       const options = {
-        sectors: [] as string[],
         industries: [] as string[],
         vendors: [] as Array<{ id: string; vendor: string }>,
         categories: [] as string[],
         subCategories: [] as string[],
       };
-
-      try {
-        const sectorsRes = await fetchSectors();
-        options.sectors = Array.isArray(sectorsRes) ? sectorsRes : [];
-        console.log("Loaded sectors:", options.sectors.length);
-      } catch (err: any) {
-        console.error("Failed to load sectors:", err);
-        console.error("Error details:", err?.response?.data || err?.message);
-      }
 
       try {
         const industriesRes = await fetchIndustries();
@@ -233,14 +222,13 @@ export function ChemicalsPage() {
         console.error("Error details:", err?.response?.data || err?.message);
       }
 
-      setSectors(options.sectors);
       setIndustries(options.industries);
       setVendors(options.vendors);
       setProductCategories(options.categories);
       setSubCategories(options.subCategories);
 
       console.log("All options loaded:", {
-        sectors: options.sectors.length,
+        sectors: PMS_SECTOR_OPTIONS.length,
         industries: options.industries.length,
         vendors: options.vendors.length,
         categories: options.categories.length,
@@ -454,8 +442,8 @@ export function ChemicalsPage() {
                 Chemical Master Data
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
-                Complete chemical product information from chemical_full_data. View and manage all
-                product details including vendor, category, pricing, applications, and more.
+                Master product catalog from Chemical_Master_Data. Add and browse products with
+                full details — sector, supplier, category, packaging, pricing, and more.
               </p>
             </div>
 
@@ -508,7 +496,7 @@ export function ChemicalsPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">All Sectors</option>
-                  {sectors.map((s) => (
+                  {PMS_SECTOR_OPTIONS.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -591,38 +579,22 @@ export function ChemicalsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Sector {sectors.length > 0 && `(${sectors.length})`}
+                    Sector
                   </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.sector || ""}
-                      onChange={(e) => {
-                        const newValue = e.target.value;
-                        console.log("Sector changed to:", newValue);
-                        setFormData({ ...formData, sector: newValue });
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Sector...</option>
-                      {sectors.length > 0 ? (
-                        sectors.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No sectors available</option>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("sector")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new sector"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
+                  <select
+                    value={formData.sector || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, sector: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Sector...</option>
+                    {PMS_SECTOR_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -784,6 +756,32 @@ export function ChemicalsPage() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Generic Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.generic_name || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, generic_name: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Product Type
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.product_type || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, product_type: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Packing</label>
                   <input
                     type="text"
@@ -801,6 +799,19 @@ export function ChemicalsPage() {
                     onChange={(e) => setFormData({ ...formData, hs_code: e.target.value })}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Harmonized System code"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Country of Origin
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.country_of_origin || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, country_of_origin: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               <div>
@@ -899,7 +910,7 @@ export function ChemicalsPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by product name, vendor, category, or description..."
+                placeholder="Search by generic name, product type, HS code, or product name..."
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -965,26 +976,16 @@ export function ChemicalsPage() {
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Product Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Vendor
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Category
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Sub Category
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Operation
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Action
+                      {CHEMICAL_MASTER_COLUMNS.map((col) => (
+                        <th
+                          key={col.key}
+                          className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap"
+                        >
+                          {col.label}
+                        </th>
+                      ))}
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider sticky right-0 bg-slate-50">
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -993,20 +994,15 @@ export function ChemicalsPage() {
                       <>
                         <tr
                   key={chemical.id}
-                          className="hover:bg-slate-50 transition-colors cursor-pointer"
-                          onClick={() => {
-                            if (editingId !== chemical.id) {
-                              setExpandedId(expandedId === chemical.id ? null : chemical.id);
-                            }
-                          }}
+                          className="hover:bg-slate-50 transition-colors"
                 >
                   {editingId === chemical.id ? (
                           // Edit Row
                           <>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                            <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-900">
                               {chemical.id}
                             </td>
-                            <td colSpan={7} className="px-6 py-4">
+                            <td colSpan={CHEMICAL_MASTER_COLUMNS.length} className="px-4 py-4">
                               <div className="space-y-3">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div>
@@ -1021,7 +1017,7 @@ export function ChemicalsPage() {
                                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                       <option value="">Select...</option>
-                                      {sectors.map((s) => (
+                                      {PMS_SECTOR_OPTIONS.map((s) => (
                                         <option key={s} value={s}>
                                           {s}
                                         </option>
@@ -1231,22 +1227,16 @@ export function ChemicalsPage() {
                         ) : (
                           // View Row
                           <>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                              {chemical.id}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                              {chemical.product_name || "-"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                              {chemical.vendor || "-"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                              {chemical.product_category || "-"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                              {chemical.sub_category || "-"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            {CHEMICAL_MASTER_COLUMNS.map((col) => (
+                              <td
+                                key={col.key}
+                                className="px-4 py-3 text-sm text-slate-700 max-w-[220px] truncate"
+                                title={chemicalCellValue(chemical, col.key)}
+                              >
+                                {chemicalCellValue(chemical, col.key)}
+                              </td>
+                            ))}
+                            <td className="px-4 py-3 whitespace-nowrap text-sm sticky right-0 bg-white">
                         <div className="flex items-center gap-2">
                           <button
                                   onClick={(e) => {
@@ -1285,91 +1275,9 @@ export function ChemicalsPage() {
                           </button>
                         </div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedId(expandedId === chemical.id ? null : chemical.id);
-                                }}
-                                className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold hover:shadow-lg transition-all"
-                              >
-                                {expandedId === chemical.id ? "Hide" : "View"}
-                              </button>
-                            </td>
                           </>
                         )}
                       </tr>
-                      {/* Expanded Details Row */}
-                      {expandedId === chemical.id && editingId !== chemical.id && (
-                        <tr className="bg-slate-50">
-                          <td colSpan={7} className="px-6 py-4">
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
-                              {chemical.sector && (
-                                <div>
-                                  <span className="text-slate-500 font-medium">Sector:</span>{" "}
-                                  <span className="text-slate-900">{chemical.sector}</span>
-                      </div>
-                              )}
-                              {chemical.industry && (
-                          <div>
-                                  <span className="text-slate-500 font-medium">Industry:</span>{" "}
-                                  <span className="text-slate-900">{chemical.industry}</span>
-                                </div>
-                              )}
-                              {chemical.packing && (
-                                <div>
-                                  <span className="text-slate-500 font-medium">Packing:</span>{" "}
-                                  <span className="text-slate-900">{chemical.packing}</span>
-                          </div>
-                        )}
-                        {chemical.hs_code && (
-                          <div>
-                                  <span className="text-slate-500 font-medium">HS Code:</span>{" "}
-                                  <span className="text-slate-900">{chemical.hs_code}</span>
-                          </div>
-                        )}
-                              {chemical.price !== null && chemical.price !== undefined && (
-                          <div>
-                                  <span className="text-slate-500 font-medium">Price:</span>{" "}
-                                  <span className="text-slate-900">
-                                    ${chemical.price.toFixed(2)}
-                                </span>
-                                </div>
-                              )}
-                              {chemical.partner_id && (
-                                <div>
-                                  <span className="text-slate-500 font-medium">Partner ID:</span>{" "}
-                                  <span className="text-slate-900">{chemical.partner_id}</span>
-                            </div>
-                              )}
-                            </div>
-                            {(chemical.typical_application || chemical.product_description) && (
-                              <div className="mt-4 space-y-2">
-                                {chemical.typical_application && (
-                                  <div>
-                                    <span className="text-slate-500 font-medium">
-                                      Typical Application:
-                                    </span>
-                                    <p className="text-slate-900 mt-1">
-                                      {chemical.typical_application}
-                                    </p>
-                          </div>
-                        )}
-                                {chemical.product_description && (
-                                  <div>
-                                    <span className="text-slate-500 font-medium">
-                                      Product Description:
-                                    </span>
-                                    <p className="text-slate-900 mt-1">
-                                      {chemical.product_description}
-                                    </p>
-                      </div>
-                  )}
-                </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
                       </>
               ))}
                   </tbody>

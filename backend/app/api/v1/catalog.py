@@ -20,6 +20,7 @@ async def list_shared_catalog_products(
     vendor: str | None = None,
     product_category: str | None = None,
     sub_category: str | None = None,
+    search: str | None = None,
 ):
     """
     Master product list from chemical_full_data.
@@ -34,6 +35,7 @@ async def list_shared_catalog_products(
             vendor=vendor,
             product_category=product_category,
             sub_category=sub_category,
+            search=search,
         )
         total = count_chemical_full_data(
             sector=sector,
@@ -41,6 +43,7 @@ async def list_shared_catalog_products(
             vendor=vendor,
             product_category=product_category,
             sub_category=sub_category,
+            search=search,
         )
         return ChemicalFullDataListResponse(chemicals=chemicals, total=total)
     except Exception as e:

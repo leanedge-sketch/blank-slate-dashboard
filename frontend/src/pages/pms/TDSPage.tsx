@@ -239,21 +239,30 @@ export function TDSPage() {
     }
   }
 
+  function tdsDocumentUrl(meta: Record<string, unknown> | null | undefined): string | null {
+    if (!meta || typeof meta !== "object") return null;
+    const url = meta.file_url || meta.tds_file_url;
+    return typeof url === "string" && url ? url : null;
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     try {
       setCreating(true);
-      
-      // Include file URL in metadata if extracted
-      const metadata = extractedData?.file_url
-        ? {
-            file_url: extractedData.file_url,
-            file_name: extractedData.file_name || selectedFile?.name,
-            file_type: extractedData.file_type || extractedData.file_content_type,
-            temp_file_key: extractedData.temp_file_key, // For moving file to final location
-            extracted_at: new Date().toISOString(),
-          }
-        : undefined;
+
+      const metadata =
+        extractedData || selectedFile
+          ? {
+              ...(extractedData || {}),
+              file_url: extractedData?.file_url,
+              file_name: extractedData?.file_name || selectedFile?.name,
+              file_type: extractedData?.file_type || extractedData?.file_content_type,
+              temp_file_key: extractedData?.temp_file_key,
+              ai_product_description:
+                extractedData?.ai_product_description || extractedData?.product_description,
+              extracted_at: new Date().toISOString(),
+            }
+          : undefined;
 
       await createTDS({
         ...formData,
@@ -427,16 +436,24 @@ export function TDSPage() {
                     {extractedData.supplier_name && (
                       <p>Supplier: {extractedData.supplier_name}</p>
                     )}
+                    {(extractedData.ai_product_description ||
+                      extractedData.product_description) && (
+                      <p className="mt-2 pt-2 border-t border-emerald-300">
+                        <span className="font-semibold">AI description: </span>
+                        {extractedData.ai_product_description ||
+                          extractedData.product_description}
+                      </p>
+                    )}
                     {extractedData.file_url && (
                       <p className="mt-2 pt-2 border-t border-emerald-300">
-                        📄 File uploaded to:{" "}
+                        PDF saved for reference:{" "}
                         <a
                           href={extractedData.file_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
-                          {extractedData.file_name || "View file"}
+                          {extractedData.file_name || "View PDF"}
                         </a>
                       </p>
                     )}
@@ -677,70 +694,78 @@ export function TDSPage() {
             </div>
 
             {/* TDS List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {tdsList.map((tds) => {
-                const chemicalType = resolveChemicalTypeForTds(tds);
-                return (
-                  <div
-                    key={tds.id}
-                    onClick={() => handleTdsClick(tds.id)}
-                    className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-all cursor-pointer hover:border-emerald-300"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="text-lg font-bold text-slate-900">
-                        {tds.brand || "Unnamed Brand"}
-                      </h3>
-                      <FileText className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      {chemicalType && (
-                        <div>
-                          <span className="text-slate-500">Chemical:</span>{" "}
-                          <span className="font-medium text-slate-700">{chemicalType.name}</span>
-                        </div>
-                      )}
-                      {tds.grade && (
-                        <div>
-                          <span className="text-slate-500">Grade:</span>{" "}
-                          <span className="font-medium text-slate-700">{tds.grade}</span>
-                        </div>
-                      )}
-                      {tds.owner && (
-                        <div>
-                          <span className="text-slate-500">Owner:</span>{" "}
-                          <span className="font-medium text-slate-700">{tds.owner}</span>
-                        </div>
-                      )}
-                      {tds.source && (
-                        <div>
-                          <span className="text-slate-500">Source:</span>{" "}
-                          <span className="font-medium text-slate-700">{tds.source}</span>
-                        </div>
-                      )}
-                      {tds.metadata &&
-                        typeof tds.metadata === "object" &&
-                        tds.metadata.file_url && (
-                          <div>
-                            <span className="text-slate-500">Document:</span>{" "}
-                            <a
-                              href={tds.metadata.file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-blue-600 hover:underline font-medium"
-                            >
-                              {tds.metadata.file_name || "View TDS file"}
-                            </a>
-                          </div>
-                        )}
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-slate-200">
-                      <p className="text-xs text-slate-400">Click to view details</p>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                      <th className="px-4 py-3 font-semibold text-slate-700">Brand</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Chemical Type</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Grade</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Owner</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Source</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Description</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">PDF</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {tdsList.map((tds) => {
+                      const chemicalType = resolveChemicalTypeForTds(tds);
+                      const meta =
+                        tds.metadata && typeof tds.metadata === "object"
+                          ? (tds.metadata as Record<string, unknown>)
+                          : null;
+                      const docUrl = tdsDocumentUrl(meta);
+                      const description =
+                        (meta?.ai_product_description as string) ||
+                        (meta?.product_description as string) ||
+                        "";
+                      return (
+                        <tr
+                          key={tds.id}
+                          onClick={() => handleTdsClick(tds.id)}
+                          className="hover:bg-emerald-50/50 cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {tds.brand || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {chemicalType?.name || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{tds.grade || "—"}</td>
+                          <td className="px-4 py-3 text-slate-700">{tds.owner || "—"}</td>
+                          <td className="px-4 py-3 text-slate-700">{tds.source || "—"}</td>
+                          <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
+                            {description || "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            {docUrl ? (
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-medium"
+                              >
+                                <FileText className="w-4 h-4" />
+                                {(meta?.file_name as string) || "PDF"}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                            {tds.created_at
+                              ? new Date(tds.created_at).toLocaleDateString()
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Pagination */}
@@ -902,6 +927,22 @@ export function TDSPage() {
                       </div>
                     )}
                 </div>
+
+                {selectedTdsDetail.metadata &&
+                  typeof selectedTdsDetail.metadata === "object" &&
+                  (selectedTdsDetail.metadata.ai_product_description ||
+                    selectedTdsDetail.metadata.product_description) && (
+                    <div className="mb-6 p-4 rounded-lg bg-slate-50 border border-slate-200">
+                      <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2 mb-3">
+                        <Sparkles className="w-5 h-5 text-emerald-600" />
+                        Product Description
+                      </h3>
+                      <p className="text-slate-700 leading-relaxed">
+                        {selectedTdsDetail.metadata.ai_product_description ||
+                          selectedTdsDetail.metadata.product_description}
+                      </p>
+                    </div>
+                  )}
 
                 {/* AI Extracted Data */}
                 {selectedTdsDetail.metadata &&

@@ -132,16 +132,11 @@ def _resolve_chemical_type_id(value: Any) -> Optional[str]:
         return s
     try:
         int_id = int(s)
-        supabase: Client = get_supabase_client()
-        response = (
-            supabase.table("chemical_full_data")
-            .select("uuid_id")
-            .eq("id", int_id)
-            .limit(1)
-            .execute()
-        )
-        if response.data and response.data[0].get("uuid_id"):
-            return str(response.data[0]["uuid_id"])
+        from app.services.chemical_master_data import get_chemical_master_data_by_id
+
+        chem = get_chemical_master_data_by_id(int_id)
+        if chem and chem.uuid_id:
+            return str(chem.uuid_id)
     except (TypeError, ValueError):
         pass
     return s

@@ -69,26 +69,11 @@ def list_chemical_types(limit: int = 100, offset: int = 0) -> List[ChemicalType]
     This keeps the API contract stable for the frontend while pointing
     at the new data source.
     """
-    supabase: Client = get_supabase_client()
     try:
-        response = (
-            supabase.table("chemical_full_data")
-            .select(
-                "id, uuid_id, vendor, product_category, sub_category, product_name, "
-                "packing, typical_application, product_description, hs_code, price"
-            )
-            .order("product_name", desc=False)
-            .limit(limit)
-            .offset(offset)
-            .execute()
-        )
-
-        if response.data is None:
-            return []
-
+        chemicals = list_chemical_full_data(limit=limit, offset=offset)
         adapted_rows: List[Dict[str, Any]] = []
-        for row in response.data:
-            row_dict = dict(row)
+        for chem in chemicals:
+            row_dict = chem.model_dump()
             adapted_rows.append(
                 {
                     "id": row_dict.get("id"),
@@ -125,13 +110,7 @@ def list_chemical_types(limit: int = 100, offset: int = 0) -> List[ChemicalType]
 
 
 def count_chemical_types() -> int:
-    supabase: Client = get_supabase_client()
-    response = (
-        supabase.table("chemical_full_data")
-        .select("id", count="exact")
-        .execute()
-    )
-    return response.count or 0
+    return count_chemical_full_data()
 
 
 def create_chemical_type(body: ChemicalTypeCreate) -> ChemicalType:
@@ -145,28 +124,17 @@ def create_chemical_type(body: ChemicalTypeCreate) -> ChemicalType:
 
     Other fields (applications/spec_template/metadata) are currently ignored.
     """
-    supabase: Client = get_supabase_client()
     payload = body.model_dump(exclude_unset=True)
+    from app.models.pms import ChemicalFullDataCreate
 
-    insert_data: Dict[str, Any] = {
-        "product_name": payload.get("name"),
-        "product_category": payload.get("category"),
-        "hs_code": payload.get("hs_code"),
-    }
-
-    response = supabase.table("chemical_full_data").insert(insert_data).execute()
-    if not response.data:
-        raise RuntimeError("Failed to create chemical type (chemical_full_data)")
-
-    created = dict(response.data[0])
-    catalog_id = created.get("id")
-    if catalog_id is not None:
-        from app.services.catalog_sync_service import sync_catalog_product_links
-
-        sync_catalog_product_links(int(catalog_id))
-        refreshed = get_chemical_full_data_by_id(int(catalog_id))
-        if refreshed:
-            created = refreshed.model_dump()
+    created_row = create_chemical_full_data(
+        ChemicalFullDataCreate(
+            product_name=payload.get("name"),
+            product_category=payload.get("category"),
+            hs_code=payload.get("hs_code"),
+        )
+    )
+    created = created_row.model_dump()
 
     adapted = {
         "id": created.get("id"),
@@ -193,19 +161,9 @@ def create_chemical_type(body: ChemicalTypeCreate) -> ChemicalType:
 
 
 def get_chemical_type_by_id(chemical_id: str) -> Optional[ChemicalType]:
-    supabase: Client = get_supabase_client()
-    response = (
-        supabase.table("chemical_full_data")
-        .select(
-            "id, uuid_id, vendor, product_category, sub_category, product_name, "
-            "packing, typical_application, product_description, hs_code, price"
-        )
-        .eq("id", int(chemical_id))
-        .single()
-        .execute()
-    )
-    if response.data:
-        row = dict(response.data)
+    chem = get_chemical_full_data_by_id(int(chemical_id))
+    if chem:
+        row = chem.model_dump()
         adapted = {
             "id": row.get("id"),
             "name": row.get("product_name") or "",
@@ -232,37 +190,29 @@ def get_chemical_type_by_id(chemical_id: str) -> Optional[ChemicalType]:
 
 
 def update_chemical_type(chemical_id: str, body: ChemicalTypeUpdate) -> ChemicalType:
-    supabase: Client = get_supabase_client()
     existing = get_chemical_type_by_id(chemical_id)
     if not existing:
         raise ValueError("Chemical type not found")
-    
+
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
         return existing
-    
-    # Map updatable fields
-    mapped_update: Dict[str, Any] = {}
-    if "name" in update_data:
-        mapped_update["product_name"] = update_data["name"]
-    if "category" in update_data:
-        mapped_update["product_category"] = update_data["category"]
-    if "hs_code" in update_data:
-        mapped_update["hs_code"] = update_data["hs_code"]
 
-    if not mapped_update:
+    from app.models.pms import ChemicalFullDataUpdate
+
+    mapped = ChemicalFullDataUpdate()
+    if "name" in update_data:
+        mapped.product_name = update_data["name"]
+    if "category" in update_data:
+        mapped.product_category = update_data["category"]
+    if "hs_code" in update_data:
+        mapped.hs_code = update_data["hs_code"]
+
+    if not mapped.model_dump(exclude_unset=True):
         return existing
 
-    response = (
-        supabase.table("chemical_full_data")
-        .update(mapped_update)
-        .eq("id", int(chemical_id))
-        .execute()
-    )
-    if not response.data:
-        raise RuntimeError("Failed to update chemical type (chemical_full_data)")
-
-    row = dict(response.data[0])
+    updated = update_chemical_full_data(int(chemical_id), mapped)
+    row = updated.model_dump()
     adapted = {
         "id": row.get("id"),
         "name": row.get("product_name") or "",
@@ -284,14 +234,7 @@ def update_chemical_type(chemical_id: str, body: ChemicalTypeUpdate) -> Chemical
 
 
 def delete_chemical_type(chemical_id: str) -> bool:
-    supabase: Client = get_supabase_client()
-    response = (
-        supabase.table("chemical_full_data")
-        .delete()
-        .eq("id", int(chemical_id))
-        .execute()
-    )
-    return True
+    return delete_chemical_full_data(int(chemical_id))
 
 
 # =============================
@@ -977,6 +920,48 @@ Return ONLY valid JSON, no other text.
         return None
 
 
+def generate_product_description_with_ai(
+    text_content: str, extracted_info: Dict[str, Any]
+) -> Optional[str]:
+    """Generate a short product summary from TDS text and extracted fields."""
+    try:
+        product_name = (
+            extracted_info.get("generic_product_name")
+            or extracted_info.get("trade_name")
+            or "this product"
+        )
+        trade_name = extracted_info.get("trade_name") or ""
+        supplier = extracted_info.get("supplier_name") or ""
+        specs = extracted_info.get("technical_specification") or ""
+
+        prompt = f"""
+Write a concise 2-3 sentence product description for a chemical/material catalog entry.
+Focus on what the product is, its main use, and one notable property if known.
+Do not use bullet points. Plain prose only.
+
+Product name: {product_name}
+Trade name: {trade_name}
+Supplier: {supplier}
+Technical notes: {specs[:1500]}
+
+TDS excerpt:
+{text_content[:4000]}
+"""
+        messages = [
+            {
+                "role": "system",
+                "content": "You write clear, professional product descriptions for industrial chemical catalogs.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        response_text = gemini_chat(messages)
+        if response_text:
+            return response_text.strip()
+    except Exception as e:
+        print(f"AI description error: {str(e)}")
+    return None
+
+
 def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: str) -> Dict[str, Any]:
     """
     Process a TDS file with AI to extract information.
@@ -1032,7 +1017,12 @@ def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: s
             if possible_key in extracted_info:
                 normalized[target_key] = extracted_info[possible_key]
                 break
-    
+
+    description = generate_product_description_with_ai(text_content, normalized)
+    if description:
+        normalized["product_description"] = description
+        normalized["ai_product_description"] = description
+
     return normalized
 
 
@@ -1277,29 +1267,21 @@ def list_chemical_full_data(
     vendor: Optional[str] = None,
     product_category: Optional[str] = None,
     sub_category: Optional[str] = None,
+    search: Optional[str] = None,
 ) -> List[ChemicalFullData]:
-    """List chemical_full_data with optional filters."""
-    supabase: Client = get_supabase_client()
-    query = supabase.table("chemical_full_data").select("*")
+    """List Chemical_Master_Data (API shape: ChemicalFullData)."""
+    from app.services.chemical_master_data import list_chemical_master_data
 
-    if sector:
-        query = query.ilike("sector", f"%{sector}%")
-    if industry:
-        query = query.ilike("industry", f"%{industry}%")
-    if vendor:
-        query = query.ilike("vendor", f"%{vendor}%")
-    if product_category:
-        query = query.ilike("product_category", f"%{product_category}%")
-    if sub_category:
-        query = query.ilike("sub_category", f"%{sub_category}%")
-
-    response = (
-        query.order("id", desc=False)
-        .limit(limit)
-        .offset(offset)
-        .execute()
+    return list_chemical_master_data(
+        limit=limit,
+        offset=offset,
+        sector=sector,
+        industry=industry,
+        vendor=vendor,
+        product_category=product_category,
+        sub_category=sub_category,
+        search=search,
     )
-    return [ChemicalFullData(**row) for row in (response.data or [])]
 
 
 def count_chemical_full_data(
@@ -1308,200 +1290,75 @@ def count_chemical_full_data(
     vendor: Optional[str] = None,
     product_category: Optional[str] = None,
     sub_category: Optional[str] = None,
+    search: Optional[str] = None,
 ) -> int:
-    """Count chemical_full_data with optional filters."""
-    supabase: Client = get_supabase_client()
-    query = supabase.table("chemical_full_data").select("id", count="exact")
+    """Count Chemical_Master_Data rows."""
+    from app.services.chemical_master_data import count_chemical_master_data
 
-    if sector:
-        query = query.ilike("sector", f"%{sector}%")
-    if industry:
-        query = query.ilike("industry", f"%{industry}%")
-    if vendor:
-        query = query.ilike("vendor", f"%{vendor}%")
-    if product_category:
-        query = query.ilike("product_category", f"%{product_category}%")
-    if sub_category:
-        query = query.ilike("sub_category", f"%{sub_category}%")
-
-    response = query.execute()
-    return response.count or 0
+    return count_chemical_master_data(
+        sector=sector,
+        industry=industry,
+        vendor=vendor,
+        product_category=product_category,
+        sub_category=sub_category,
+        search=search,
+    )
 
 
 def create_chemical_full_data(body: ChemicalFullDataCreate) -> ChemicalFullData:
-    """Create a new chemical_full_data record."""
-    supabase: Client = get_supabase_client()
-    payload = body.model_dump(exclude_unset=True)
-    
-    # Convert UUIDs to strings
-    from uuid import UUID
-    def convert_uuids(obj):
-        if isinstance(obj, UUID):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {k: convert_uuids(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_uuids(item) for item in obj]
-        return obj
-    
-    payload = convert_uuids(payload)
-    
-    # If id is not provided, let the database auto-generate it
-    if "id" not in payload or payload["id"] is None:
-        # Get the max id and add 1
-        max_response = supabase.table("chemical_full_data").select("id").order("id", desc=True).limit(1).execute()
-        if max_response.data and len(max_response.data) > 0:
-            payload["id"] = max_response.data[0]["id"] + 1
-        else:
-            payload["id"] = 1
-    
-    # If uuid_id is not provided, let the database auto-generate it (via default)
-    # Don't set it explicitly - let the database default handle it
-    
-    response = supabase.table("chemical_full_data").insert(payload).execute()
-    if not response.data:
-        raise RuntimeError("Failed to create chemical_full_data")
-    created_id = response.data[0].get("id")
-    if created_id is not None:
-        from app.services.catalog_sync_service import refresh_catalog_row
+    """Create a Chemical_Master_Data record."""
+    from app.services.chemical_master_data import create_chemical_master_data
 
-        refreshed = refresh_catalog_row(int(created_id))
-        if refreshed:
-            return refreshed
-    return ChemicalFullData(**response.data[0])
+    return create_chemical_master_data(body)
 
 
 def get_chemical_full_data_by_id(chemical_id: int) -> Optional[ChemicalFullData]:
-    """Get a single chemical_full_data by ID."""
-    supabase: Client = get_supabase_client()
-    response = (
-        supabase.table("chemical_full_data")
-        .select("*")
-        .eq("id", chemical_id)
-        .single()
-        .execute()
-    )
-    if response.data:
-        return ChemicalFullData(**response.data)
-    return None
+    """Get a single Chemical_Master_Data row by Row_No."""
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
+
+    return get_chemical_master_data_by_id(chemical_id)
 
 
 def update_chemical_full_data(chemical_id: int, body: ChemicalFullDataUpdate) -> ChemicalFullData:
-    """Update an existing chemical_full_data record."""
-    supabase: Client = get_supabase_client()
-    payload = body.model_dump(exclude_unset=True)
-    
-    # Convert UUIDs to strings
-    from uuid import UUID
-    def convert_uuids(obj):
-        if isinstance(obj, UUID):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {k: convert_uuids(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_uuids(item) for item in obj]
-        return obj
-    
-    payload = convert_uuids(payload)
-    
-    response = (
-        supabase.table("chemical_full_data")
-        .update(payload)
-        .eq("id", chemical_id)
-        .execute()
-    )
-    if not response.data:
-        raise RuntimeError(f"Failed to update chemical_full_data with id {chemical_id}")
+    """Update a Chemical_Master_Data record."""
+    from app.services.chemical_master_data import update_chemical_master_data
 
-    from app.services.catalog_sync_service import refresh_catalog_row
-
-    refreshed = refresh_catalog_row(chemical_id)
-    return refreshed or ChemicalFullData(**response.data[0])
+    return update_chemical_master_data(chemical_id, body)
 
 
 def delete_chemical_full_data(chemical_id: int) -> bool:
-    """Delete a chemical_full_data record."""
-    supabase: Client = get_supabase_client()
-    response = (
-        supabase.table("chemical_full_data")
-        .delete()
-        .eq("id", chemical_id)
-        .execute()
-    )
-    return True
+    """Delete a Chemical_Master_Data record."""
+    from app.services.chemical_master_data import delete_chemical_master_data
+
+    return delete_chemical_master_data(chemical_id)
 
 
 def get_all_sectors() -> List[str]:
-    """Fetch all unique sectors from chemical_full_data table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("chemical_full_data").select("sector").execute()
-        sectors_set = set()
-        for row in response.data or []:
-            sector = (row.get("sector") or "").strip()
-            if sector:
-                sectors_set.add(sector)
-        return sorted(list(sectors_set))
-    except Exception:
-        return []
+    from app.services.chemical_master_data import get_all_sectors as _sectors
+
+    return _sectors()
 
 
 def get_all_industries() -> List[str]:
-    """Fetch all unique industries from chemical_full_data table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("chemical_full_data").select("industry").execute()
-        industries_set = set()
-        for row in response.data or []:
-            industry = (row.get("industry") or "").strip()
-            if industry:
-                industries_set.add(industry)
-        return sorted(list(industries_set))
-    except Exception:
-        return []
+    from app.services.chemical_master_data import get_all_industries as _industries
+
+    return _industries()
 
 
 def get_all_product_names() -> List[str]:
-    """Fetch all unique product names from chemical_full_data table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("chemical_full_data").select("product_name").execute()
-        names_set = set()
-        for row in response.data or []:
-            name = (row.get("product_name") or "").strip()
-            if name:
-                names_set.add(name)
-        return sorted(list(names_set))
-    except Exception:
-        return []
+    from app.services.chemical_master_data import get_all_product_names as _names
+
+    return _names()
 
 
 def get_all_product_categories_from_full_data() -> List[str]:
-    """Fetch all unique product categories from chemical_full_data table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("chemical_full_data").select("product_category").execute()
-        categories_set = set()
-        for row in response.data or []:
-            cat = (row.get("product_category") or "").strip()
-            if cat:
-                categories_set.add(cat)
-        return sorted(list(categories_set))
-    except Exception:
-        return []
+    from app.services.chemical_master_data import get_all_product_categories
+
+    return get_all_product_categories()
 
 
 def get_all_sub_categories_from_full_data() -> List[str]:
-    """Fetch all unique sub categories from chemical_full_data table."""
-    supabase: Client = get_supabase_client()
-    try:
-        response = supabase.table("chemical_full_data").select("sub_category").execute()
-        sub_categories_set = set()
-        for row in response.data or []:
-            sub_cat = (row.get("sub_category") or "").strip()
-            if sub_cat:
-                sub_categories_set.add(sub_cat)
-        return sorted(list(sub_categories_set))
-    except Exception:
-        return []
+    from app.services.chemical_master_data import get_all_sub_categories
+
+    return get_all_sub_categories()
  

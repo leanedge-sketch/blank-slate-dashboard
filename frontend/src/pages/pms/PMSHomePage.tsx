@@ -14,7 +14,7 @@ const modules = [
   {
     icon: FlaskConical,
     title: "Chemical Master Data",
-    subtitle: "chemical_full_data",
+    subtitle: "Chemical_Master_Data",
     description: "Master chemical catalog — properties, sectors, and classifications",
     href: "/pms/chemicals",
     cta: "Manage chemicals",

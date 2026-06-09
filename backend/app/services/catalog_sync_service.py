@@ -27,12 +27,18 @@ def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
     if chem.uuid_id:
         return str(chem.uuid_id)
 
+    from app.database.connection import get_supabase_service_client
+    from app.services.chemical_master_data import TABLE
+
     new_uuid = str(uuid4())
-    supabase = get_supabase_client()
+    try:
+        supabase = get_supabase_service_client()
+    except RuntimeError:
+        supabase = get_supabase_client()
     response = (
-        supabase.table("chemical_full_data")
+        supabase.table(TABLE)
         .update({"uuid_id": new_uuid})
-        .eq("id", chemical_id)
+        .eq("Row_No", chemical_id)
         .execute()
     )
     if not response.data:

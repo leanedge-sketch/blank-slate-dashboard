@@ -502,6 +502,9 @@ export interface ChemicalFullData {
   price?: number | null;
   industry?: string | null;
   sector?: string | null;
+  generic_name?: string | null;
+  product_type?: string | null;
+  country_of_origin?: string | null;
   partner_id?: string | null;
 }
 
@@ -522,6 +525,9 @@ export interface ChemicalFullDataCreate {
   price?: number | null;
   industry?: string | null;
   sector?: string | null;
+  generic_name?: string | null;
+  product_type?: string | null;
+  country_of_origin?: string | null;
   partner_id?: string | null;
 }
 
@@ -535,6 +541,7 @@ export async function fetchChemicalFullData(params?: {
   vendor?: string;
   product_category?: string;
   sub_category?: string;
+  search?: string;
 }) {
   const res = await api.get<ChemicalFullDataListResponse>("/pms/chemical-full-data", { params });
   return res.data;
@@ -549,6 +556,7 @@ export async function fetchSharedCatalog(params?: {
   vendor?: string;
   product_category?: string;
   sub_category?: string;
+  search?: string;
 }) {
   const res = await api.get<ChemicalFullDataListResponse>("/catalog/products", { params });
   return res.data;

@@ -289,6 +289,7 @@ async def create_tds_endpoint(
                 
                 updated_metadata = metadata.copy()
                 updated_metadata["tds_file_url"] = final_file_url
+                updated_metadata["file_url"] = final_file_url
                 updated_metadata["tds_file_key"] = final_key
                 updated_metadata.pop("temp_file_key", None)  # Remove temp key
                 
@@ -808,6 +809,7 @@ async def get_chemical_full_data(
     vendor: Optional[str] = Query(None),
     product_category: Optional[str] = Query(None),
     sub_category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, description="Search generic name, product type, HS code, or product name"),
 ):
     """List chemical_full_data with optional filters."""
     try:
@@ -819,6 +821,7 @@ async def get_chemical_full_data(
             vendor=vendor,
             product_category=product_category,
             sub_category=sub_category,
+            search=search,
         )
         total = count_chemical_full_data(
             sector=sector,
@@ -826,6 +829,7 @@ async def get_chemical_full_data(
             vendor=vendor,
             product_category=product_category,
             sub_category=sub_category,
+            search=search,
         )
         return ChemicalFullDataListResponse(chemicals=chemicals, total=total)
     except Exception as e:

@@ -277,6 +277,9 @@ class ChemicalFullDataBase(BaseModel):
     price: Optional[float] = None
     industry: Optional[str] = None
     sector: Optional[str] = None
+    generic_name: Optional[str] = None
+    product_type: Optional[str] = None
+    country_of_origin: Optional[str] = None
     partner_id: Optional[UUID] = None
     uuid_id: Optional[UUID] = None  # UUID for linking with pipelines
 
@@ -297,6 +300,9 @@ class ChemicalFullDataUpdate(BaseModel):
     price: Optional[float] = None
     industry: Optional[str] = None
     sector: Optional[str] = None
+    generic_name: Optional[str] = None
+    product_type: Optional[str] = None
+    country_of_origin: Optional[str] = None
     partner_id: Optional[UUID] = None
     uuid_id: Optional[UUID] = None
 
