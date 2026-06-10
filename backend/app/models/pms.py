@@ -103,6 +103,20 @@ class TdsListResponse(BaseModel):
     total: int
 
 
+class TdsDescriptionGenerateRequest(BaseModel):
+    brand: Optional[str] = None
+    grade: Optional[str] = None
+    owner: Optional[str] = None
+    chemical_type_name: Optional[str] = None
+    use_web: bool = True
+
+
+class TdsDescriptionGenerateResponse(BaseModel):
+    product_description: Optional[str] = None
+    ai_product_description: Optional[str] = None
+    description_source: Optional[str] = None
+
+
 # =============================
 # PARTNER DATA
 # =============================

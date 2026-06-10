@@ -8,7 +8,7 @@ Handles file uploads to Supabase storage and text extraction from various file t
 import io
 import mimetypes
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from supabase import Client
@@ -154,6 +154,59 @@ def upload_tds_file_to_supabase(
         return file_url, content_type
     except Exception as e:
         raise RuntimeError(f"Failed to upload TDS file to Supabase: {str(e)}")
+
+
+TDS_DOCUMENTS_BUCKET = "product-documents"
+
+
+def public_storage_url(bucket: str, object_key: str) -> str:
+    """Build a public Supabase storage URL for an object key."""
+    base = settings.SUPABASE_URL.rstrip("/")
+    key = object_key.lstrip("/")
+    return f"{base}/storage/v1/object/public/{bucket}/{key}"
+
+
+def resolve_tds_document_url(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    Resolve the best URL for a TDS PDF/document.
+
+    After create, files move from tds_files/temp/ to tds_files/{id}/. Stale
+    file_url values may still point at deleted temp objects — prefer tds_file_url
+    and tds_file_key.
+    """
+    if not metadata or not isinstance(metadata, dict):
+        return None
+
+    tds_file_url = metadata.get("tds_file_url")
+    if isinstance(tds_file_url, str) and tds_file_url.strip():
+        return tds_file_url.strip()
+
+    storage_key = metadata.get("tds_file_key")
+    if isinstance(storage_key, str) and storage_key.strip():
+        return public_storage_url(TDS_DOCUMENTS_BUCKET, storage_key.strip())
+
+    file_url = metadata.get("file_url")
+    if isinstance(file_url, str) and file_url.strip():
+        url = file_url.strip()
+        if "/tds_files/temp/" in url and storage_key:
+            return public_storage_url(TDS_DOCUMENTS_BUCKET, str(storage_key).strip())
+        return url
+
+    return None
+
+
+def normalize_tds_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Ensure metadata exposes a working file_url for clients."""
+    if not metadata or not isinstance(metadata, dict):
+        return metadata
+
+    normalized = dict(metadata)
+    resolved = resolve_tds_document_url(normalized)
+    if resolved:
+        normalized["file_url"] = resolved
+        if not normalized.get("tds_file_url"):
+            normalized["tds_file_url"] = resolved
+    return normalized
 
 
 def extract_text_from_file(file_content: bytes, filename: str, content_type: str) -> str:

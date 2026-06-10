@@ -20,7 +20,7 @@ from supabase import Client
 
 from app.database.connection import get_supabase_client
 from app.services.ai_service import gemini_chat
-from app.services.file_service import extract_text_from_file
+from app.services.file_service import extract_text_from_file, normalize_tds_metadata
 from app.models.pms import (
     ChemicalType,
     ChemicalTypeCreate,
@@ -284,6 +284,8 @@ def _tds_from_row(row: Dict[str, Any]) -> Tds:
     chem_id = normalized.get("chemical_id")
     if chem_id and not normalized.get("chemical_type_id"):
         normalized["chemical_type_id"] = chem_id
+    if normalized.get("metadata") is not None:
+        normalized["metadata"] = normalize_tds_metadata(normalized.get("metadata"))
     return Tds(**normalized)
 
 
@@ -921,36 +923,49 @@ Return ONLY valid JSON, no other text.
 
 
 def generate_product_description_with_ai(
-    text_content: str, extracted_info: Dict[str, Any]
+    text_content: str,
+    extracted_info: Dict[str, Any],
+    *,
+    web_context: str = "",
+    chemical_type_name: str = "",
 ) -> Optional[str]:
-    """Generate a short product summary from TDS text and extracted fields."""
+    """Generate a general product summary for catalog / project context."""
     try:
         product_name = (
             extracted_info.get("generic_product_name")
             or extracted_info.get("trade_name")
+            or chemical_type_name
             or "this product"
         )
         trade_name = extracted_info.get("trade_name") or ""
         supplier = extracted_info.get("supplier_name") or ""
         specs = extracted_info.get("technical_specification") or ""
+        web_block = (
+            f"\nWeb research:\n{web_context[:6000]}\n" if web_context.strip() else ""
+        )
 
         prompt = f"""
-Write a concise 2-3 sentence product description for a chemical/material catalog entry.
-Focus on what the product is, its main use, and one notable property if known.
-Do not use bullet points. Plain prose only.
+Write a clear general description (3-5 sentences) for a chemical product catalog entry.
+Help sales and project teams quickly understand what this material is and why it matters.
+Cover: what it is, typical applications/industries, and 1-2 notable technical properties.
+Plain prose only — no bullet points, no marketing hype.
 
-Product name: {product_name}
-Trade name: {trade_name}
-Supplier: {supplier}
-Technical notes: {specs[:1500]}
-
-TDS excerpt:
-{text_content[:4000]}
+Product / generic name: {product_name}
+Trade / brand name: {trade_name}
+Chemical type: {chemical_type_name or "—"}
+Supplier: {supplier or "—"}
+Technical notes from TDS: {specs[:1500]}
+{web_block}
+TDS document excerpt:
+{text_content[:4000] if text_content else "(no uploaded document)"}
 """
         messages = [
             {
                 "role": "system",
-                "content": "You write clear, professional product descriptions for industrial chemical catalogs.",
+                "content": (
+                    "You write clear, factual product descriptions for industrial "
+                    "chemical catalogs used by B2B sales teams."
+                ),
             },
             {"role": "user", "content": prompt},
         ]
@@ -960,6 +975,86 @@ TDS excerpt:
     except Exception as e:
         print(f"AI description error: {str(e)}")
     return None
+
+
+def build_tds_product_description(
+    *,
+    brand: Optional[str] = None,
+    grade: Optional[str] = None,
+    owner: Optional[str] = None,
+    chemical_type_name: Optional[str] = None,
+    tds_text: Optional[str] = None,
+    extracted_info: Optional[Dict[str, Any]] = None,
+    use_web: bool = True,
+) -> Dict[str, Any]:
+    """
+    Build a product description from uploaded TDS text and/or web research + form fields.
+    Returns product_description, ai_product_description, and description_source.
+    """
+    from app.services.web_search_service import search_web_for_product
+
+    info: Dict[str, Any] = dict(extracted_info or {})
+    if brand and not info.get("trade_name"):
+        info["trade_name"] = brand
+    if owner and not info.get("supplier_name"):
+        info["supplier_name"] = owner
+    if chemical_type_name and not info.get("generic_product_name"):
+        info["generic_product_name"] = chemical_type_name
+
+    web_context = ""
+    source = "form"
+    if use_web:
+        web_context = search_web_for_product(
+            product_name=chemical_type_name or "",
+            brand=brand or "",
+            grade=grade or "",
+            supplier=owner or "",
+        )
+        if web_context.strip() and "Web search failed" not in web_context:
+            source = "web" if not tds_text else "file_and_web"
+
+    if tds_text:
+        source = "file" if not web_context.strip() else "file_and_web"
+
+    description = generate_product_description_with_ai(
+        tds_text or "",
+        info,
+        web_context=web_context,
+        chemical_type_name=chemical_type_name or "",
+    )
+
+    if not description and web_context.strip():
+        description = generate_product_description_with_ai(
+            "",
+            info,
+            web_context=web_context,
+            chemical_type_name=chemical_type_name or "",
+        )
+        source = "web"
+
+    if not description:
+        parts = [
+            p
+            for p in [
+                chemical_type_name,
+                brand,
+                grade,
+                f"from {owner}" if owner else None,
+            ]
+            if p
+        ]
+        if parts:
+            description = (
+                f"{' — '.join(parts[:2])}. "
+                "Add more detail manually or run AI extraction from a TDS file."
+            )
+            source = "form"
+
+    return {
+        "product_description": description,
+        "ai_product_description": description,
+        "description_source": source,
+    }
 
 
 def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: str) -> Dict[str, Any]:
@@ -1018,10 +1113,19 @@ def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: s
                 normalized[target_key] = extracted_info[possible_key]
                 break
 
-    description = generate_product_description_with_ai(text_content, normalized)
-    if description:
-        normalized["product_description"] = description
-        normalized["ai_product_description"] = description
+    desc_result = build_tds_product_description(
+        brand=normalized.get("trade_name"),
+        grade=None,
+        owner=normalized.get("supplier_name"),
+        chemical_type_name=normalized.get("generic_product_name"),
+        tds_text=text_content,
+        extracted_info=normalized,
+        use_web=True,
+    )
+    if desc_result.get("product_description"):
+        normalized["product_description"] = desc_result["product_description"]
+        normalized["ai_product_description"] = desc_result["ai_product_description"]
+        normalized["description_source"] = desc_result.get("description_source", "file")
 
     return normalized
 

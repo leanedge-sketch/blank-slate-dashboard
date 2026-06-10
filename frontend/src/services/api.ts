@@ -675,6 +675,30 @@ export interface TdsCreate {
   metadata?: Record<string, any> | null;
 }
 
+export interface TdsDescriptionGenerateRequest {
+  brand?: string | null;
+  grade?: string | null;
+  owner?: string | null;
+  chemical_type_name?: string | null;
+  use_web?: boolean;
+}
+
+export interface TdsDescriptionGenerateResponse {
+  product_description?: string | null;
+  ai_product_description?: string | null;
+  description_source?: string | null;
+}
+
+export async function generateTdsDescription(
+  data: TdsDescriptionGenerateRequest,
+) {
+  const res = await api.post<TdsDescriptionGenerateResponse>(
+    "/pms/tds/generate-description",
+    data,
+  );
+  return res.data;
+}
+
 // =============================
 // PMS: Partners
 // =============================

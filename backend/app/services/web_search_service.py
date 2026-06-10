@@ -177,6 +177,23 @@ def search_web_for_company(company_name: str) -> str:
         return f"Web search failed: {str(e)}\n"
 
 
+def search_web_for_product(
+    *,
+    product_name: str = "",
+    brand: str = "",
+    grade: str = "",
+    supplier: str = "",
+) -> str:
+    """Web search tuned for industrial chemical / TDS product context."""
+    terms = [t.strip() for t in (brand, product_name, grade, supplier) if t and t.strip()]
+    if not terms:
+        return ""
+    query = " ".join(dict.fromkeys(terms))  # preserve order, dedupe
+    return search_web_for_company(
+        f"{query} chemical material technical datasheet applications properties"
+    )
+
+
 def search_linkedin_profiles_ethiopia(
     company_name: str,
     *,

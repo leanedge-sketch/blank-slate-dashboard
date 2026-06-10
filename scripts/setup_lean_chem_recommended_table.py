@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create LeanChem_Recommended_Products table if missing."""
+"""Verify LeanChem_Recommended_Products is reachable and CRUD works."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ load_dotenv(ROOT / ".env", override=False)
 load_dotenv(ROOT / "backend" / ".env", override=False)
 
 SQL_PATH = ROOT / "docs" / "0006_lean_chem_recommended_products.sql"
+GRANTS_PATH = ROOT / "docs" / "0006b_lean_chem_recommended_products_grants.sql"
 TABLE = "LeanChem_Recommended_Products"
 
 
@@ -30,7 +31,7 @@ def table_exists() -> bool:
         return False
 
 
-def apply_sql_via_psycopg() -> bool:
+def apply_sql_via_psycopg(path: Path) -> bool:
     db_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not db_url:
         return False
@@ -40,7 +41,7 @@ def apply_sql_via_psycopg() -> bool:
         print("psycopg2 not installed; cannot run SQL automatically.")
         return False
 
-    sql = SQL_PATH.read_text(encoding="utf-8")
+    sql = path.read_text(encoding="utf-8")
     conn = psycopg2.connect(db_url)
     conn.autocommit = True
     try:
@@ -51,17 +52,51 @@ def apply_sql_via_psycopg() -> bool:
         conn.close()
 
 
+def verify_crud() -> None:
+    from app.models.pms import LeanChemRecommendedProductCreate
+    from app.services.lean_chem_recommended_products import (
+        count_lean_chem_recommended_products,
+        create_lean_chem_recommended_product,
+        delete_lean_chem_recommended_product,
+        list_lean_chem_recommended_products,
+    )
+
+    total = count_lean_chem_recommended_products()
+    rows = list_lean_chem_recommended_products(limit=3)
+    print(f"  list: total={total}, sample_rows={len(rows)}")
+
+    created = create_lean_chem_recommended_product(
+        LeanChemRecommendedProductCreate(
+            product_name="__connectivity_test__",
+            sector="Construction",
+        )
+    )
+    print(f"  create: id={created.id}")
+    delete_lean_chem_recommended_product(created.id)
+    print("  delete: ok")
+
+
 def main() -> None:
-    if table_exists():
-        print(f"OK: {TABLE} already exists.")
-        return
+    if not table_exists():
+        print(f"{TABLE} not found — attempting setup…")
+        if apply_sql_via_psycopg(SQL_PATH):
+            print(f"Created {TABLE} via DATABASE_URL.")
+        else:
+            print(f"\nPlease run this SQL in Supabase SQL Editor:\n  {SQL_PATH}\n")
+            sys.exit(1)
 
-    print(f"{TABLE} not found — attempting setup…")
-    if apply_sql_via_psycopg():
-        print(f"Created {TABLE} via DATABASE_URL.")
-        return
+    print(f"OK: {TABLE} exists in Supabase.")
 
-    print(f"\nPlease run this SQL in Supabase SQL Editor:\n  {SQL_PATH}\n")
+    try:
+        verify_crud()
+        print("OK: backend service CRUD via /api/v1/pms/lean-chem-products")
+    except Exception as exc:
+        print(f"CRUD check failed: {exc}")
+        print(f"If you see a permission error, run:\n  {GRANTS_PATH}")
+        sys.exit(1)
+
+    print("\nFrontend: PMS > LeanChem Products (/pms/products)")
+    print("API routes: GET/POST /api/v1/pms/lean-chem-products")
 
 
 if __name__ == "__main__":

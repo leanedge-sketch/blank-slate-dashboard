@@ -6,7 +6,8 @@ HTTP endpoints for Product Management System functionality:
 - /pms/chemicals   → chemical_full_data (catalog)
 - /pms/tds         → tds_data
 - /pms/partners    → partner_data
-- /pms/products    → leanchem_products
+- /pms/products    → leanchem_products (legacy)
+- /pms/lean-chem-products → LeanChem_Recommended_Products
 - /pms/pricing     → costing_pricing_data
 """
 
@@ -30,6 +31,8 @@ from app.models.pms import (
     TdsCreate,
     TdsUpdate,
     TdsListResponse,
+    TdsDescriptionGenerateRequest,
+    TdsDescriptionGenerateResponse,
     Partner,
     PartnerCreate,
     PartnerUpdate,
@@ -89,6 +92,7 @@ from app.services.pms_service import (
     update_costing_pricing,
     delete_costing_pricing,
     process_tds_file_with_ai,
+    build_tds_product_description,
     list_partner_chemicals,
     count_partner_chemicals,
     create_partner_chemical,
@@ -293,10 +297,13 @@ async def create_tds_endpoint(
                 final_file_url = f"{supabase_url}/storage/v1/object/public/product-documents/{final_key}"
                 
                 updated_metadata = metadata.copy()
+                updated_metadata["tds_file_key"] = final_key
                 updated_metadata["tds_file_url"] = final_file_url
                 updated_metadata["file_url"] = final_file_url
-                updated_metadata["tds_file_key"] = final_key
-                updated_metadata.pop("temp_file_key", None)  # Remove temp key
+                updated_metadata.pop("temp_file_key", None)
+                # Drop stale temp URL if copy() still carried it under another key
+                for stale_key in ("temp_file_url",):
+                    updated_metadata.pop(stale_key, None)
                 
                 tds_record = update_tds(tds_id, TdsUpdate(metadata=updated_metadata))
             except Exception as e:
@@ -339,6 +346,35 @@ async def delete_tds_endpoint(tds_id: str):
         return None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting TDS record: {str(e)}")
+
+
+@router.post(
+    "/tds/generate-description",
+    response_model=TdsDescriptionGenerateResponse,
+)
+async def generate_tds_description_endpoint(
+    body: TdsDescriptionGenerateRequest,
+):
+    """Generate a general product description from form fields and optional web research."""
+    try:
+        result = build_tds_product_description(
+            brand=body.brand,
+            grade=body.grade,
+            owner=body.owner,
+            chemical_type_name=body.chemical_type_name,
+            use_web=body.use_web,
+        )
+        if not result.get("product_description"):
+            raise HTTPException(
+                status_code=400,
+                detail="Could not generate a description — enter at least a brand or chemical type.",
+            )
+        return TdsDescriptionGenerateResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error generating TDS description")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/tds/extract-ai")

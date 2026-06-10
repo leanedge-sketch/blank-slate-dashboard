@@ -28,3 +28,8 @@ CREATE INDEX IF NOT EXISTS lean_chem_recommended_products_source_idx
 
 COMMENT ON TABLE public."LeanChem_Recommended_Products" IS
   'LeanChem suggested/recommended products — curated manually; may link to Chemical_Master_Data via source_master_row_no.';
+
+-- Allow the FastAPI backend (service_role) and authenticated app users to read/write.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."LeanChem_Recommended_Products" TO authenticated;
+GRANT SELECT ON public."LeanChem_Recommended_Products" TO anon;
+GRANT ALL ON public."LeanChem_Recommended_Products" TO service_role;

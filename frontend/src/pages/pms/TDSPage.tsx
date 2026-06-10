@@ -7,6 +7,7 @@ import {
   createTDS,
   backfillTdsFromCatalog,
   fetchChemicalTypes,
+  generateTdsDescription,
   Tds,
   TdsCreate,
   ChemicalType,
@@ -30,6 +31,8 @@ import {
   FileCheck,
   Info,
 } from "lucide-react";
+import { resolveTdsDocumentUrl } from "../../utils/tdsDocument";
+import { getTdsProductDescription } from "../../utils/tdsDescription";
 
 export function TDSPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,6 +68,9 @@ export function TDSPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
+  const [productDescription, setProductDescription] = useState("");
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [aiDescriptionSnapshot, setAiDescriptionSnapshot] = useState("");
 
   // Detail view state
   const [selectedTdsId, setSelectedTdsId] = useState<string | null>(null);
@@ -187,6 +193,48 @@ export function TDSPage() {
     }
   }
 
+  function chemicalTypeNameForForm(): string {
+    const ref = formData.chemical_type_id;
+    if (!ref) return "";
+    const match = chemicalTypes.find(
+      (ct) => catalogUuid(ct) === ref || String(ct.id) === ref,
+    );
+    return match?.name || "";
+  }
+
+  async function handleGenerateDescription(useWeb = true) {
+    const chemicalTypeName = chemicalTypeNameForForm();
+    if (!formData.brand?.trim() && !chemicalTypeName) {
+      alert("Enter a brand or select a chemical type to generate a description.");
+      return;
+    }
+    try {
+      setGeneratingDescription(true);
+      const result = await generateTdsDescription({
+        brand: formData.brand || null,
+        grade: formData.grade || null,
+        owner: formData.owner || null,
+        chemical_type_name: chemicalTypeName || null,
+        use_web: useWeb,
+      });
+      const desc =
+        result.product_description || result.ai_product_description || "";
+      setProductDescription(desc);
+      setAiDescriptionSnapshot(
+        result.ai_product_description || result.product_description || "",
+      );
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err as Error)?.message ||
+        "Failed to generate description";
+      alert(String(message));
+    } finally {
+      setGeneratingDescription(false);
+    }
+  }
+
   async function handleAIExtraction() {
     if (!selectedFile) {
       alert("Please select a file first");
@@ -195,10 +243,10 @@ export function TDSPage() {
 
     try {
       setExtracting(true);
-      const formData = new FormData();
-      formData.append("file", selectedFile);
+      const uploadForm = new FormData();
+      uploadForm.append("file", selectedFile);
 
-      const res = await api.post("/pms/tds/extract-ai", formData, {
+      const res = await api.post("/pms/tds/extract-ai", uploadForm, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -207,16 +255,23 @@ export function TDSPage() {
       const data = res.data;
       setExtractedData(data);
 
-      // Auto-populate form fields
-      setFormData({
-        ...formData,
-        brand: data.trade_name || data.brand || formData.brand,
-        grade: data.grade || formData.grade,
-        owner: data.supplier_name || data.owner || formData.owner,
-        source: data.source || formData.source,
-      });
+      const desc =
+        data.product_description || data.ai_product_description || "";
+      if (desc) {
+        setProductDescription(desc);
+        setAiDescriptionSnapshot(
+          data.ai_product_description || data.product_description || "",
+        );
+      }
 
-      // Try to match chemical type by name if available
+      setFormData((prev) => ({
+        ...prev,
+        brand: data.trade_name || data.brand || prev.brand,
+        grade: data.grade || prev.grade,
+        owner: data.supplier_name || data.owner || prev.owner,
+        source: data.source || prev.source,
+      }));
+
       if (data.generic_product_name && chemicalTypes.length > 0) {
         const matched = chemicalTypes.find(
           (ct) =>
@@ -239,28 +294,35 @@ export function TDSPage() {
     }
   }
 
-  function tdsDocumentUrl(meta: Record<string, unknown> | null | undefined): string | null {
-    if (!meta || typeof meta !== "object") return null;
-    const url = meta.file_url || meta.tds_file_url;
-    return typeof url === "string" && url ? url : null;
-  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     try {
       setCreating(true);
 
+      const trimmedDescription = productDescription.trim();
+      const metadataBase =
+        extractedData || selectedFile ? { ...(extractedData || {}) } : {};
+
       const metadata =
-        extractedData || selectedFile
+        trimmedDescription || Object.keys(metadataBase).length > 0
           ? {
-              ...(extractedData || {}),
+              ...metadataBase,
               file_url: extractedData?.file_url,
               file_name: extractedData?.file_name || selectedFile?.name,
               file_type: extractedData?.file_type || extractedData?.file_content_type,
               temp_file_key: extractedData?.temp_file_key,
+              product_description: trimmedDescription || undefined,
               ai_product_description:
-                extractedData?.ai_product_description || extractedData?.product_description,
-              extracted_at: new Date().toISOString(),
+                aiDescriptionSnapshot ||
+                extractedData?.ai_product_description ||
+                extractedData?.product_description ||
+                trimmedDescription ||
+                undefined,
+              description_source:
+                extractedData?.description_source ||
+                (aiDescriptionSnapshot ? "ai" : undefined),
+              extracted_at: extractedData ? new Date().toISOString() : undefined,
             }
           : undefined;
 
@@ -279,6 +341,8 @@ export function TDSPage() {
       });
       setSelectedFile(null);
       setExtractedData(null);
+      setProductDescription("");
+      setAiDescriptionSnapshot("");
       await loadTDS();
     } catch (err: any) {
       console.error(err);
@@ -438,10 +502,8 @@ export function TDSPage() {
                     )}
                     {(extractedData.ai_product_description ||
                       extractedData.product_description) && (
-                      <p className="mt-2 pt-2 border-t border-emerald-300">
-                        <span className="font-semibold">AI description: </span>
-                        {extractedData.ai_product_description ||
-                          extractedData.product_description}
+                      <p className="mt-2 pt-2 border-t border-emerald-300 text-emerald-900">
+                        Description drafted — review and edit in the field below before saving.
                       </p>
                     )}
                     {extractedData.file_url && (
@@ -528,6 +590,45 @@ export function TDSPage() {
                 </div>
               </div>
 
+              <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-800">
+                      Product description
+                    </label>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Key info about this chemical — auto-filled by AI from the uploaded TDS or
+                      web research; you can edit before saving.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateDescription(true)}
+                    disabled={generatingDescription}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-800 text-sm font-medium hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    {generatingDescription ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Generate with AI
+                      </>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  value={productDescription}
+                  onChange={(e) => setProductDescription(e.target.value)}
+                  rows={5}
+                  placeholder="General description: what this product is, typical uses, and notable properties…"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-y min-h-[120px]"
+                />
+              </div>
+
               <div className="flex gap-3">
                 <button
                   type="submit"
@@ -554,6 +655,10 @@ export function TDSPage() {
                       owner: "",
                       source: "",
                     });
+                    setProductDescription("");
+                    setAiDescriptionSnapshot("");
+                    setSelectedFile(null);
+                    setExtractedData(null);
                   }}
                   className="px-6 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
                 >
@@ -716,11 +821,8 @@ export function TDSPage() {
                         tds.metadata && typeof tds.metadata === "object"
                           ? (tds.metadata as Record<string, unknown>)
                           : null;
-                      const docUrl = tdsDocumentUrl(meta);
-                      const description =
-                        (meta?.ai_product_description as string) ||
-                        (meta?.product_description as string) ||
-                        "";
+                      const docUrl = resolveTdsDocumentUrl(meta);
+                      const description = getTdsProductDescription(meta);
                       return (
                         <tr
                           key={tds.id}
@@ -887,8 +989,9 @@ export function TDSPage() {
                   {/* File Information */}
                   {selectedTdsDetail.metadata &&
                     typeof selectedTdsDetail.metadata === "object" &&
-                    (selectedTdsDetail.metadata.file_url ||
-                      selectedTdsDetail.metadata.tds_file_url) && (
+                    resolveTdsDocumentUrl(
+                      selectedTdsDetail.metadata as Record<string, unknown>,
+                    ) && (
                       <div className="space-y-4">
                         <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
                           <FileText className="w-5 h-5 text-emerald-500" />
@@ -902,8 +1005,12 @@ export function TDSPage() {
                             </div>
                             <a
                               href={
-                                selectedTdsDetail.metadata.file_url ||
-                                selectedTdsDetail.metadata.tds_file_url
+                                resolveTdsDocumentUrl(
+                                  selectedTdsDetail.metadata as Record<
+                                    string,
+                                    unknown
+                                  >,
+                                ) || "#"
                               }
                               target="_blank"
                               rel="noopener noreferrer"
@@ -930,16 +1037,18 @@ export function TDSPage() {
 
                 {selectedTdsDetail.metadata &&
                   typeof selectedTdsDetail.metadata === "object" &&
-                  (selectedTdsDetail.metadata.ai_product_description ||
-                    selectedTdsDetail.metadata.product_description) && (
+                  getTdsProductDescription(
+                    selectedTdsDetail.metadata as Record<string, unknown>,
+                  ) && (
                     <div className="mb-6 p-4 rounded-lg bg-slate-50 border border-slate-200">
                       <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2 mb-3">
                         <Sparkles className="w-5 h-5 text-emerald-600" />
                         Product Description
                       </h3>
                       <p className="text-slate-700 leading-relaxed">
-                        {selectedTdsDetail.metadata.ai_product_description ||
-                          selectedTdsDetail.metadata.product_description}
+                        {getTdsProductDescription(
+                          selectedTdsDetail.metadata as Record<string, unknown>,
+                        )}
                       </p>
                     </div>
                   )}
