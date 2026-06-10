@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchChemicalFullData,
@@ -8,7 +8,6 @@ import {
   ChemicalFullData,
   ChemicalFullDataCreate,
   ChemicalFullDataUpdate,
-  fetchIndustries,
   fetchPartners,
   createPartner,
   fetchProductCategoriesFullData,
@@ -39,7 +38,9 @@ import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
   CHEMICAL_MASTER_COLUMNS,
   chemicalCellValue,
+  PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
+  sortChemicalsBySupplier,
 } from "../../utils/chemicalMasterColumns";
 
 export function ChemicalsPage() {
@@ -61,7 +62,6 @@ export function ChemicalsPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   // Options for dropdowns
-  const [industries, setIndustries] = useState<string[]>([]);
   const [vendors, setVendors] = useState<Array<{ id: string; vendor: string }>>([]);
   const [productCategories, setProductCategories] = useState<string[]>([]);
   const [subCategories, setSubCategories] = useState<string[]>([]);
@@ -103,11 +103,7 @@ export function ChemicalsPage() {
   // Delete state
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  type AddOptionType =
-    | "industry"
-    | "vendor"
-    | "product_category"
-    | "sub_category";
+  type AddOptionType = "vendor" | "product_category" | "sub_category";
 
   const [addOptionType, setAddOptionType] = useState<AddOptionType | null>(null);
   const [newOptionValue, setNewOptionValue] = useState("");
@@ -129,13 +125,7 @@ export function ChemicalsPage() {
 
     const normalize = (v: string) => v.trim().toLowerCase();
 
-    if (addOptionType === "industry") {
-      setIndustries((prev) => {
-        if (prev.some((s) => normalize(s) === normalize(value))) return prev;
-        return [...prev, value].sort((a, b) => a.localeCompare(b));
-      });
-      setFormData((prev) => ({ ...prev, industry: value }));
-    } else if (addOptionType === "product_category") {
+    if (addOptionType === "product_category") {
       setProductCategories((prev) => {
         if (prev.some((s) => normalize(s) === normalize(value))) return prev;
         return [...prev, value].sort((a, b) => a.localeCompare(b));
@@ -178,20 +168,10 @@ export function ChemicalsPage() {
     try {
       // Load each option separately to handle individual failures
       const options = {
-        industries: [] as string[],
         vendors: [] as Array<{ id: string; vendor: string }>,
         categories: [] as string[],
         subCategories: [] as string[],
       };
-
-      try {
-        const industriesRes = await fetchIndustries();
-        options.industries = Array.isArray(industriesRes) ? industriesRes : [];
-        console.log("Loaded industries:", options.industries.length);
-      } catch (err: any) {
-        console.error("Failed to load industries:", err);
-        console.error("Error details:", err?.response?.data || err?.message);
-      }
 
       try {
         const partnersRes = await fetchPartners({ limit: 1000 });
@@ -222,14 +202,12 @@ export function ChemicalsPage() {
         console.error("Error details:", err?.response?.data || err?.message);
       }
 
-      setIndustries(options.industries);
       setVendors(options.vendors);
       setProductCategories(options.categories);
       setSubCategories(options.subCategories);
 
       console.log("All options loaded:", {
         sectors: PMS_SECTOR_OPTIONS.length,
-        industries: options.industries.length,
         vendors: options.vendors.length,
         categories: options.categories.length,
         subCategories: options.subCategories.length,
@@ -256,7 +234,7 @@ export function ChemicalsPage() {
       if (search) params.search = search;
 
       const res = await fetchChemicalFullData(params);
-      setChemicals(res.chemicals);
+      setChemicals(sortChemicalsBySupplier(res.chemicals));
       setTotal(res.total);
     } catch (err: any) {
       console.error(err);
@@ -511,7 +489,7 @@ export function ChemicalsPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">All Industries</option>
-                  {industries.map((i) => (
+                  {PMS_INDUSTRY_OPTIONS.map((i) => (
                     <option key={i} value={i}>
                       {i}
                     </option>
@@ -598,38 +576,22 @@ export function ChemicalsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Industry {industries.length > 0 && `(${industries.length})`}
+                    Industry
                   </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.industry || ""}
-                      onChange={(e) => {
-                        const newValue = e.target.value;
-                        console.log("Industry changed to:", newValue);
-                        setFormData({ ...formData, industry: newValue });
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Industry...</option>
-                      {industries.length > 0 ? (
-                        industries.map((i) => (
-                          <option key={i} value={i}>
-                            {i}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No industries available</option>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("industry")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new industry"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
+                  <select
+                    value={formData.industry || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, industry: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Industry...</option>
+                    {PMS_INDUSTRY_OPTIONS.map((i) => (
+                      <option key={i} value={i}>
+                        {i}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -990,10 +952,29 @@ export function ChemicalsPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-              {chemicals.map((chemical) => (
-                      <>
+              {chemicals.map((chemical, index) => {
+                const prevVendor =
+                  index > 0 ? chemicals[index - 1].vendor || "" : null;
+                const currentVendor = chemical.vendor || "";
+                const showSupplierHeader =
+                  index === 0 || currentVendor !== (prevVendor || "");
+
+                return (
+                      <Fragment key={chemical.id}>
+                        {showSupplierHeader && (
+                          <tr className="bg-slate-100 border-y border-slate-200">
+                            <td
+                              colSpan={CHEMICAL_MASTER_COLUMNS.length + 1}
+                              className="px-4 py-2 text-sm font-semibold text-slate-800"
+                            >
+                              <span className="inline-flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-slate-600" />
+                                {currentVendor || "Unassigned supplier"}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
                         <tr
-                  key={chemical.id}
                           className="hover:bg-slate-50 transition-colors"
                 >
                   {editingId === chemical.id ? (
@@ -1039,7 +1020,7 @@ export function ChemicalsPage() {
                                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                       <option value="">Select...</option>
-                                      {industries.map((i) => (
+                                      {PMS_INDUSTRY_OPTIONS.map((i) => (
                                         <option key={i} value={i}>
                                           {i}
                                         </option>
@@ -1278,8 +1259,9 @@ export function ChemicalsPage() {
                           </>
                         )}
                       </tr>
-                      </>
-              ))}
+                      </Fragment>
+                );
+              })}
                   </tbody>
                 </table>
               </div>

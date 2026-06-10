@@ -29,6 +29,17 @@ PMS_SECTOR_OPTIONS = [
     "Food and Pharmaceutical",
 ]
 
+PMS_INDUSTRY_OPTIONS = [
+    "Dry Mix mortar",
+    "Concrete admixture",
+    "Paint and Coating",
+    "Plastic",
+    "Foam",
+    "Detergent",
+    "Food",
+    "Pharmaceutical",
+]
+
 # Columns present on the live Chemical_Master_Data table (before optional migration).
 _BASE_DB_COLUMNS = frozenset(
     {
@@ -105,10 +116,11 @@ def row_to_api(row: Dict[str, Any]) -> ChemicalFullData:
             data[api_col] = row[db_col]
     if data.get("id") is None and row.get("Row_No") is not None:
         data["id"] = row["Row_No"]
-    if not data.get("industry") and row.get("Product_Type"):
-        data["industry"] = row["Product_Type"]
-    if not data.get("typical_application") and row.get("Generic_Name"):
-        data["typical_application"] = row["Generic_Name"]
+    if not data.get("industry"):
+        if row.get("Industry"):
+            data["industry"] = row["Industry"]
+        elif row.get("Product_Type") and row["Product_Type"] in PMS_INDUSTRY_OPTIONS:
+            data["industry"] = row["Product_Type"]
     return ChemicalFullData(**data)
 
 
@@ -118,11 +130,6 @@ def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for api_col, db_col in _API_TO_DB.items():
         if api_col in payload and api_col != "id":
             raw[db_col] = payload[api_col]
-
-    industry = raw.pop("Industry", None)
-    product_type = raw.get("Product_Type")
-    if industry and not product_type:
-        raw["Product_Type"] = industry
 
     allowed = _BASE_DB_COLUMNS | _OPTIONAL_DB_COLUMNS
     trimmed = {k: v for k, v in raw.items() if k in allowed and v is not None}
@@ -177,7 +184,8 @@ def list_chemical_master_data(
     if sector:
         query = query.ilike("Sector", f"%{sector}%")
     if industry:
-        query = query.ilike("Product_Type", f"%{industry}%")
+        pattern = f"%{industry}%"
+        query = query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
     if vendor:
         query = query.ilike("Supplier_Name", f"%{vendor}%")
     if product_category:
@@ -187,7 +195,12 @@ def list_chemical_master_data(
     query = _apply_search_filter(query, search)
 
     response = (
-        query.order("Row_No", desc=False).limit(limit).offset(offset).execute()
+        query.order("Supplier_Name", desc=False)
+        .order("Product_Name", desc=False)
+        .order("Row_No", desc=False)
+        .limit(limit)
+        .offset(offset)
+        .execute()
     )
     return [row_to_api(row) for row in (response.data or [])]
 
@@ -206,7 +219,8 @@ def count_chemical_master_data(
     if sector:
         query = query.ilike("Sector", f"%{sector}%")
     if industry:
-        query = query.ilike("Product_Type", f"%{industry}%")
+        pattern = f"%{industry}%"
+        query = query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
     if vendor:
         query = query.ilike("Supplier_Name", f"%{vendor}%")
     if product_category:
@@ -374,7 +388,7 @@ def get_all_sectors() -> List[str]:
 
 
 def get_all_industries() -> List[str]:
-    return _distinct_column(_read_client(), "Product_Type")
+    return list(PMS_INDUSTRY_OPTIONS)
 
 
 def get_all_product_categories() -> List[str]:

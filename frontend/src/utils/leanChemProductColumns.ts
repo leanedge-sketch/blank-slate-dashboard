@@ -1,7 +1,7 @@
 import type { LeanChemRecommendedProduct } from "../services/api";
-import { PMS_SECTOR_OPTIONS } from "./chemicalMasterColumns";
+import { PMS_INDUSTRY_OPTIONS, PMS_SECTOR_OPTIONS } from "./chemicalMasterColumns";
 
-export { PMS_SECTOR_OPTIONS };
+export { PMS_INDUSTRY_OPTIONS, PMS_SECTOR_OPTIONS };
 
 export type LeanChemProductColumn = {
   key: keyof LeanChemRecommendedProduct | "actions";
@@ -11,8 +11,9 @@ export type LeanChemProductColumn = {
 
 export const LEAN_CHEM_PRODUCT_COLUMNS: LeanChemProductColumn[] = [
   { key: "id", label: "ID" },
-  { key: "sector", label: "Sector" },
   { key: "vendor", label: "Supplier" },
+  { key: "sector", label: "Sector" },
+  { key: "industry", label: "Industry" },
   { key: "product_category", label: "Category" },
   { key: "sub_category", label: "Sub Category" },
   { key: "product_name", label: "Product Name" },
@@ -49,12 +50,20 @@ export type MasterDataSuggestion = {
   packing?: string | null;
   hs_code?: string | null;
   country_of_origin?: string | null;
+  industry?: string | null;
   match_label?: string | null;
 };
 
 export function suggestionToForm(
   suggestion: MasterDataSuggestion,
 ): Partial<LeanChemRecommendedProduct> {
+  const industry =
+    suggestion.industry && PMS_INDUSTRY_OPTIONS.includes(suggestion.industry as (typeof PMS_INDUSTRY_OPTIONS)[number])
+      ? suggestion.industry
+      : suggestion.product_type &&
+          PMS_INDUSTRY_OPTIONS.includes(suggestion.product_type as (typeof PMS_INDUSTRY_OPTIONS)[number])
+        ? suggestion.product_type
+        : "";
   return {
     sector: suggestion.sector || "",
     vendor: suggestion.vendor || "",
@@ -63,11 +72,26 @@ export function suggestionToForm(
     product_name: suggestion.product_name || "",
     generic_name: suggestion.generic_name || "",
     product_type: suggestion.product_type || "",
-    industry: suggestion.product_type || "",
+    industry,
     packing: suggestion.packing || "",
     hs_code: suggestion.hs_code || "",
     country_of_origin: suggestion.country_of_origin || "",
     source_master_row_no: suggestion.master_row_no ?? null,
     recommendation_notes: "Suggested from Chemical Master Data",
   };
+}
+
+/** Sort LeanChem products by supplier, then product name. */
+export function sortLeanChemProductsBySupplier(
+  rows: LeanChemRecommendedProduct[],
+): LeanChemRecommendedProduct[] {
+  return [...rows].sort((a, b) => {
+    const supplierA = (a.vendor || "").trim().toLowerCase();
+    const supplierB = (b.vendor || "").trim().toLowerCase();
+    if (supplierA !== supplierB) return supplierA.localeCompare(supplierB);
+    const nameA = (a.product_name || "").trim().toLowerCase();
+    const nameB = (b.product_name || "").trim().toLowerCase();
+    if (nameA !== nameB) return nameA.localeCompare(nameB);
+    return (a.id ?? 0) - (b.id ?? 0);
+  });
 }

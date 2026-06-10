@@ -246,6 +246,7 @@ class MasterDataProductSuggestion(BaseModel):
     product_name: Optional[str] = None
     generic_name: Optional[str] = None
     product_type: Optional[str] = None
+    industry: Optional[str] = None
     sector: Optional[str] = None
     vendor: Optional[str] = None
     product_category: Optional[str] = None

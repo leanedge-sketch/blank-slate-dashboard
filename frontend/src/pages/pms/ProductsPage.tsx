@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchLeanChemRecommendedProducts,
@@ -6,6 +6,7 @@ import {
   updateLeanChemRecommendedProduct,
   deleteLeanChemRecommendedProduct,
   fetchMasterDataProductSuggestions,
+  fetchPartners,
   LeanChemRecommendedProduct,
   LeanChemRecommendedProductCreate,
   LeanChemRecommendedProductUpdate,
@@ -23,11 +24,14 @@ import {
   Search,
   Sparkles,
   Link2,
+  Building2,
 } from "lucide-react";
 import {
   LEAN_CHEM_PRODUCT_COLUMNS,
   leanChemCellValue,
+  PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
+  sortLeanChemProductsBySupplier,
   suggestionToForm,
 } from "../../utils/leanChemProductColumns";
 
@@ -68,6 +72,7 @@ export function ProductsPage() {
   const [suggestions, setSuggestions] = useState<MasterDataProductSuggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [vendors, setVendors] = useState<Array<{ id: string; vendor: string }>>([]);
 
   async function loadProducts() {
     try {
@@ -79,7 +84,7 @@ export function ProductsPage() {
         sector: filterSector || undefined,
         search: search || undefined,
       });
-      setProducts(res.products);
+      setProducts(sortLeanChemProductsBySupplier(res.products));
       setTotal(res.total);
     } catch (err: unknown) {
       const message =
@@ -112,9 +117,26 @@ export function ProductsPage() {
   }, []);
 
   useEffect(() => {
-    loadProducts();
+    void loadProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offset, filterSector]);
+
+  useEffect(() => {
+    async function loadVendors() {
+      try {
+        const partnersRes = await fetchPartners({ limit: 1000 });
+        setVendors(
+          (partnersRes?.partners || [])
+            .map((p) => ({ id: p.id, vendor: p.partner || "" }))
+            .filter((v) => v.vendor)
+            .sort((a, b) => a.vendor.localeCompare(b.vendor)),
+        );
+      } catch {
+        setVendors([]);
+      }
+    }
+    void loadVendors();
+  }, []);
 
   useEffect(() => {
     if (!showForm) return;
@@ -313,10 +335,18 @@ export function ProductsPage() {
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 text-sm">
             {error}
-            {error.includes("LeanChem_Recommended_Products") && (
+            {(error.includes("LeanChem_Recommended_Products") ||
+              error.includes("Industry")) && (
               <p className="mt-2 text-xs">
-                Run <code className="bg-red-100 px-1 rounded">docs/0006_lean_chem_recommended_products.sql</code>{" "}
-                in the Supabase SQL editor to create the table.
+                Run{" "}
+                <code className="bg-red-100 px-1 rounded">
+                  docs/0006_lean_chem_recommended_products.sql
+                </code>{" "}
+                and{" "}
+                <code className="bg-red-100 px-1 rounded">
+                  docs/0006c_lean_chem_industry_column.sql
+                </code>{" "}
+                in the Supabase SQL editor if the table or Industry column is missing.
               </p>
             )}
           </div>
@@ -419,6 +449,23 @@ export function ProductsPage() {
                 />
               </label>
               <label className="block space-y-1">
+                <span className="text-sm font-medium">Industry</span>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 bg-white"
+                  value={formData.industry || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, industry: e.target.value })
+                  }
+                >
+                  <option value="">Select industry…</option>
+                  {PMS_INDUSTRY_OPTIONS.map((i) => (
+                    <option key={i} value={i}>
+                      {i}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
                 <span className="text-sm font-medium">Product type</span>
                 <input
                   className="w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -430,11 +477,18 @@ export function ProductsPage() {
               </label>
               <label className="block space-y-1">
                 <span className="text-sm font-medium">Supplier</span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 bg-white"
                   value={formData.vendor || ""}
                   onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                />
+                >
+                  <option value="">Select supplier…</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.vendor}>
+                      {v.vendor}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block space-y-1">
                 <span className="text-sm font-medium">Category</span>
@@ -563,40 +617,60 @@ export function ProductsPage() {
                       </td>
                     </tr>
                   ) : (
-                    products.map((p) => (
-                      <tr
-                        key={p.id}
-                        className="border-b border-slate-100 hover:bg-amber-50/40"
-                      >
-                        {LEAN_CHEM_PRODUCT_COLUMNS.map((col) => (
-                          <td
-                            key={col.key}
-                            className="px-3 py-2.5 text-slate-700 max-w-[200px] truncate"
-                            title={leanChemCellValue(p, col.key)}
-                          >
-                            {leanChemCellValue(p, col.key)}
-                          </td>
-                        ))}
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => openEdit(p)}
-                            className="p-2 text-slate-600 hover:text-amber-700"
-                            aria-label="Edit"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(p.id)}
-                            className="p-2 text-slate-600 hover:text-red-600"
-                            aria-label="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    products.map((p, index) => {
+                      const prevVendor =
+                        index > 0 ? products[index - 1].vendor || "" : null;
+                      const currentVendor = p.vendor || "";
+                      const showSupplierHeader =
+                        index === 0 || currentVendor !== (prevVendor || "");
+
+                      return (
+                        <Fragment key={p.id}>
+                          {showSupplierHeader && (
+                            <tr className="bg-slate-100 border-y border-slate-200">
+                              <td
+                                colSpan={LEAN_CHEM_PRODUCT_COLUMNS.length + 1}
+                                className="px-4 py-2 text-sm font-semibold text-slate-800"
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Building2 className="w-4 h-4 text-slate-600" />
+                                  {currentVendor || "Unassigned supplier"}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                          <tr className="border-b border-slate-100 hover:bg-amber-50/40">
+                            {LEAN_CHEM_PRODUCT_COLUMNS.map((col) => (
+                              <td
+                                key={col.key}
+                                className="px-3 py-2.5 text-slate-700 max-w-[200px] truncate"
+                                title={leanChemCellValue(p, col.key)}
+                              >
+                                {leanChemCellValue(p, col.key)}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(p)}
+                                className="p-2 text-slate-600 hover:text-amber-700"
+                                aria-label="Edit"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(p.id)}
+                                className="p-2 text-slate-600 hover:text-red-600"
+                                aria-label="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        </Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

@@ -19,7 +19,7 @@ from app.models.pms import (
     LeanChemRecommendedProductCreate,
     LeanChemRecommendedProductUpdate,
 )
-from app.services.chemical_master_data import PMS_SECTOR_OPTIONS
+from app.services.chemical_master_data import PMS_INDUSTRY_OPTIONS, PMS_SECTOR_OPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ _DB_COLUMNS = frozenset(
     {
         "Row_No",
         "Sector",
+        "Industry",
         "Supplier_Name",
         "Category",
         "Sub_Category",
@@ -62,7 +63,7 @@ _API_TO_DB = {
     "recommendation_notes": "recommendation_notes",
 }
 
-_DB_TO_API = {db: api for api, db in _API_TO_DB.items() if db in _DB_COLUMNS}
+_DB_TO_API = {db: api for api, db in _API_TO_DB.items()}
 _DB_TO_API["Row_No"] = "id"
 
 
@@ -80,9 +81,22 @@ def row_to_api(row: Dict[str, Any]) -> LeanChemRecommendedProduct:
             data[api_col] = row[db_col]
     if data.get("id") is None and row.get("Row_No") is not None:
         data["id"] = row["Row_No"]
-    if not data.get("industry") and row.get("Product_Type"):
-        data["industry"] = row["Product_Type"]
+    if not data.get("industry"):
+        if row.get("Industry"):
+            data["industry"] = row["Industry"]
+        elif row.get("Product_Type") in PMS_INDUSTRY_OPTIONS:
+            data["industry"] = row["Product_Type"]
     return LeanChemRecommendedProduct(**data)
+
+
+def _is_missing_column_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "does not exist" in msg
+        or "schema cache" in msg
+        or "pgrst204" in msg
+        or "could not find" in msg
+    )
 
 
 def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -92,13 +106,44 @@ def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             if db_col in _DB_COLUMNS:
                 raw[db_col] = payload[api_col]
 
-    industry = payload.get("industry")
-    if industry and not raw.get("Product_Type") and not payload.get("product_type"):
-        raw["Product_Type"] = industry
-
     now = datetime.now(timezone.utc).isoformat()
     raw["updated_at"] = now
     return {k: v for k, v in raw.items() if v is not None}
+
+
+def _payload_without_industry_column(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop Industry when the column is not migrated yet; preserve value when possible."""
+    fallback = {k: v for k, v in payload.items() if k != "Industry"}
+    industry = payload.get("Industry")
+    product_type = fallback.get("Product_Type")
+    if industry and not product_type:
+        fallback["Product_Type"] = industry
+    return fallback
+
+
+def _insert_row(client: Client, payload: Dict[str, Any]):
+    try:
+        return client.table(TABLE).insert(payload).execute()
+    except Exception as exc:
+        if _is_missing_column_error(exc) and "Industry" in payload:
+            return client.table(TABLE).insert(_payload_without_industry_column(payload)).execute()
+        raise
+
+
+def _update_row(client: Client, product_id: int, payload: Dict[str, Any]):
+    try:
+        return (
+            client.table(TABLE).update(payload).eq("Row_No", product_id).execute()
+        )
+    except Exception as exc:
+        if _is_missing_column_error(exc) and "Industry" in payload:
+            return (
+                client.table(TABLE)
+                .update(_payload_without_industry_column(payload))
+                .eq("Row_No", product_id)
+                .execute()
+            )
+        raise
 
 
 def _apply_search_filter(query, search: Optional[str]):
@@ -132,7 +177,12 @@ def list_lean_chem_recommended_products(
         query = query.ilike("Category", f"%{product_category}%")
     query = _apply_search_filter(query, search)
     response = (
-        query.order("Row_No", desc=False).limit(limit).offset(offset).execute()
+        query.order("Supplier_Name", desc=False)
+        .order("Product_Name", desc=False)
+        .order("Row_No", desc=False)
+        .limit(limit)
+        .offset(offset)
+        .execute()
     )
     return [row_to_api(row) for row in (response.data or [])]
 
@@ -174,7 +224,7 @@ def create_lean_chem_recommended_product(
     client = _client()
     payload = _prepare_write_payload(body.model_dump(exclude_unset=True))
     payload.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-    response = client.table(TABLE).insert(payload).execute()
+    response = _insert_row(client, payload)
     if not response.data:
         raise RuntimeError("Failed to create LeanChem recommended product")
     return row_to_api(response.data[0])
@@ -190,9 +240,7 @@ def update_lean_chem_recommended_product(
         if not existing:
             raise ValueError("Product not found")
         return existing
-    response = (
-        client.table(TABLE).update(payload).eq("Row_No", product_id).execute()
-    )
+    response = _update_row(client, product_id, payload)
     if not response.data:
         raise RuntimeError(f"Failed to update LeanChem recommended product {product_id}")
     return row_to_api(response.data[0])
@@ -222,7 +270,8 @@ def suggest_from_chemical_master_data(
                 "master_row_no": chem.id,
                 "product_name": chem.product_name,
                 "generic_name": chem.generic_name,
-                "product_type": chem.product_type or chem.industry,
+                "product_type": chem.product_type,
+                "industry": chem.industry,
                 "sector": chem.sector,
                 "vendor": chem.vendor,
                 "product_category": chem.product_category,
