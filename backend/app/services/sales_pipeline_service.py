@@ -935,11 +935,18 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         except Exception as e:
             error_str = str(e).lower()
             if "business_model" in error_str and "required" in error_str:
+                merged_stage = new_pipeline_data.get("stage", base.stage)
+                if merged_stage in ("Validation", "Sample", "Discovery", "Lead ID"):
+                    raise ValueError(
+                        "This deal is at "
+                        f"{merged_stage}, but Supabase still uses the old database rule "
+                        "that requires business_model at Validation. "
+                        "Run docs/0008_drop_sales_pipeline_commercial_trigger.sql "
+                        "in the Supabase SQL Editor (one-time fix)."
+                    ) from e
                 raise ValueError(
                     "business_model is required before moving to Proposal or later. "
-                    "Validation and earlier stages do not require it — if you see this at "
-                    "Validation, run docs/0007_sales_pipeline_validation_optional_commercial.sql "
-                    "in Supabase."
+                    "Fill in Business Model on the commercial form, then try again."
                 ) from e
             if "23505" in error_str or "one_current_per_chain" in error_str:
                 raise ValueError(
