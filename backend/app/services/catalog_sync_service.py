@@ -149,11 +149,11 @@ def sync_catalog_product_links(chemical_id: int) -> Dict[str, Any]:
     if not chem:
         return {"catalog_id": chemical_id, "synced": False}
 
-    tds = ensure_tds_for_catalog_product(chem)
+    # TDS rows are added manually on TDS Master Data — do not auto-create from catalog.
     return {
         "catalog_id": chemical_id,
         "uuid_id": str(chem.uuid_id) if chem.uuid_id else None,
-        "tds_id": str(tds.id) if tds else None,
+        "tds_id": None,
         "product_name": chem.product_name,
         "synced": True,
     }
