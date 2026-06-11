@@ -31,17 +31,29 @@ export const CHEMICAL_MASTER_TDS_PLACEHOLDER_KEYS = [
 export type ChemicalMasterColumnKey =
   | keyof ChemicalFullData
   | (typeof CHEMICAL_MASTER_TDS_PLACEHOLDER_KEYS)[number]
+  | "line_no"
   | "actions";
 
 export type ChemicalMasterColumn = {
   key: ChemicalMasterColumnKey;
   label: string;
+  /** Right-align header and cells (line #, ref, price). */
+  numeric?: boolean;
   /** Table cell formatter */
   format?: (row: ChemicalFullData) => string;
 };
 
+function formatPrice(row: ChemicalFullData): string {
+  if (row.price == null || row.price === undefined) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(row.price);
+}
+
 export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
-  { key: "id", label: "ID" },
+  { key: "line_no", label: "#", numeric: true },
+  { key: "id", label: "Ref", numeric: true },
   { key: "vendor", label: "Supplier" },
   { key: "sector", label: "Sector" },
   { key: "industry", label: "Industry" },
@@ -53,12 +65,7 @@ export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "packing", label: "Packaging" },
   { key: "hs_code", label: "HS Code" },
   { key: "country_of_origin", label: "Country of Origin" },
-  {
-    key: "price",
-    label: "Price",
-    format: (r) =>
-      r.price != null && r.price !== undefined ? String(r.price) : "—",
-  },
+  { key: "price", label: "Price", numeric: true, format: formatPrice },
   { key: "typical_application", label: "Typical Application" },
   { key: "product_description", label: "Description" },
   { key: "tds_document", label: "TDS Document", format: () => "—" },
@@ -66,11 +73,35 @@ export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "tds_grade", label: "TDS Grade", format: () => "—" },
 ];
 
+export function chemicalMasterHeaderClass(col: ChemicalMasterColumn): string {
+  const base =
+    "px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap";
+  return col.numeric ? `${base} text-right tabular-nums` : `${base} text-left`;
+}
+
+export function chemicalMasterCellClass(col: ChemicalMasterColumn): string {
+  const base = "px-4 py-3 text-sm text-slate-700 max-w-[220px] truncate";
+  if (col.key === "id") {
+    return `${base} text-right tabular-nums text-slate-500 font-mono text-xs`;
+  }
+  if (col.key === "line_no") {
+    return `${base} text-right tabular-nums text-slate-900 font-medium w-12`;
+  }
+  if (col.numeric) {
+    return `${base} text-right tabular-nums`;
+  }
+  return base;
+}
+
 export function chemicalCellValue(
   row: ChemicalFullData,
   key: ChemicalMasterColumnKey,
+  lineNo?: number,
 ): string {
   if (key === "actions") return "";
+  if (key === "line_no") {
+    return lineNo != null ? String(lineNo) : "—";
+  }
   const col = CHEMICAL_MASTER_COLUMNS.find((c) => c.key === key);
   if (col?.format) return col.format(row);
   const val = row[key as keyof ChemicalFullData];

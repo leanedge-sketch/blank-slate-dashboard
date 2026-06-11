@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchChemicalFullData,
@@ -38,6 +38,8 @@ import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
   CHEMICAL_MASTER_COLUMNS,
   chemicalCellValue,
+  chemicalMasterCellClass,
+  chemicalMasterHeaderClass,
   PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
   sortChemicalsBySupplier,
@@ -404,6 +406,21 @@ export function ChemicalsPage() {
 
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
+
+  /** Sequential # within each supplier group (1, 2, 3… per supplier). */
+  const supplierLineNumbers = useMemo(() => {
+    let lineNo = 0;
+    let prevVendor = "";
+    return chemicals.map((chemical) => {
+      const vendor = chemical.vendor || "";
+      if (vendor !== prevVendor) {
+        lineNo = 0;
+        prevVendor = vendor;
+      }
+      lineNo += 1;
+      return lineNo;
+    });
+  }, [chemicals]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
@@ -937,14 +954,23 @@ export function ChemicalsPage() {
         ) : (
           <>
             {/* Stats and Summary */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center justify-between">
-              <p className="text-sm text-slate-600">
-                Showing <span className="font-semibold">{chemicals.length}</span> of{" "}
-                <span className="font-semibold">{total}</span> chemicals
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-slate-600 tabular-nums">
+                Showing{" "}
+                <span className="font-semibold">
+                  {total === 0 ? 0 : offset + 1}–{offset + chemicals.length}
+                </span>{" "}
+                of <span className="font-semibold">{total}</span> chemicals
+                {totalPages > 1 && (
+                  <span className="text-slate-500">
+                    {" "}
+                    · page {currentPage} of {totalPages}
+                  </span>
+                )}
               </p>
-              <div className="text-sm text-slate-600">
-                Total chemicals: <span className="font-semibold">{total}</span>
-              </div>
+              <p className="text-xs text-slate-500">
+                # resets within each supplier · Ref = master row number
+              </p>
             </div>
 
             {/* Chemical List - Table View */}
@@ -954,10 +980,7 @@ export function ChemicalsPage() {
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       {CHEMICAL_MASTER_COLUMNS.map((col) => (
-                        <th
-                          key={col.key}
-                          className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap"
-                        >
+                        <th key={col.key} className={chemicalMasterHeaderClass(col)}>
                           {col.label}
                         </th>
                       ))}
@@ -973,6 +996,7 @@ export function ChemicalsPage() {
                 const currentVendor = chemical.vendor || "";
                 const showSupplierHeader =
                   index === 0 || currentVendor !== (prevVendor || "");
+                const lineNo = supplierLineNumbers[index] ?? index + 1;
 
                 return (
                       <Fragment key={chemical.id}>
@@ -995,8 +1019,11 @@ export function ChemicalsPage() {
                   {editingId === chemical.id ? (
                           // Edit Row
                           <>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-900">
-                              {chemical.id}
+                            <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-900 text-right tabular-nums">
+                              <span className="font-medium">{lineNo}</span>
+                              <span className="block text-xs font-mono text-slate-500">
+                                ref {chemical.id}
+                              </span>
                             </td>
                             <td colSpan={CHEMICAL_MASTER_COLUMNS.length} className="px-4 py-4">
                               <div className="space-y-3">
@@ -1226,10 +1253,10 @@ export function ChemicalsPage() {
                             {CHEMICAL_MASTER_COLUMNS.map((col) => (
                               <td
                                 key={col.key}
-                                className="px-4 py-3 text-sm text-slate-700 max-w-[220px] truncate"
-                                title={chemicalCellValue(chemical, col.key)}
+                                className={chemicalMasterCellClass(col)}
+                                title={chemicalCellValue(chemical, col.key, lineNo)}
                               >
-                                {chemicalCellValue(chemical, col.key)}
+                                {chemicalCellValue(chemical, col.key, lineNo)}
                               </td>
                             ))}
                             <td className="px-4 py-3 whitespace-nowrap text-sm sticky right-0 bg-white">
