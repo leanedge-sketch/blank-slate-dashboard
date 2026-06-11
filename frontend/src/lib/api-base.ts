@@ -21,9 +21,8 @@ export function getApiBaseUrl(): string {
 
   if (import.meta.env.PROD) {
     if (typeof window !== "undefined") {
-      if (window.location.hostname.endsWith(".vercel.app")) {
-        return `${window.location.origin}/api/v1`;
-      }
+      // Always same-origin in the browser so custom domains and preview URLs work.
+      return `${window.location.origin}/api/v1`;
     }
     return VERCEL_API_BASE;
   }

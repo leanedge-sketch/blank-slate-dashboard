@@ -85,6 +85,28 @@ _API_TO_DB = {
 
 _DB_TO_API = {db: api for api, db in _API_TO_DB.items()}
 
+_LIVE_OPTIONAL_COLUMNS: Optional[frozenset[str]] = None
+
+
+def _probe_live_optional_columns(client: Client) -> frozenset[str]:
+    """Detect which docs/0005 optional columns exist (cached per process)."""
+    global _LIVE_OPTIONAL_COLUMNS
+    if _LIVE_OPTIONAL_COLUMNS is not None:
+        return _LIVE_OPTIONAL_COLUMNS
+    present: set[str] = set()
+    for col in _OPTIONAL_DB_COLUMNS:
+        try:
+            client.table(TABLE).select(col).limit(1).execute()
+            present.add(col)
+        except Exception:
+            continue
+    _LIVE_OPTIONAL_COLUMNS = frozenset(present)
+    if not present:
+        logger.info(
+            "Chemical_Master_Data optional columns not migrated — run docs/0005_chemical_master_data_extend.sql"
+        )
+    return _LIVE_OPTIONAL_COLUMNS
+
 
 def _master_client() -> Client:
     """Writes may require service role when RLS is enabled on Chemical_Master_Data."""
@@ -96,7 +118,21 @@ def _master_client() -> Client:
 
 def _read_client() -> Client:
     """Chemical_Master_Data may be restricted by RLS for the anon key."""
-    return _master_client()
+    try:
+        return get_supabase_service_client()
+    except RuntimeError as exc:
+        logger.warning("SUPABASE_SERVICE_KEY unavailable for Chemical_Master_Data: %s", exc)
+        return get_supabase_client()
+
+
+def _apply_industry_filter(query, industry: Optional[str], client: Client):
+    if not industry or not industry.strip():
+        return query
+    pattern = f"%{industry.strip()}%"
+    optional = _probe_live_optional_columns(client)
+    if "Industry" in optional:
+        return query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
+    return query.ilike("Product_Type", pattern)
 
 
 def _convert_uuids(value: Any) -> Any:
@@ -131,7 +167,12 @@ def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if api_col in payload and api_col != "id":
             raw[db_col] = payload[api_col]
 
-    allowed = _BASE_DB_COLUMNS | _OPTIONAL_DB_COLUMNS
+    optional_live = _probe_live_optional_columns(_read_client())
+    allowed = _BASE_DB_COLUMNS | optional_live
+    industry_val = raw.get("Industry")
+    if industry_val and "Industry" not in optional_live and not raw.get("Product_Type"):
+        raw["Product_Type"] = industry_val
+        raw.pop("Industry", None)
     trimmed = {k: v for k, v in raw.items() if k in allowed and v is not None}
     return _convert_uuids(trimmed)
 
@@ -183,9 +224,7 @@ def list_chemical_master_data(
 
     if sector:
         query = query.ilike("Sector", f"%{sector}%")
-    if industry:
-        pattern = f"%{industry}%"
-        query = query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
+    query = _apply_industry_filter(query, industry, client)
     if vendor:
         query = query.ilike("Supplier_Name", f"%{vendor}%")
     if product_category:
@@ -202,7 +241,17 @@ def list_chemical_master_data(
         .offset(offset)
         .execute()
     )
-    return [row_to_api(row) for row in (response.data or [])]
+    rows = response.data or []
+    if not rows and offset == 0 and not any(
+        [sector, industry, vendor, product_category, sub_category, search]
+    ):
+        probe = client.table(TABLE).select("Row_No", count="exact").limit(1).execute()
+        if (probe.count or 0) > 0:
+            raise RuntimeError(
+                "Chemical_Master_Data is not readable — set SUPABASE_SERVICE_KEY on the server "
+                "or run docs/0005b_chemical_master_data_grants.sql in Supabase."
+            )
+    return [row_to_api(row) for row in rows]
 
 
 def count_chemical_master_data(
@@ -218,9 +267,7 @@ def count_chemical_master_data(
 
     if sector:
         query = query.ilike("Sector", f"%{sector}%")
-    if industry:
-        pattern = f"%{industry}%"
-        query = query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
+    query = _apply_industry_filter(query, industry, client)
     if vendor:
         query = query.ilike("Supplier_Name", f"%{vendor}%")
     if product_category:

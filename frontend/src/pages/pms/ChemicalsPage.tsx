@@ -236,9 +236,17 @@ export function ChemicalsPage() {
       const res = await fetchChemicalFullData(params);
       setChemicals(sortChemicalsBySupplier(res.chemicals));
       setTotal(res.total);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load chemicals");
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Failed to load chemicals";
+      const hint =
+        String(detail).includes("Industry") || String(detail).includes("SUPABASE_SERVICE")
+          ? " Run docs/0005_chemical_master_data_extend.sql and docs/0005b_chemical_master_data_grants.sql in Supabase if this persists."
+          : "";
+      setError(String(detail) + hint);
     } finally {
       setLoading(false);
     }
@@ -899,8 +907,15 @@ export function ChemicalsPage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
-            {error}
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => void loadChemicals()}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700"
+            >
+              Retry
+            </button>
           </div>
         )}
 

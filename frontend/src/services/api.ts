@@ -543,7 +543,10 @@ export async function fetchChemicalFullData(params?: {
   sub_category?: string;
   search?: string;
 }) {
-  const res = await api.get<ChemicalFullDataListResponse>("/pms/chemical-full-data", { params });
+  const res = await api.get<ChemicalFullDataListResponse>("/pms/chemical-full-data", {
+    params,
+    timeout: 90_000,
+  });
   return res.data;
 }
 
@@ -558,7 +561,10 @@ export async function fetchSharedCatalog(params?: {
   sub_category?: string;
   search?: string;
 }) {
-  const res = await api.get<ChemicalFullDataListResponse>("/catalog/products", { params });
+  const res = await api.get<ChemicalFullDataListResponse>("/catalog/products", {
+    params,
+    timeout: 90_000,
+  });
   return res.data;
 }
 
