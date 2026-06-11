@@ -8,7 +8,7 @@ When a product is created or updated in PMS, ensure:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from app.database.connection import get_supabase_client
@@ -56,6 +56,97 @@ def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
         logger.warning("Failed to assign uuid_id for catalog id %s", chemical_id)
         return None
     return new_uuid
+
+
+def resolve_catalog_product_uuid(value: Union[str, int, UUID, None]) -> Optional[str]:
+    """
+    Map catalog Row_No or an existing uuid_id to the canonical uuid_id string.
+    Used by CRM, Sales, and TDS when linking pipelines and interactions to PMS products.
+    """
+    if value is None or value == "":
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        UUID(s)
+        return s
+    except ValueError:
+        pass
+    try:
+        catalog_id = int(s)
+    except (TypeError, ValueError):
+        return None
+    assigned = ensure_catalog_uuid_id(catalog_id)
+    if assigned:
+        return assigned
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
+
+    chem = get_chemical_master_data_by_id(catalog_id)
+    if chem and chem.uuid_id:
+        return str(chem.uuid_id)
+    return None
+
+
+def backfill_all_catalog_uuid_ids(limit: int = 10000) -> Dict[str, Any]:
+    """
+    Assign uuid_id to every catalog row that is missing one.
+    Safe to run repeatedly; no-ops when the column is absent or all rows have UUIDs.
+    """
+    from app.services.chemical_master_data import list_chemical_master_data
+
+    chemicals = list_chemical_master_data(limit=limit, offset=0)
+    missing = [c for c in chemicals if c.id is not None and not c.uuid_id]
+    if not missing:
+        return {"total": len(chemicals), "missing_before": 0, "updated": 0}
+
+    updated = 0
+    column_missing = False
+    for chem in missing:
+        assigned = ensure_catalog_uuid_id(int(chem.id))
+        if assigned:
+            updated += 1
+        elif not column_missing:
+            from app.services.chemical_master_data import _probe_live_optional_columns
+            from app.database.connection import get_supabase_service_client
+
+            try:
+                client = get_supabase_service_client()
+            except RuntimeError:
+                from app.database.connection import get_supabase_client
+
+                client = get_supabase_client()
+            if "uuid_id" not in _probe_live_optional_columns(client):
+                column_missing = True
+                break
+
+    return {
+        "total": len(chemicals),
+        "missing_before": len(missing),
+        "updated": updated,
+        "column_missing": column_missing,
+    }
+
+
+def ensure_catalog_list_has_uuid_ids(chemicals: List[ChemicalFullData]) -> List[ChemicalFullData]:
+    """Backfill missing uuid_id values once per process when a list response needs them."""
+    if not chemicals or not any(c.id and not c.uuid_id for c in chemicals):
+        return chemicals
+
+    result = backfill_all_catalog_uuid_ids()
+    if result.get("updated", 0) <= 0:
+        return chemicals
+
+    from app.services.pms_service import get_chemical_full_data_by_id
+
+    refreshed: List[ChemicalFullData] = []
+    for chem in chemicals:
+        if chem.id and not chem.uuid_id:
+            row = get_chemical_full_data_by_id(int(chem.id))
+            refreshed.append(row if row else chem)
+        else:
+            refreshed.append(chem)
+    return refreshed
 
 
 def _find_tds_for_catalog(chem: ChemicalFullData) -> Optional[Tds]:

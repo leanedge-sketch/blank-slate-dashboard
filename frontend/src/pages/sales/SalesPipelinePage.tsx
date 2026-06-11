@@ -1453,7 +1453,6 @@ export function SalesPipelinePage() {
                             {c.product_name}
                             {c.vendor ? ` (${c.vendor})` : ""}
                             {c.product_category ? ` - ${c.product_category}` : ""}
-                            {!c.uuid_id && " ⚠️ (No UUID)"}
                           </option>
                         ))}
                     </select>

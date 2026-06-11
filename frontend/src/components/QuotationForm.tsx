@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { fetchTDS, Tds, ChemicalType, fetchCustomers, Customer, fetchPartnerChemicals, PartnerChemical } from "../services/api";
 import { useProductCatalog } from "../contexts/ProductCatalogContext";
+import {
+  chemicalTypeOptionValue,
+  findCatalogChemicalType,
+} from "../utils/catalogProducts";
 import { X, Plus, Trash2, FileText, Download, Eye } from "lucide-react";
 
 export interface QuotationProduct {
@@ -125,9 +129,9 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
       const quantity = pipelineData.unit ? parseFloat(pipelineData.unit) : null;
 
       // Find matching chemical type
-      const matchingChemicalType = chemicalTypes.find(
-        (ct) => ct.id === chemicalTypeId || ct.name === productName
-      );
+      const matchingChemicalType =
+        findCatalogChemicalType(String(chemicalTypeId || ""), chemicalTypes) ||
+        chemicalTypes.find((ct) => ct.name === productName);
 
       // Find vendor from partner_chemicals
       let finalVendorName = vendorName;
@@ -143,7 +147,9 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
       if (matchingChemicalType || productName) {
         const newProduct: QuotationProduct = {
           id: Date.now().toString(),
-          chemical_type_id: matchingChemicalType?.id || chemicalTypeId,
+          chemical_type_id: matchingChemicalType
+            ? chemicalTypeOptionValue(matchingChemicalType)
+            : chemicalTypeId,
           product_name: matchingChemicalType?.name || productName,
           tds_id: null,
           vendor_name: finalVendorName, // Auto-filled from pipeline
@@ -206,7 +212,7 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
 
   // Update product chemical type selection
   async function handleProductChemicalTypeChange(productId: string, chemicalTypeId: string) {
-    const chemicalType = chemicalTypes.find((ct) => ct.id === chemicalTypeId);
+    const chemicalType = findCatalogChemicalType(chemicalTypeId, chemicalTypes);
     const productName = chemicalType?.name || "";
 
     // Load TDS for this chemical type
@@ -528,11 +534,14 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
                           disabled={loadingChemicalTypes}
                         >
                           <option value="">Select Product Name...</option>
-                          {chemicalTypes.map((ct) => (
-                            <option key={ct.id} value={ct.id}>
-                              {ct.name}
-                            </option>
-                          ))}
+                          {chemicalTypes.map((ct) => {
+                            const value = chemicalTypeOptionValue(ct);
+                            return (
+                              <option key={value} value={value}>
+                                {ct.name}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
 

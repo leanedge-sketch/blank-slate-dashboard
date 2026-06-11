@@ -520,10 +520,9 @@ export function TDSPage() {
                     {chemicalTypes.map((ct) => {
                       const uuid = catalogUuid(ct);
                       return (
-                        <option key={ct.id} value={uuid || String(ct.id)} disabled={!uuid}>
+                        <option key={ct.id} value={uuid || String(ct.id)}>
                           {ct.name}
                           {ct.category ? ` (${ct.category})` : ""}
-                          {!uuid ? " (no UUID)" : ""}
                         </option>
                       );
                     })}

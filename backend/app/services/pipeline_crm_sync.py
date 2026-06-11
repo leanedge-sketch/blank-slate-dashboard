@@ -108,6 +108,17 @@ def _coerce_uuid(value: Union[str, UUID]) -> UUID:
     return value if isinstance(value, UUID) else UUID(str(value))
 
 
+def _resolved_catalog_product_ref(
+    value: Optional[Union[str, UUID, int]],
+) -> Optional[str]:
+    """Normalize PMS catalog id (Row_No or uuid_id) to canonical uuid_id string."""
+    if value is None or value == "":
+        return None
+    from app.services.catalog_sync_service import resolve_catalog_product_uuid
+
+    return resolve_catalog_product_uuid(value)
+
+
 def _general_company_deal(deals: List[SalesPipeline]) -> Optional[SalesPipeline]:
     """Company umbrella deal with no specific PMS product attached."""
     for pipeline in deals:
@@ -166,10 +177,14 @@ def _pipeline_create_body(
         except Exception as e:
             logger.debug("TDS lookup for pipeline link skipped: %s", e)
 
+    resolved_chemical_uuid = _resolved_catalog_product_ref(resolved_chemical)
+
     return SalesPipelineCreate(
         customer_id=cid,
         tds_id=_coerce_uuid(resolved_tds) if resolved_tds else None,
-        chemical_type_id=_coerce_uuid(resolved_chemical) if resolved_chemical else None,
+        chemical_type_id=(
+            _coerce_uuid(resolved_chemical_uuid) if resolved_chemical_uuid else None
+        ),
         stage=stage,
         metadata=meta,
     )
@@ -194,15 +209,16 @@ def ensure_lead_pipeline_for_product(
         latest_per_deal=True,
     )
     tds_s = str(tds_id) if tds_id else None
-    chem_s = str(chemical_type_id) if chemical_type_id else None
+    chem_uuid = _resolved_catalog_product_ref(chemical_type_id)
 
     for pipeline in deals:
         if tds_s:
             if pipeline.tds_id and str(pipeline.tds_id) == tds_s:
                 return pipeline
             continue
-        if chem_s:
-            if pipeline.chemical_type_id and str(pipeline.chemical_type_id) == chem_s:
+        if chem_uuid:
+            pipe_chem = _resolved_catalog_product_ref(pipeline.chemical_type_id)
+            if pipe_chem and pipe_chem == chem_uuid:
                 return pipeline
             continue
         if not pipeline.tds_id and not pipeline.chemical_type_id:
@@ -705,9 +721,10 @@ def _product_ids_for_pipeline(pipeline: SalesPipeline) -> List[str]:
     if pipeline.tds_id:
         ids.append(str(pipeline.tds_id))
     if pipeline.chemical_type_id:
-        cid = str(pipeline.chemical_type_id)
-        if cid not in ids:
-            ids.append(cid)
+        resolved = _resolved_catalog_product_ref(pipeline.chemical_type_id)
+        for cid in (resolved, str(pipeline.chemical_type_id)):
+            if cid and cid not in ids:
+                ids.append(cid)
     return ids
 
 

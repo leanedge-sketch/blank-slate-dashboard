@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +174,8 @@ def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raw["Product_Type"] = industry_val
         raw.pop("Industry", None)
     trimmed = {k: v for k, v in raw.items() if k in allowed and v is not None}
+    if "uuid_id" in optional_live and trimmed.get("uuid_id") is None:
+        trimmed["uuid_id"] = str(uuid4())
     return _convert_uuids(trimmed)
 
 

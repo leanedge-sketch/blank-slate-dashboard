@@ -7,6 +7,38 @@ export interface CatalogProductOption {
   uuidId?: string | null;
 }
 
+/** Canonical product id for CRM/Sales links (uuid_id from PMS when available). */
+export function catalogProductValue(c: ChemicalFullData): string {
+  return c.uuid_id ? String(c.uuid_id) : String(c.id);
+}
+
+export function chemicalTypeOptionValue(ct: ChemicalType): string {
+  const uuid = (ct.metadata as { uuid_id?: string } | null | undefined)?.uuid_id;
+  return uuid ? String(uuid) : String(ct.id);
+}
+
+export function findCatalogProduct(
+  ref: string,
+  chemicals: ChemicalFullData[],
+): ChemicalFullData | undefined {
+  if (!ref) return undefined;
+  return chemicals.find(
+    (c) => String(c.id) === ref || (c.uuid_id != null && String(c.uuid_id) === ref),
+  );
+}
+
+export function findCatalogChemicalType(
+  ref: string,
+  chemicalTypes: ChemicalType[],
+): ChemicalType | undefined {
+  if (!ref) return undefined;
+  return chemicalTypes.find(
+    (ct) =>
+      String(ct.id) === ref ||
+      (ct.metadata as { uuid_id?: string } | null | undefined)?.uuid_id === ref,
+  );
+}
+
 /** Sorted CRM/Sales product dropdown options from shared catalog rows. */
 export function catalogToProductOptions(
   chemicals: ChemicalFullData[],
@@ -19,7 +51,7 @@ export function catalogToProductOptions(
       }),
     )
     .map((c) => ({
-      value: String(c.id),
+      value: catalogProductValue(c),
       label: [
         c.product_name,
         c.vendor ? `(${c.vendor})` : "",
@@ -38,12 +70,8 @@ export function resolveCatalogProductName(
   chemicalTypes: ChemicalType[] = [],
 ): string {
   if (!id) return "—";
-  const fromFull = chemicals.find(
-    (c) => String(c.id) === id || (c.uuid_id && String(c.uuid_id) === id),
-  );
+  const fromFull = findCatalogProduct(id, chemicals);
   if (fromFull?.product_name) return fromFull.product_name;
-  const fromType = chemicalTypes.find(
-    (c) => String(c.id) === id || c.metadata?.uuid_id === id,
-  );
+  const fromType = findCatalogChemicalType(id, chemicalTypes);
   return fromType?.name ?? "—";
 }

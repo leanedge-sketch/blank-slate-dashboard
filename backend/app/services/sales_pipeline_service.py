@@ -125,21 +125,14 @@ def _resolve_chemical_type_id(value: Any) -> Optional[str]:
     Persist pipeline product links as UUID (chemical_full_data.uuid_id).
     Accepts legacy integer chemical_full_data.id from the UI.
     """
+    from app.services.catalog_sync_service import resolve_catalog_product_uuid
+
+    resolved = resolve_catalog_product_uuid(value)
+    if resolved:
+        return resolved
     if value is None or value == "":
         return None
-    s = str(value).strip()
-    if len(s) >= 32 and "-" in s:
-        return s
-    try:
-        int_id = int(s)
-        from app.services.chemical_master_data import get_chemical_master_data_by_id
-
-        chem = get_chemical_master_data_by_id(int_id)
-        if chem and chem.uuid_id:
-            return str(chem.uuid_id)
-    except (TypeError, ValueError):
-        pass
-    return s
+    return str(value).strip() or None
 
 
 def normalize_pipeline_payload_to_db(payload: dict) -> dict:

@@ -87,16 +87,19 @@ export function PipelineDealFields({
         >
           <option value="">No product linked</option>
           {chemicalFullData
-            .filter((c) => c.product_name && c.uuid_id)
+            .filter((c) => c.product_name && (c.uuid_id || c.id != null))
             .sort((a, b) =>
               (a.product_name || "").localeCompare(b.product_name || ""),
             )
-            .map((c) => (
-              <option key={c.uuid_id} value={c.uuid_id as string}>
-                {c.product_name}
-                {c.vendor ? ` (${c.vendor})` : ""}
-              </option>
-            ))}
+            .map((c) => {
+              const value = c.uuid_id ? String(c.uuid_id) : String(c.id);
+              return (
+                <option key={value} value={value}>
+                  {c.product_name}
+                  {c.vendor ? ` (${c.vendor})` : ""}
+                </option>
+              );
+            })}
         </select>
       </div>
 

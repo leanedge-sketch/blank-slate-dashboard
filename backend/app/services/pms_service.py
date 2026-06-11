@@ -71,6 +71,9 @@ def list_chemical_types(limit: int = 100, offset: int = 0) -> List[ChemicalType]
     """
     try:
         chemicals = list_chemical_full_data(limit=limit, offset=offset)
+        from app.services.catalog_sync_service import ensure_catalog_list_has_uuid_ids
+
+        chemicals = ensure_catalog_list_has_uuid_ids(chemicals)
         adapted_rows: List[Dict[str, Any]] = []
         for chem in chemicals:
             row_dict = chem.model_dump()
@@ -254,6 +257,11 @@ def _resolve_catalog_uuid_for_tds(chemical_ref: Optional[str]) -> Optional[str]:
         return ref
     except ValueError:
         pass
+    from app.services.catalog_sync_service import resolve_catalog_product_uuid
+
+    resolved = resolve_catalog_product_uuid(ref)
+    if resolved:
+        return resolved
     try:
         chem = get_chemical_type_by_id(ref)
         if chem and chem.metadata and chem.metadata.get("uuid_id"):
@@ -1375,8 +1383,9 @@ def list_chemical_full_data(
 ) -> List[ChemicalFullData]:
     """List Chemical_Master_Data (API shape: ChemicalFullData)."""
     from app.services.chemical_master_data import list_chemical_master_data
+    from app.services.catalog_sync_service import ensure_catalog_list_has_uuid_ids
 
-    return list_chemical_master_data(
+    rows = list_chemical_master_data(
         limit=limit,
         offset=offset,
         sector=sector,
@@ -1386,6 +1395,7 @@ def list_chemical_full_data(
         sub_category=sub_category,
         search=search,
     )
+    return ensure_catalog_list_has_uuid_ids(rows)
 
 
 def count_chemical_full_data(

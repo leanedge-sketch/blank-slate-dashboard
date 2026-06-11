@@ -403,7 +403,7 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     - Searches web for company information (Google PSE, SerpAPI, Wikipedia)
     - Searches LinkedIn for decision-makers
     - Generates comprehensive profile with Strategic-Fit Matrix
-    - Uses dynamic product categories from chemical_types table
+    - Uses dynamic product categories from Chemical_Master_Data (PMS catalog)
     
     This is called on-demand when the user clicks "Build Profile" button.
     """
@@ -457,9 +457,15 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         research_meta.get("linkedin_chars"),
     )
 
-    # Step 5: Fetch unique categories from chemical_types table (dynamically)
+    # Step 5: Fetch unique categories from PMS Chemical_Master_Data (live catalog)
     try:
-        categories_list = get_all_categories()
+        from app.services.chemical_master_data import get_all_industries
+
+        categories_list = list(
+            dict.fromkeys(
+                (get_all_categories() or []) + (get_all_industries() or [])
+            )
+        )
         if not categories_list:
             categories_list = ["Cement", "Dry-Mix", "Admixtures", "Paint & Coatings"]
     except Exception as e:

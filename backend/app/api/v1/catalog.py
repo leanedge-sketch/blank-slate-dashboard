@@ -51,6 +51,21 @@ async def list_shared_catalog_products(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.post("/backfill-uuids")
+async def backfill_catalog_uuids():
+    """
+    Assign uuid_id to every Chemical_Master_Data row that is missing one.
+    Run once if chemical type pickers show (no UUID).
+    """
+    from app.services.catalog_sync_service import backfill_all_catalog_uuid_ids
+
+    try:
+        return backfill_all_catalog_uuid_ids()
+    except Exception as e:
+        logger.exception("Catalog UUID backfill failed")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.post("/sync-all")
 async def sync_all_catalog_links():
     """

@@ -211,7 +211,7 @@ async def build_profile_endpoint(
     Build an AI-generated customer profile with Strategic-Fit Matrix.
     
     This endpoint:
-    - Fetches product categories from chemical_types table
+    - Fetches product categories and industries from PMS Chemical_Master_Data
     - Generates an AI profile with 0-3 ratings for each category
     - Stores the profile as an interaction
     - Updates the customer's product_alignment_scores

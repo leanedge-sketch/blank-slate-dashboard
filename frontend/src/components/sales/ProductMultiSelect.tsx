@@ -9,12 +9,13 @@ export interface ProductOption {
 }
 
 function toOption(c: ChemicalFullData): ProductOption | null {
-  if (!c.product_name || !c.uuid_id) return null;
+  const id = c.uuid_id ? String(c.uuid_id) : c.id != null ? String(c.id) : null;
+  if (!c.product_name || !id) return null;
   const parts: string[] = [];
   if (c.vendor) parts.push(c.vendor);
   if (c.product_category) parts.push(c.product_category);
   return {
-    id: c.uuid_id as string,
+    id,
     label: c.product_name,
     sublabel: parts.length ? parts.join(" · ") : undefined,
   };
