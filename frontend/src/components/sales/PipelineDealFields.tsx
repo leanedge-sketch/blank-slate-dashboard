@@ -149,27 +149,28 @@ export function PipelineDealFields({
       )}
 
       {showAllFields && (
-      <div>
-        <label className={labelClass}>Lead source</label>
-        <input
-          type="text"
-          value={form.lead_source}
-          onChange={(e) => onChange({ ...form, lead_source: e.target.value })}
-          className={inputClass}
-        />
-      </div>
-
-      <div>
-        <label className={labelClass}>Contact per lead</label>
-        <input
-          type="text"
-          value={form.contact_per_lead}
-          onChange={(e) =>
-            onChange({ ...form, contact_per_lead: e.target.value })
-          }
-          className={inputClass}
-        />
-      </div>
+        <>
+          <div>
+            <label className={labelClass}>Lead source</label>
+            <input
+              type="text"
+              value={form.lead_source}
+              onChange={(e) => onChange({ ...form, lead_source: e.target.value })}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Contact per lead</label>
+            <input
+              type="text"
+              value={form.contact_per_lead}
+              onChange={(e) =>
+                onChange({ ...form, contact_per_lead: e.target.value })
+              }
+              className={inputClass}
+            />
+          </div>
+        </>
       )}
 
       {showAllFields && (
