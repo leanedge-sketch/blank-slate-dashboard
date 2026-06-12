@@ -31,6 +31,14 @@ PIPELINE_STAGES = [
 ]
 
 STAGES_REQUIRING_FULL_COMMERCIAL = ["Proposal", "Confirmation", "Closed"]
+STAGES_REQUIRING_PRODUCT_AND_AMOUNT = [
+    "Discovery",
+    "Sample",
+    "Validation",
+    "Proposal",
+    "Confirmation",
+    "Closed",
+]
 STAGES_REQUIRING_BUSINESS_DETAILS = list(STAGES_REQUIRING_FULL_COMMERCIAL)
 
 # Currency options
@@ -119,6 +127,25 @@ class SalesPipelineBase(BaseModel):
                 f"Incoterm must be one of: {', '.join(INCOTERM_OPTIONS)}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_product_and_amount_from_discovery(self):
+        """Discovery+ requires a linked product, unit, and quantity."""
+        if self.stage not in STAGES_REQUIRING_PRODUCT_AND_AMOUNT:
+            return self
+        if not self.chemical_type_id:
+            raise ValueError(
+                "chemical_type_id (product) is required from Discovery stage onward"
+            )
+        if not self.unit or not self.unit.strip():
+            raise ValueError("unit is required from Discovery stage onward")
+        if self.amount is None:
+            raise ValueError("amount is required from Discovery stage onward")
+        if self.stage != "Sample" and self.amount <= 0:
+            raise ValueError(
+                "amount must be greater than 0 from Discovery stage onward"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_business_details_for_validation_plus(self):

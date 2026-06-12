@@ -23,6 +23,7 @@ from app.models.sales_pipeline import (
     PipelineInsights,
     PIPELINE_STAGES,
     STAGES_REQUIRING_FULL_COMMERCIAL,
+    STAGES_REQUIRING_PRODUCT_AND_AMOUNT,
 )
 from app.services.ai_service import gemini_chat, gemini_embed, GeminiError, log_conversation_to_rag
 from app.models.crm import InteractionCreate
@@ -604,7 +605,20 @@ def validate_pipeline_stage_requirements(
     amount: Optional[float] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Validate full commercial fields at Proposal+ and close_reason for Closed."""
+    """Validate product/amount from Discovery+ and full commercial fields at Proposal+."""
+    if stage in STAGES_REQUIRING_PRODUCT_AND_AMOUNT:
+        if not chemical_type_id:
+            raise ValueError(
+                "Product is required from Discovery stage onward."
+            )
+        if not unit or not str(unit).strip():
+            raise ValueError("Unit is required from Discovery stage onward.")
+        if amount is None:
+            raise ValueError("Amount is required from Discovery stage onward.")
+        if stage != "Sample" and amount <= 0:
+            raise ValueError(
+                "Amount must be greater than 0 from Discovery stage onward."
+            )
     if stage in STAGES_REQUIRING_FULL_COMMERCIAL:
         if not chemical_type_id:
             raise ValueError(

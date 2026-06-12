@@ -72,12 +72,18 @@ STAGES_REQUIRING_FULL_COMMERCIAL: List[str] = [
     PipelineStage.CLOSED.value,
 ]
 
-# Lead ID through Validation: all commercial fields optional.
-STAGES_WITH_OPTIONAL_COMMERCIAL: List[str] = [
-    PipelineStage.LEAD_ID.value,
+# Lead ID: product and amount optional. Discovery through Validation need product + quantity.
+STAGES_REQUIRING_PRODUCT_AND_AMOUNT: List[str] = [
     PipelineStage.DISCOVERY.value,
     PipelineStage.SAMPLE.value,
     PipelineStage.VALIDATION.value,
+    PipelineStage.PROPOSAL.value,
+    PipelineStage.CONFIRMATION.value,
+    PipelineStage.CLOSED.value,
+]
+
+STAGES_WITH_OPTIONAL_COMMERCIAL: List[str] = [
+    PipelineStage.LEAD_ID.value,
 ]
 
 STAGES_REQUIRING_BUSINESS_DETAILS: List[str] = list(STAGES_REQUIRING_FULL_COMMERCIAL)

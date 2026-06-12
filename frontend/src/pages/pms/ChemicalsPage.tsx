@@ -220,20 +220,22 @@ export function ChemicalsPage() {
     }
   }
 
-  async function loadChemicals() {
+  async function loadChemicals(overrides?: { offset?: number; search?: string }) {
     try {
       setLoading(true);
       setError(null);
-      const params: any = {
-        limit,
-        offset,
+      const effectiveOffset = overrides?.offset ?? offset;
+      const effectiveSearch =
+        overrides?.search !== undefined ? overrides.search : search;
+      const params: Record<string, string | number> = {
+        limit: effectiveSearch.trim() ? 200 : limit,
+        offset: effectiveOffset,
       };
       if (filterSector) params.sector = filterSector;
       if (filterIndustry) params.industry = filterIndustry;
       if (filterVendor) params.vendor = filterVendor;
       if (filterProductCategory) params.product_category = filterProductCategory;
-      if (filterSubCategory) params.sub_category = filterSubCategory;
-      if (search) params.search = search;
+      if (effectiveSearch.trim()) params.search = effectiveSearch.trim();
 
       const res = await fetchChemicalFullData(params);
       setChemicals(sortChemicalsBySupplier(res.chemicals));
@@ -268,12 +270,12 @@ export function ChemicalsPage() {
   useEffect(() => {
     loadChemicals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offset, filterSector, filterIndustry, filterVendor, filterProductCategory, filterSubCategory]);
+  }, [offset, filterSector, filterIndustry, filterVendor, filterProductCategory]);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-      setOffset(0);
-    await loadChemicals();
+    setOffset(0);
+    await loadChemicals({ offset: 0, search });
   }
 
   function clearFilters() {
@@ -281,9 +283,9 @@ export function ChemicalsPage() {
     setFilterIndustry("");
     setFilterVendor("");
     setFilterProductCategory("");
-    setFilterSubCategory("");
     setSearch("");
     setOffset(0);
+    void loadChemicals({ offset: 0, search: "" });
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -295,10 +297,8 @@ export function ChemicalsPage() {
 
     try {
       setCreating(true);
-      // Get next available ID automatically
-      const maxId = chemicals.length > 0 ? Math.max(...chemicals.map((c) => c.id)) : 0;
-      const createData: ChemicalFullDataCreate & { id: number } = {
-        id: maxId + 1,
+      // Row_No is assigned by the backend (_next_row_no) — do not guess from the current page.
+      const createData: ChemicalFullDataCreate = {
         sector: formData.sector || null,
         industry: formData.industry || null,
         partner_id: formData.partner_id,
@@ -553,23 +553,6 @@ export function ChemicalsPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Sub Category
-                </label>
-                <select
-                  value={filterSubCategory}
-                  onChange={(e) => setFilterSubCategory(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">All Sub Categories</option>
-                  {subCategories.map((sc) => (
-                    <option key={sc} value={sc}>
-                      {sc}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
         )}
@@ -688,41 +671,6 @@ export function ChemicalsPage() {
                       onClick={() => openAddOption("product_category")}
                       className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
                       title="Add new product category"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Sub Category {subCategories.length > 0 && `(${subCategories.length})`}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.sub_category || ""}
-                      onChange={(e) => {
-                        const newValue = e.target.value;
-                        console.log("Sub Category changed to:", newValue);
-                        setFormData({ ...formData, sub_category: newValue });
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Sub Category...</option>
-                      {subCategories.length > 0 ? (
-                        subCategories.map((sc) => (
-                          <option key={sc} value={sc}>
-                            {sc}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No sub categories available</option>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("sub_category")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new sub category"
                     >
                       <Plus size={16} />
                     </button>
@@ -897,7 +845,7 @@ export function ChemicalsPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by generic name, product type, HS code, or product name..."
+                placeholder="Search product, supplier, category, HS code, industry…"
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -912,7 +860,8 @@ export function ChemicalsPage() {
                 type="button"
                 onClick={() => {
                   setSearch("");
-                  loadChemicals();
+                  setOffset(0);
+                  void loadChemicals({ offset: 0, search: "" });
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
               >
@@ -1106,28 +1055,6 @@ export function ChemicalsPage() {
                                       {productCategories.map((c) => (
                                         <option key={c} value={c}>
                                           {c}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Sub Category
-                                    </label>
-                                    <select
-                                      value={editData.sub_category || ""}
-                                      onChange={(e) =>
-                                        setEditData({
-                                          ...editData,
-                                          sub_category: e.target.value || null,
-                                        })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                      <option value="">Select...</option>
-                                      {subCategories.map((sc) => (
-                                        <option key={sc} value={sc}>
-                                          {sc}
                                         </option>
                                       ))}
                                     </select>
@@ -1395,14 +1322,6 @@ export function ChemicalsPage() {
                     <p className="text-slate-900 font-medium">
                       {viewingChemical.product_category}
                     </p>
-                  </div>
-                )}
-                {viewingChemical.sub_category && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Sub Category
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.sub_category}</p>
                   </div>
                 )}
                 {viewingChemical.product_name && (

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { catalogToProductOptions } from "../../utils/catalogProducts";
 
@@ -22,7 +22,11 @@ export function CrmProductSelect({
   placeholder = "Select product",
   id,
 }: CrmProductSelectProps) {
-  const { chemicals, loading, total } = useProductCatalog();
+  const { chemicals, loading, total, refreshCatalog, error } = useProductCatalog();
+
+  useEffect(() => {
+    void refreshCatalog();
+  }, [refreshCatalog]);
 
   const options = useMemo(
     () => catalogToProductOptions(chemicals),
@@ -35,6 +39,7 @@ export function CrmProductSelect({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={() => void refreshCatalog()}
         required={required}
         className={className}
       >
@@ -49,7 +54,12 @@ export function CrmProductSelect({
           ))
         )}
       </select>
-      {!loading && (
+      {error && (
+        <p className="text-[11px] text-amber-700">
+          Catalog sync issue — focus this field to retry. ({error})
+        </p>
+      )}
+      {!loading && !error && (
         <p className="text-[11px] text-slate-500">
           {options.length} of {total} catalog product
           {total === 1 ? "" : "s"} (synced from PMS)

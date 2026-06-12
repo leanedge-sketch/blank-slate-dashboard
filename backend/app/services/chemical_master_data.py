@@ -125,14 +125,28 @@ def _read_client() -> Client:
         return get_supabase_client()
 
 
+def _postgrest_ilike_pattern(term: str) -> str:
+    """
+    PostgREST ilike values with spaces or punctuation must be double-quoted.
+    Unquoted patterns like %Dry Mix% break multi-word search.
+    """
+    cleaned = term.strip().replace(",", " ")
+    if not cleaned:
+        return ""
+    escaped = cleaned.replace("\\", "\\\\").replace('"', '""')
+    return f'"%{escaped}%"'
+
+
 def _apply_industry_filter(query, industry: Optional[str], client: Client):
     if not industry or not industry.strip():
         return query
-    pattern = f"%{industry.strip()}%"
+    pattern = _postgrest_ilike_pattern(industry)
+    if not pattern:
+        return query
     optional = _probe_live_optional_columns(client)
     if "Industry" in optional:
         return query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
-    return query.ilike("Product_Type", pattern)
+    return query.ilike("Product_Type", pattern.strip())
 
 
 def _convert_uuids(value: Any) -> Any:
@@ -198,17 +212,29 @@ def _next_row_no(client: Client) -> int:
     return 1
 
 
-def _apply_search_filter(query, search: Optional[str]):
+def _apply_search_filter(query, search: Optional[str], client: Optional[Client] = None):
     if not search or not search.strip():
         return query
-    term = search.strip().replace(",", " ")
-    pattern = f"%{term}%"
-    return query.or_(
-        f"Product_Name.ilike.{pattern},"
-        f"Generic_Name.ilike.{pattern},"
-        f"Product_Type.ilike.{pattern},"
-        f"HS_Code.ilike.{pattern}"
-    )
+    pattern = _postgrest_ilike_pattern(search)
+    if not pattern:
+        return query
+    columns = [
+        "Product_Name",
+        "Generic_Name",
+        "Product_Type",
+        "HS_Code",
+        "Supplier_Name",
+        "Category",
+        "Sub_Category",
+        "Packaging",
+        "Sector",
+    ]
+    probe_client = client or _read_client()
+    optional = _probe_live_optional_columns(probe_client)
+    if "Industry" in optional:
+        columns.append("Industry")
+    parts = [f"{col}.ilike.{pattern}" for col in columns]
+    return query.or_(",".join(parts))
 
 
 def list_chemical_master_data(
@@ -233,7 +259,7 @@ def list_chemical_master_data(
         query = query.ilike("Category", f"%{product_category}%")
     if sub_category:
         query = query.ilike("Sub_Category", f"%{sub_category}%")
-    query = _apply_search_filter(query, search)
+    query = _apply_search_filter(query, search, client)
 
     response = (
         query.order("Supplier_Name", desc=False)
@@ -276,7 +302,7 @@ def count_chemical_master_data(
         query = query.ilike("Category", f"%{product_category}%")
     if sub_category:
         query = query.ilike("Sub_Category", f"%{sub_category}%")
-    query = _apply_search_filter(query, search)
+    query = _apply_search_filter(query, search, client)
 
     response = query.execute()
     return response.count or 0
@@ -314,12 +340,18 @@ def _insert_master_row(client: Client, payload: Dict[str, Any]):
 
 
 def _update_master_row(client: Client, chemical_id: int, payload: Dict[str, Any]):
+    if not payload:
+        return None
     base_payload = {k: v for k, v in payload.items() if k in _BASE_DB_COLUMNS}
-    if not base_payload:
+    optional_payload = {
+        k: v for k, v in payload.items() if k in _OPTIONAL_DB_COLUMNS
+    }
+    merged = {**base_payload, **optional_payload}
+    if not merged:
         return None
     try:
         return (
-            client.table(TABLE).update(base_payload).eq("Row_No", chemical_id).execute()
+            client.table(TABLE).update(merged).eq("Row_No", chemical_id).execute()
         )
     except Exception as exc:
         if _is_missing_column_error(exc):
@@ -328,16 +360,18 @@ def _update_master_row(client: Client, chemical_id: int, payload: Dict[str, Any]
                 for k, v in payload.items()
                 if k in _OPTIONAL_DB_COLUMNS and v is not None
             }
-            merged = {**base_payload, **optional}
+            retry_merged = {**base_payload, **optional}
+            if not retry_merged:
+                return None
             try:
                 return (
                     client.table(TABLE)
-                    .update(merged)
+                    .update(retry_merged)
                     .eq("Row_No", chemical_id)
                     .execute()
                 )
             except Exception as retry_exc:
-                if _is_missing_column_error(retry_exc):
+                if _is_missing_column_error(retry_exc) and base_payload:
                     return (
                         client.table(TABLE)
                         .update(base_payload)

@@ -560,6 +560,8 @@ export async function fetchSharedCatalog(params?: {
   product_category?: string;
   sub_category?: string;
   search?: string;
+  /** Cache-bust param (ignored by API) for fresh CRM/Sales catalog after PMS edits. */
+  _t?: number;
 }) {
   const res = await api.get<ChemicalFullDataListResponse>("/catalog/products", {
     params,

@@ -1,7 +1,7 @@
 """
 Shared product catalog API — single source for Sales, CRM, PMS, Stock, and Reports UIs.
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 import logging
 
 from app.models.pms import ChemicalFullDataListResponse
@@ -13,6 +13,7 @@ router = APIRouter()
 
 @router.get("/products", response_model=ChemicalFullDataListResponse)
 async def list_shared_catalog_products(
+    response: Response,
     limit: int = Query(5000, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     sector: str | None = None,
@@ -26,6 +27,7 @@ async def list_shared_catalog_products(
     Master product list from chemical_full_data.
     Same data PMS writes; Sales/CRM/Stock/Reports should read this endpoint or refresh after PMS changes.
     """
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     try:
         chemicals = list_chemical_full_data(
             limit=limit,

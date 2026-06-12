@@ -8,7 +8,9 @@ import { Edit2, Loader2, X, CheckCircle } from "lucide-react";
 import { PipelineDealFields } from "./PipelineDealFields";
 import {
   amountChangeReasonRequired,
+  pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
+  validateDealFormForProductAndAmount,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
 
@@ -33,6 +35,16 @@ export function PipelineEditModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (pipelineStageRequiresProductAndAmount(pipeline.stage)) {
+      const productError = validateDealFormForProductAndAmount(
+        form,
+        pipeline.stage,
+      );
+      if (productError) {
+        alert(productError);
+        return;
+      }
+    }
     const amountVal =
       form.amount === "" || form.amount === null ? null : Number(form.amount);
     const amountChanged =
@@ -130,7 +142,16 @@ export function PipelineEditModal({
           <PipelineDealFields
             form={form}
             onChange={setForm}
-            requiredLevel="none"
+            requiredLevel={
+              pipelineStageRequiresProductAndAmount(pipeline.stage)
+                ? "product_amount"
+                : "none"
+            }
+            fieldsMode={
+              pipelineStageRequiresProductAndAmount(pipeline.stage)
+                ? "product_amount"
+                : "all"
+            }
           />
 
           {showAmountReason && (

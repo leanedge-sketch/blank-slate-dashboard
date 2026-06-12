@@ -6,6 +6,25 @@ export interface ProductOption {
   id: string;
   label: string;
   sublabel?: string;
+  searchText?: string;
+}
+
+function productSearchText(c: ChemicalFullData): string {
+  return [
+    c.product_name,
+    c.vendor,
+    c.product_category,
+    c.sub_category,
+    c.generic_name,
+    c.hs_code,
+    c.product_type,
+    c.industry,
+    c.sector,
+    c.packing,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function toOption(c: ChemicalFullData): ProductOption | null {
@@ -18,6 +37,7 @@ function toOption(c: ChemicalFullData): ProductOption | null {
     id,
     label: c.product_name,
     sublabel: parts.length ? parts.join(" · ") : undefined,
+    searchText: productSearchText(c),
   };
 }
 
@@ -57,7 +77,8 @@ export function ProductMultiSelect({
     return options.filter(
       (o) =>
         !selectedIds.includes(o.id) &&
-        (o.label.toLowerCase().includes(q) ||
+        (o.searchText?.includes(q) ||
+          o.label.toLowerCase().includes(q) ||
           (o.sublabel?.toLowerCase().includes(q) ?? false)),
     );
   }, [options, query, selectedIds]);
@@ -141,7 +162,7 @@ export function ProductMultiSelect({
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-sm text-slate-500">
               {options.length === 0
-                ? "No products with UUID available."
+                ? "No products loaded from catalog."
                 : query.trim()
                   ? "No matching products."
                   : "All products selected."}

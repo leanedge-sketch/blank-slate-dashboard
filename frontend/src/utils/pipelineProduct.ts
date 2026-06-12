@@ -58,12 +58,16 @@ export const STAGES_REQUIRING_FULL_COMMERCIAL = [
   "Closed",
 ] as const;
 
-/** Lead ID through Validation: all commercial fields optional. */
-export const STAGES_WITH_OPTIONAL_COMMERCIAL = [
-  "Lead ID",
+/** Lead ID only — product and amount become required from Discovery onward. */
+export const STAGES_WITH_OPTIONAL_COMMERCIAL = ["Lead ID"] as const;
+
+export const STAGES_REQUIRING_PRODUCT_AND_AMOUNT = [
   "Discovery",
   "Sample",
   "Validation",
+  "Proposal",
+  "Confirmation",
+  "Closed",
 ] as const;
 
 /** Alias for Proposal+ business requirements (used by list/edit pages). */
@@ -119,6 +123,16 @@ export function pipelineTargetRequiresFullCommercial(stage: string): boolean {
   );
 }
 
+export function pipelineStageRequiresProductAndAmount(stage: string): boolean {
+  return STAGES_REQUIRING_PRODUCT_AND_AMOUNT.includes(
+    stage as (typeof STAGES_REQUIRING_PRODUCT_AND_AMOUNT)[number],
+  );
+}
+
+export function pipelineUpdateShowsProductAmountForm(targetStage: string): boolean {
+  return pipelineStageRequiresProductAndAmount(targetStage);
+}
+
 /**
  * Show the full commercial form when entering Proposal, or when jumping to
  * Confirmation/Closed before commercial data exists on the deal.
@@ -134,6 +148,29 @@ export function pipelineUpdateShowsCommercialForm(
     return true;
   }
   return validateDealFormForProposal(dealForm) !== null;
+}
+
+/** Product, unit, and quantity required from Discovery onward. */
+export function validateDealFormForProductAndAmount(
+  form: PipelineDealFormValues,
+  targetStage: string,
+): string | null {
+  if (!pipelineStageRequiresProductAndAmount(targetStage)) {
+    return null;
+  }
+  if (!form.chemical_type_id.trim()) {
+    return "Product is required from Discovery stage onward.";
+  }
+  if (!form.unit.trim()) {
+    return "Unit is required from Discovery stage onward.";
+  }
+  if (form.amount === "" || form.amount === null || form.amount === undefined) {
+    return "Amount (quantity) is required from Discovery stage onward.";
+  }
+  if (targetStage !== "Sample" && Number(form.amount) <= 0) {
+    return "Enter a quantity greater than 0 from Discovery stage onward.";
+  }
+  return null;
 }
 
 /** Client-side validation for the full commercial form (Proposal entry only). */
@@ -184,10 +221,27 @@ export function validateDealFormForTargetStage(
   form: PipelineDealFormValues,
   targetStage: string,
 ): string | null {
+  const productAmountError = validateDealFormForProductAndAmount(form, targetStage);
+  if (productAmountError) {
+    return productAmountError;
+  }
   if (!pipelineUpdateShowsCommercialForm(targetStage, form)) {
     return null;
   }
   return validateDealFormForProposal(form);
+}
+
+export function buildPipelineProductAmountPayload(
+  dealForm: PipelineDealFormValues,
+): Record<string, unknown> {
+  return {
+    chemical_type_id: dealForm.chemical_type_id.trim() || null,
+    unit: dealForm.unit.trim() || null,
+    amount:
+      dealForm.amount === "" || dealForm.amount === null
+        ? null
+        : Number(dealForm.amount),
+  };
 }
 
 /** Build commercial fields payload for a pipeline stage update. */

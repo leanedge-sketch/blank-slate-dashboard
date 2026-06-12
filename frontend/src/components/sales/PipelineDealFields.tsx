@@ -23,11 +23,14 @@ export function PipelineDealFields({
   onChange,
   requiredLevel = "none",
   showAmount = true,
+  fieldsMode = "all",
 }: {
   form: PipelineDealFormValues;
   onChange: (form: PipelineDealFormValues) => void;
-  requiredLevel?: "none" | "basic" | "full";
+  requiredLevel?: "none" | "product_amount" | "full";
   showAmount?: boolean;
+  /** When product_amount, only product, unit, and quantity are shown. */
+  fieldsMode?: "all" | "product_amount";
 }) {
   const { chemicals: chemicalFullData } = useProductCatalog();
   const [businessModels, setBusinessModels] = useState<string[]>([]);
@@ -69,21 +72,23 @@ export function PipelineDealFields({
     return Array.from(set).sort();
   }
 
-  const reqBasic = requiredLevel === "basic" || requiredLevel === "full";
+  const reqProductAmount =
+    requiredLevel === "product_amount" || requiredLevel === "full";
   const reqFull = requiredLevel === "full";
+  const showAllFields = fieldsMode === "all";
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="md:col-span-2">
         <label className={labelClass}>
           Product
-          <RequiredMark show={reqFull} />
+          <RequiredMark show={reqProductAmount} />
         </label>
         <select
           value={form.chemical_type_id}
           onChange={(e) => onChange({ ...form, chemical_type_id: e.target.value })}
           className={inputClass}
-          required={reqFull}
+          required={reqProductAmount}
         >
           <option value="">No product linked</option>
           {chemicalFullData
@@ -103,6 +108,7 @@ export function PipelineDealFields({
         </select>
       </div>
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Vendor
@@ -122,7 +128,9 @@ export function PipelineDealFields({
           ))}
         </select>
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Expected close date
@@ -138,7 +146,9 @@ export function PipelineDealFields({
           required={reqFull}
         />
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>Lead source</label>
         <input
@@ -160,17 +170,19 @@ export function PipelineDealFields({
           className={inputClass}
         />
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Business model
-          <RequiredMark show={reqBasic} />
+          <RequiredMark show={reqFull} />
         </label>
         <select
           value={form.business_model}
           onChange={(e) => onChange({ ...form, business_model: e.target.value })}
           className={inputClass}
-          required={reqBasic}
+          required={reqFull}
         >
           <option value="">Select…</option>
           {businessModels.map((m) => (
@@ -180,7 +192,9 @@ export function PipelineDealFields({
           ))}
         </select>
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Business unit
@@ -200,17 +214,18 @@ export function PipelineDealFields({
           <option value="Nyumb-Chem">Nyumb-Chem</option>
         </select>
       </div>
+      )}
 
       <div>
         <label className={labelClass}>
           Unit
-          <RequiredMark show={reqBasic} />
+          <RequiredMark show={reqProductAmount} />
         </label>
         <select
           value={form.unit}
           onChange={(e) => onChange({ ...form, unit: e.target.value })}
           className={inputClass}
-          required={reqBasic}
+          required={reqProductAmount}
         >
           <option value="">Select…</option>
           {["kg", "ton", "g", "L", "mL", "drum", "bag", "carton", "pallet", "unit"].map(
@@ -227,7 +242,7 @@ export function PipelineDealFields({
         <div>
           <label className={labelClass}>
             Amount (quantity)
-            <RequiredMark show={reqFull} />
+            <RequiredMark show={reqProductAmount} />
           </label>
           <input
             type="number"
@@ -241,11 +256,12 @@ export function PipelineDealFields({
               })
             }
             className={inputClass}
-            required={reqFull}
+            required={reqProductAmount}
           />
         </div>
       )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Unit price
@@ -284,7 +300,9 @@ export function PipelineDealFields({
           </select>
         </div>
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Forex
@@ -301,7 +319,9 @@ export function PipelineDealFields({
           <option value="Client">Client</option>
         </select>
       </div>
+      )}
 
+      {showAllFields && (
       <div>
         <label className={labelClass}>
           Incoterm
@@ -320,6 +340,7 @@ export function PipelineDealFields({
           <option value="Stock – Addis Ababa">Stock – Addis Ababa</option>
         </select>
       </div>
+      )}
     </div>
   );
 }

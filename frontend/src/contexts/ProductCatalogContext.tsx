@@ -4,9 +4,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useLocation } from "react-router-dom";
 import {
   ChemicalFullData,
   ChemicalType,
@@ -66,16 +68,18 @@ function mergeCatalogRow(
 }
 
 export function ProductCatalogProvider({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const [chemicals, setChemicals] = useState<ChemicalFullData[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshCatalog = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchAllCatalogProducts();
+      const res = await fetchAllCatalogProducts({ bustCache: true });
       setChemicals(res.chemicals);
       setTotal(res.total);
     } catch (err: unknown) {
@@ -88,30 +92,63 @@ export function ProductCatalogProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = setTimeout(() => {
+      void refreshCatalog();
+    }, 350);
+  }, [refreshCatalog]);
+
   useEffect(() => {
     void refreshCatalog();
 
     const onUpdated = () => {
-      void refreshCatalog();
+      scheduleRefresh();
     };
 
     const onUpserted = (event: Event) => {
       const row = (event as CustomEvent<ChemicalFullData>).detail;
       if (!row?.id) return;
       setChemicals((prev) => {
+        const exists = prev.some((c) => c.id === row.id);
         const merged = mergeCatalogRow(prev, row);
-        setTotal(merged.length);
+        setTotal((t) => (exists ? t : Math.max(t, merged.length)));
         return merged;
       });
+      scheduleRefresh();
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCatalog();
+      }
     };
 
     window.addEventListener(CATALOG_UPDATED_EVENT, onUpdated);
     window.addEventListener(CATALOG_PRODUCT_UPSERTED_EVENT, onUpserted);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener(CATALOG_UPDATED_EVENT, onUpdated);
       window.removeEventListener(CATALOG_PRODUCT_UPSERTED_EVENT, onUpserted);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
     };
-  }, [refreshCatalog]);
+  }, [refreshCatalog, scheduleRefresh]);
+
+  // Re-fetch when navigating to CRM/Sales/Stock (e.g. after adding a product in PMS).
+  useEffect(() => {
+    const path = location.pathname;
+    const isCatalogConsumer =
+      path.startsWith("/crm") ||
+      path.startsWith("/sales") ||
+      path.startsWith("/stock");
+    if (!isCatalogConsumer) return;
+    void refreshCatalog();
+  }, [location.pathname, location.key, refreshCatalog]);
 
   const chemicalTypes = useMemo(
     () => chemicals.map(toChemicalType),

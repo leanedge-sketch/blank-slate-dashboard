@@ -70,6 +70,10 @@ import {
   PIPELINE_STAGE_COLORS,
   SEVEN_PIPELINE_STAGES,
   buildPipelineCommercialUpdatePayload,
+  buildPipelineProductAmountPayload,
+  getPipelineProductLabel,
+  pipelineStageRequiresProductAndAmount,
+  pipelineUpdateShowsProductAmountForm,
   validateDealFormForTargetStage,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
@@ -95,7 +99,8 @@ export function PipelineDetailPage() {
 
   // Data for display
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const { chemicalTypes } = useProductCatalog();
+  const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
+  const productLabelOptions = { chemicalFullData, chemicalTypes, tdsList: tdsData ? [tdsData] : [] };
   const [tdsData, setTdsData] = useState<Tds | null>(null);
 
   // AI Chat state
@@ -515,6 +520,10 @@ export function PipelineDetailPage() {
 
     try {
       setUpdating(true);
+      const showProductAmount =
+        stageChanged &&
+        pipelineUpdateShowsProductAmountForm(targetStage) &&
+        !showCommercial;
       const commercialPayload =
         stageChanged && showCommercial
           ? (buildPipelineCommercialUpdatePayload(
@@ -522,10 +531,17 @@ export function PipelineDetailPage() {
               (currentPipeline.metadata || {}) as Record<string, unknown>,
             ) as SalesPipelineUpdate)
           : {};
+      const productAmountPayload =
+        showProductAmount
+          ? (buildPipelineProductAmountPayload(dealForm) as SalesPipelineUpdate)
+          : {};
 
       const updateData: SalesPipelineUpdate = {
         ...(stageChanged ? { stage: targetStage } : {}),
-        ...(effectiveAmountChanged ? { amount: effectiveAmount } : {}),
+        ...(effectiveAmountChanged && !showProductAmount && !showCommercial
+          ? { amount: effectiveAmount }
+          : {}),
+        ...productAmountPayload,
         ...commercialPayload,
         close_reason:
           stageChanged && targetStage === "Closed"
@@ -750,7 +766,24 @@ export function PipelineDetailPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
         {/* Summary Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          {/* Product Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <Tag className="w-5 h-5 text-indigo-600" />
+              </div>
+              <span className="text-xs font-medium text-slate-500">Product</span>
+            </div>
+            <p className="text-lg font-bold text-slate-900 mb-1 line-clamp-2">
+              {getPipelineProductLabel(selectedPipeline, productLabelOptions)}
+            </p>
+            {pipelineStageRequiresProductAndAmount(selectedPipeline.stage) &&
+              !selectedPipeline.chemical_type_id && (
+                <p className="text-xs text-amber-700 font-medium">Product required at this stage</p>
+              )}
+          </div>
+
           {/* Quantity Card */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
@@ -1021,6 +1054,12 @@ export function PipelineDetailPage() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-gradient-to-br from-indigo-50 to-violet-50 rounded-lg border border-indigo-200">
+                      <label className="text-xs font-medium text-slate-500 mb-1 block">Product</label>
+                      <p className="text-lg font-bold text-slate-900">
+                        {getPipelineProductLabel(selectedPipeline, productLabelOptions)}
+                      </p>
+                    </div>
                     <div className="p-4 bg-gradient-to-br from-emerald-50 to-blue-50 rounded-lg border border-emerald-200">
                       <label className="text-xs font-medium text-slate-500 mb-1 block">Amount (Quantity)</label>
                       <p className="text-2xl font-bold text-slate-900">
@@ -1361,6 +1400,14 @@ export function PipelineDetailPage() {
                           )}
                         </div>
                         
+                        {/* Product */}
+                        <div className="mb-4">
+                          <p className="text-xs text-slate-500 mb-1">Product</p>
+                          <p className="text-sm font-semibold text-slate-900 line-clamp-2">
+                            {getPipelineProductLabel(version, productLabelOptions)}
+                          </p>
+                        </div>
+
                         {/* Amount */}
                         <div className="mb-4">
                           <p className="text-xs text-slate-500 mb-1">Amount</p>
@@ -1782,7 +1829,37 @@ export function PipelineDetailPage() {
                 </div>
               )}
 
-              {!showFullCommercial && (
+              {!showFullCommercial &&
+                willAdvanceStage &&
+                pipelineUpdateShowsProductAmountForm(targetStageForForm) && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-800">
+                      Product &amp; quantity <span className="text-red-500">*</span>
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Required when moving to Discovery or any later stage.
+                    </p>
+                    <PipelineDealFields
+                      form={updateDealForm}
+                      onChange={(next) => {
+                        setUpdateDealForm(next);
+                        const amt =
+                          next.amount === "" || next.amount === null
+                            ? null
+                            : Number(next.amount);
+                        setUpdateFormData((prev) => ({ ...prev, amount: amt }));
+                      }}
+                      requiredLevel="product_amount"
+                      fieldsMode="product_amount"
+                    />
+                  </div>
+                )}
+
+              {!showFullCommercial &&
+                !(
+                  willAdvanceStage &&
+                  pipelineUpdateShowsProductAmountForm(targetStageForForm)
+                ) && (
                 <>
               {/* Current Amount Display */}
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
