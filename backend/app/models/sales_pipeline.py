@@ -128,9 +128,19 @@ class SalesPipelineBase(BaseModel):
             )
         return v
 
+class SalesPipelineCreate(SalesPipelineBase):
+    """Model for creating a new sales pipeline record."""
+
+    # Lead ID create form: customer and product are optional in the UI
+    customer_id: Optional[UUID] = None
+    reason_for_stage_change: Optional[str] = Field(
+        None,
+        description="Required when creating a new pipeline deal",
+    )
+
     @model_validator(mode="after")
     def validate_product_and_amount_from_discovery(self):
-        """Discovery+ requires a linked product, unit, and quantity."""
+        """Discovery+ requires a linked product, unit, and quantity on create."""
         if self.stage not in STAGES_REQUIRING_PRODUCT_AND_AMOUNT:
             return self
         if not self.chemical_type_id:
@@ -149,7 +159,7 @@ class SalesPipelineBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_business_details_for_validation_plus(self):
-        """Proposal+ requires full commercial fields; earlier stages are optional."""
+        """Proposal+ requires full commercial fields on create."""
         if self.stage not in STAGES_REQUIRING_FULL_COMMERCIAL:
             return self
         if not self.business_model or not self.business_model.strip():
@@ -176,21 +186,10 @@ class SalesPipelineBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_close_reason_for_closed(self):
-        """Validate that close_reason is provided when stage is Closed."""
+        """Require close_reason when creating a Closed deal."""
         if self.stage == "Closed" and (not self.close_reason or not self.close_reason.strip()):
             raise ValueError("close_reason is required when stage is 'Closed'")
         return self
-
-
-class SalesPipelineCreate(SalesPipelineBase):
-    """Model for creating a new sales pipeline record."""
-
-    # Lead ID create form: customer and product are optional in the UI
-    customer_id: Optional[UUID] = None
-    reason_for_stage_change: Optional[str] = Field(
-        None,
-        description="Required when creating a new pipeline deal",
-    )
 
 
 class SalesPipelineUpdate(BaseModel):
