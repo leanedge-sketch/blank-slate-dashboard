@@ -37,6 +37,12 @@ export function getPipelineProductLabel(
     return pipeline.tds_id;
   }
 
+  const meta = (pipeline.metadata || {}) as Record<string, unknown>;
+  const metaName = meta.product_name;
+  if (typeof metaName === "string" && metaName.trim()) {
+    return metaName.trim();
+  }
+
   return "General / no product linked";
 }
 

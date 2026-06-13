@@ -62,6 +62,7 @@ import {
   amountChangeReasonRequired,
   formatPipelineAmountInput,
   formatPipelineQuantity,
+  getPipelineProductLabel,
   stageChangeReasonRequired,
 } from "../../utils/pipelineProduct";
 
@@ -1145,55 +1146,7 @@ export function SalesPipelinePage() {
   }
 
   function getChemicalTypeName(pipeline: SalesPipeline): string {
-    const chemicalTypeId = pipeline.chemical_type_id;
-    
-    if (!chemicalTypeId) {
-      return "Unknown Product";
-    }
-    
-    // First, try to find by UUID (uuid_id matches chemical_type_id) - NEW WAY
-    const chemicalFullByUuid = chemicalFullData.find((c) => c.uuid_id === chemicalTypeId);
-    if (chemicalFullByUuid?.product_name) {
-      return chemicalFullByUuid.product_name;
-    }
-    
-    // Fallback: try to find by integer ID (if chemical_type_id is a number string)
-    const numericId = parseInt(String(chemicalTypeId), 10);
-    if (!isNaN(numericId) && numericId > 0) {
-      const chemicalFullById = chemicalFullData.find((c) => c.id === numericId);
-      if (chemicalFullById?.product_name) {
-        return chemicalFullById.product_name;
-      }
-    }
-    
-    // Catalog integer id stored as string
-    const chemicalType = chemicalTypes.find(
-      (ct) => String(ct.id) === String(chemicalTypeId)
-    );
-    if (chemicalType?.name) {
-      return chemicalType.name;
-    }
-
-    const metaName = (pipeline.metadata as Record<string, unknown> | null)?.product_name;
-    if (typeof metaName === "string" && metaName.trim()) {
-      return metaName.trim();
-    }
-    
-    // Debug log if not found
-    console.error("❌ Product not found for pipeline:", {
-      pipelineId: pipeline.id,
-      chemical_type_id: chemicalTypeId,
-      chemical_type_id_type: typeof chemicalTypeId,
-      chemicalFullDataCount: chemicalFullData.length,
-      hasUuidIds: chemicalFullData.filter(c => c.uuid_id).length,
-      sampleProducts: chemicalFullData.slice(0, 3).map(c => ({ 
-        id: c.id, 
-        uuid_id: c.uuid_id, 
-        name: c.product_name 
-      })),
-    });
-    
-    return "Unknown Product";
+    return getPipelineProductLabel(pipeline, pipelineLabelOptions);
   }
 
   const totalPages = Math.ceil(total / limit);
@@ -2401,7 +2354,8 @@ export function SalesPipelinePage() {
                 }
                 
                 return {
-                  product_name: productName !== "Unknown Product" ? productName : null,
+                  product_name:
+                    productName !== "General / no product linked" ? productName : null,
                   chemical_type_id: pipeline.chemical_type_id || null,
                   vendor_name: vendorName,
                   unit_price: pipeline.unit_price || null,

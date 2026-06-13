@@ -100,8 +100,15 @@ export function PipelineDetailPage() {
   // Data for display
   const [customers, setCustomers] = useState<Customer[]>([]);
   const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
-  const productLabelOptions = { chemicalFullData, chemicalTypes, tdsList: tdsData ? [tdsData] : [] };
   const [tdsData, setTdsData] = useState<Tds | null>(null);
+  const productLabelOptions = useMemo(
+    () => ({
+      chemicalFullData,
+      chemicalTypes,
+      tdsList: tdsData ? [tdsData] : [],
+    }),
+    [chemicalFullData, chemicalTypes, tdsData],
+  );
 
   // AI Chat state
   const [chatInput, setChatInput] = useState("");
@@ -698,7 +705,11 @@ export function PipelineDetailPage() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-2 text-slate-300">
                     <Package className="w-4 h-4" />
-                    <span className="text-sm">{getChemicalTypeName(selectedPipeline.chemical_type_id || selectedPipeline.tds_id)}</span>
+                    <span className="text-sm">
+                      {selectedPipeline
+                        ? getPipelineProductLabel(selectedPipeline, productLabelOptions)
+                        : "—"}
+                    </span>
                   </div>
                   {selectedPipeline.tds_id && getBrandName() !== "—" && (
                     <>
