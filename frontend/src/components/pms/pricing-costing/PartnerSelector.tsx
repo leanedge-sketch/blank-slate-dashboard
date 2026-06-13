@@ -1,31 +1,47 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import type { Partner } from "./types";
+import type { CRMPartner, PricingRecord } from "./types";
+import { partnerTypeLabel } from "./utils";
 
 type PartnerSelectorProps = {
-  partners: Partner[];
+  partners: CRMPartner[];
+  pricingRecords: PricingRecord[];
   selectedPartnerId: string | null;
   onSelectPartner: (partnerId: string) => void;
 };
 
 export function PartnerSelector({
   partners,
+  pricingRecords,
   selectedPartnerId,
   onSelectPartner,
 }: PartnerSelectorProps) {
   const [query, setQuery] = useState("");
 
+  const activeCountByPartner = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const record of pricingRecords) {
+      if (record.status !== "active") continue;
+      counts.set(record.crmPartnerId, (counts.get(record.crmPartnerId) ?? 0) + 1);
+    }
+    return counts;
+  }, [pricingRecords]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return partners;
-    return partners.filter((p) => p.name.toLowerCase().includes(q));
+    return partners.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.type.toLowerCase().includes(q),
+    );
   }, [partners, query]);
 
   return (
     <aside className="flex h-full min-h-0 w-80 shrink-0 flex-col border-r border-slate-200 bg-slate-50/80 lg:w-96">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 p-3 backdrop-blur-sm">
         <label htmlFor="partner-search" className="sr-only">
-          Search partners
+          Search CRM partners
         </label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -34,7 +50,7 @@ export function PartnerSelector({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search partners…"
+            placeholder="Search CRM partners…"
             className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
           />
         </div>
@@ -51,6 +67,7 @@ export function PartnerSelector({
         ) : (
           filtered.map((partner) => {
             const selected = partner.id === selectedPartnerId;
+            const activeCount = activeCountByPartner.get(partner.id) ?? 0;
             return (
               <li key={partner.id}>
                 <button
@@ -63,12 +80,11 @@ export function PartnerSelector({
                   }`}
                 >
                   <p className="text-sm font-semibold text-slate-900">{partner.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">
-                    {partner.activeTOS}
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {partnerTypeLabel(partner.type)}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    {partner.pricingRecords.length} pricing entr
-                    {partner.pricingRecords.length === 1 ? "y" : "ies"}
+                    {activeCount} active price{activeCount === 1 ? "" : "s"}
                   </p>
                 </button>
               </li>

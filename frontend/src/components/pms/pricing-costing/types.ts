@@ -1,18 +1,33 @@
 export interface PricingRecord {
   id: string;
+  crmPartnerId: string;
+  pmsProductId: string;
   incoterm: string;
   location: string;
   costCurrency: string;
-  costAmount: number | null;
+  costAmount: number;
   priceCurrency: string;
-  priceAmount: number | null;
+  priceAmount: number;
+  exchangeRateUsed: number | null;
+  baseCurrency: string | null;
+  validFrom: string;
+  validTo: string | null;
+  status: "active" | "historical" | "draft";
 }
 
-export interface Partner {
+export interface CRMPartner {
   id: string;
   name: string;
-  activeTOS: string;
-  pricingRecords: PricingRecord[];
+  type: "buyer" | "supplier" | "logistics";
 }
 
-export type PricingRecordInput = Omit<PricingRecord, "id">;
+export interface PMSProduct {
+  id: string;
+  sku: string;
+  name: string;
+}
+
+export type PricingRecordInput = Omit<
+  PricingRecord,
+  "id" | "validFrom" | "validTo" | "status"
+>;
