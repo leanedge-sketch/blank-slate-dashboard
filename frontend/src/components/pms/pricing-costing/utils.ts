@@ -1,4 +1,15 @@
-import type { PricingRecord } from "./types";
+import type { PricingLocation, PricingRecord } from "./types";
+
+export function formatLocationLabel(loc: PricingLocation): string {
+  const parts = [loc.country.trim()];
+  if (loc.city?.trim()) parts.push(loc.city.trim());
+  if (loc.port?.trim()) parts.push(loc.port.trim());
+  return parts.join(" · ");
+}
+
+export function newLocationId(): string {
+  return `loc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export function formatAmount(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -35,6 +46,7 @@ export type MarginResult = {
   simulated: boolean;
   rateLabel: string | null;
   missingRate: boolean;
+  conversionSkipped: boolean;
 };
 
 export function computeMargin(
@@ -51,6 +63,19 @@ export function computeMargin(
       simulated: false,
       rateLabel: null,
       missingRate: false,
+      conversionSkipped: false,
+    };
+  }
+
+  if (!record.needsCurrencyConversion) {
+    return {
+      amount: null,
+      sameCurrency: false,
+      currency: null,
+      simulated: false,
+      rateLabel: null,
+      missingRate: false,
+      conversionSkipped: true,
     };
   }
 
@@ -76,42 +101,67 @@ export function computeMargin(
       simulated: false,
       rateLabel: null,
       missingRate: true,
+      conversionSkipped: false,
     };
   }
 
-  const convertedCost = record.costAmount * rate;
-  const marginAmount = record.priceAmount - convertedCost;
-  const currency = record.baseCurrency ?? record.priceCurrency;
-  const rateLabel = formatExchangeRateLabel(
-    record.costCurrency,
-    record.priceCurrency,
-    rate,
-  );
+  const base = record.baseCurrency ?? record.priceCurrency;
+  let marginAmount: number;
+  let rateLabel: string;
+
+  if (base === record.priceCurrency) {
+    marginAmount = record.priceAmount - record.costAmount * rate;
+    rateLabel = formatExchangeRateLabel(
+      record.costCurrency,
+      record.priceCurrency,
+      rate,
+    );
+  } else {
+    marginAmount = record.costAmount - record.priceAmount / rate;
+    rateLabel = formatExchangeRateLabel(
+      record.priceCurrency,
+      record.costCurrency,
+      rate,
+    );
+  }
 
   return {
     amount: marginAmount,
     sameCurrency: false,
-    currency,
+    currency: base,
     simulated,
     rateLabel,
     missingRate: false,
+    conversionSkipped: false,
   };
 }
 
 export function groupRecordsByLocation(
   records: PricingRecord[],
-): { location: string; records: PricingRecord[] }[] {
+  locationById: Map<string, PricingLocation>,
+): { locationId: string; label: string; records: PricingRecord[] }[] {
   const map = new Map<string, PricingRecord[]>();
   for (const record of records) {
-    const loc = record.location.trim() || "Unassigned";
-    const bucket = map.get(loc) ?? [];
+    const locId = record.locationId || "unassigned";
+    const bucket = map.get(locId) ?? [];
     bucket.push(record);
-    map.set(loc, bucket);
+    map.set(locId, bucket);
   }
   return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([location, rows]) => ({
-      location,
+    .sort(([aId], [bId]) => {
+      const aFull = locationById.get(aId)
+        ? formatLocationLabel(locationById.get(aId)!)
+        : "Unassigned";
+      const bFull = locationById.get(bId)
+        ? formatLocationLabel(locationById.get(bId)!)
+        : "Unassigned";
+      return aFull.localeCompare(bFull);
+    })
+    .map(([locationId, rows]) => ({
+      locationId,
+      label: locationById.get(locationId)
+        ? formatLocationLabel(locationById.get(locationId)!)
+        : "Unassigned",
       records: rows.sort((x, y) => {
         const statusOrder = (s: PricingRecord["status"]) =>
           s === "active" ? 0 : s === "draft" ? 1 : 2;

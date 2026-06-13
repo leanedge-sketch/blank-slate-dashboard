@@ -50,6 +50,12 @@ from app.models.pms import (
     CostingPricingCreate,
     CostingPricingUpdate,
     CostingPricingListResponse,
+    PricingLocation,
+    PricingLocationCreate,
+    PricingLocationListResponse,
+    PricingJunctionRecord,
+    PricingJunctionRecordCreate,
+    PricingJunctionRecordListResponse,
     PartnerChemical,
     PartnerChemicalCreate,
     PartnerChemicalUpdate,
@@ -91,6 +97,14 @@ from app.services.pms_service import (
     get_costing_pricing_by_ids,
     update_costing_pricing,
     delete_costing_pricing,
+    list_pricing_locations,
+    count_pricing_locations,
+    create_pricing_location,
+    list_pricing_junction_records,
+    count_pricing_junction_records,
+    create_pricing_junction_record,
+    revise_pricing_junction_record,
+    delete_pricing_junction_record,
     process_tds_file_with_ai,
     build_tds_product_description,
     list_partner_chemicals,
@@ -708,7 +722,88 @@ async def delete_lean_chem_recommended_product_endpoint(product_id: int):
 
 
 # =============================
-# COSTING / PRICING
+# PRICING JUNCTION (CRM ↔ PMS time-series)
+# =============================
+
+
+@router.get("/pricing-junction/locations", response_model=PricingLocationListResponse)
+async def get_pricing_junction_locations(
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        locations = list_pricing_locations(limit=limit, offset=offset)
+        total = count_pricing_locations()
+        return PricingLocationListResponse(locations=locations, total=total)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching pricing locations: {e}") from e
+
+
+@router.post("/pricing-junction/locations", response_model=PricingLocation, status_code=201)
+async def create_pricing_junction_location(body: PricingLocationCreate):
+    try:
+        return create_pricing_location(body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating pricing location: {e}") from e
+
+
+@router.get("/pricing-junction/records", response_model=PricingJunctionRecordListResponse)
+async def get_pricing_junction_records(
+    limit: int = Query(500, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    crm_partner_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+):
+    try:
+        records = list_pricing_junction_records(
+            limit=limit,
+            offset=offset,
+            crm_partner_id=crm_partner_id,
+            status=status,
+        )
+        total = count_pricing_junction_records(crm_partner_id=crm_partner_id)
+        return PricingJunctionRecordListResponse(records=records, total=total)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching pricing records: {e}") from e
+
+
+@router.post("/pricing-junction/records", response_model=PricingJunctionRecord, status_code=201)
+async def create_pricing_junction_record_endpoint(body: PricingJunctionRecordCreate):
+    try:
+        return create_pricing_junction_record(body)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating pricing record: {e}") from e
+
+
+@router.post(
+    "/pricing-junction/records/{record_id}/revise",
+    response_model=PricingJunctionRecord,
+    status_code=201,
+)
+async def revise_pricing_junction_record_endpoint(
+    record_id: str, body: PricingJunctionRecordCreate
+):
+    try:
+        return revise_pricing_junction_record(record_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error revising pricing record: {e}") from e
+
+
+@router.delete("/pricing-junction/records/{record_id}", status_code=204)
+async def delete_pricing_junction_record_endpoint(record_id: str):
+    try:
+        delete_pricing_junction_record(record_id)
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting pricing record: {e}") from e
+
+
+# =============================
+# COSTING / PRICING (legacy)
 # =============================
 
 

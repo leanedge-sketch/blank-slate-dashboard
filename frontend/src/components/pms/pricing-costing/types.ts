@@ -1,13 +1,21 @@
+export interface PricingLocation {
+  id: string;
+  country: string;
+  city?: string | null;
+  port?: string | null;
+}
+
 export interface PricingRecord {
   id: string;
   crmPartnerId: string;
   pmsProductId: string;
   incoterm: string;
-  location: string;
+  locationId: string;
   costCurrency: string;
   costAmount: number;
   priceCurrency: string;
   priceAmount: number;
+  needsCurrencyConversion: boolean;
   exchangeRateUsed: number | null;
   baseCurrency: string | null;
   validFrom: string;
@@ -31,3 +39,5 @@ export type PricingRecordInput = Omit<
   PricingRecord,
   "id" | "validFrom" | "validTo" | "status"
 >;
+
+export type PricingLocationInput = Omit<PricingLocation, "id">;

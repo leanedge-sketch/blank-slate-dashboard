@@ -12,7 +12,7 @@ These models describe the Product Management System (PMS) entities:
 They are thin "contracts" between the FastAPI layer and the outside world.
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
@@ -286,6 +286,63 @@ class CostingPricing(CostingPricingBase):
 
 class CostingPricingListResponse(BaseModel):
     pricing: List[CostingPricing]
+    total: int
+
+
+# =============================
+# PRICING JUNCTION (CRM ↔ PMS time-series)
+# =============================
+
+
+class PricingLocationBase(BaseModel):
+    country: str
+    city: Optional[str] = None
+    port: Optional[str] = None
+
+
+class PricingLocationCreate(PricingLocationBase):
+    pass
+
+
+class PricingLocation(PricingLocationBase):
+    id: UUID
+    created_at: Optional[datetime] = None
+
+
+class PricingLocationListResponse(BaseModel):
+    locations: List[PricingLocation]
+    total: int
+
+
+class PricingJunctionRecordBase(BaseModel):
+    crm_partner_id: UUID
+    pms_product_id: str
+    incoterm: str
+    location_id: UUID
+    cost_currency: str
+    cost_amount: float
+    price_currency: str
+    price_amount: float
+    needs_currency_conversion: bool = False
+    exchange_rate_used: Optional[float] = None
+    base_currency: Optional[str] = None
+    valid_from: date
+    valid_to: Optional[date] = None
+    status: str = "active"
+
+
+class PricingJunctionRecordCreate(PricingJunctionRecordBase):
+    pass
+
+
+class PricingJunctionRecord(PricingJunctionRecordBase):
+    id: UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PricingJunctionRecordListResponse(BaseModel):
+    records: List[PricingJunctionRecord]
     total: int
 
 

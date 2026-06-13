@@ -14,6 +14,7 @@ operations on top of Supabase:
 from typing import List, Optional, Dict, Any
 import json
 import re
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from supabase import Client
@@ -37,6 +38,10 @@ from app.models.pms import (
     CostingPricing,
     CostingPricingCreate,
     CostingPricingUpdate,
+    PricingLocation,
+    PricingLocationCreate,
+    PricingJunctionRecord,
+    PricingJunctionRecordCreate,
     PartnerChemical,
     PartnerChemicalCreate,
     PartnerChemicalUpdate,
@@ -825,6 +830,136 @@ def delete_costing_pricing(partner_id: str, tds_id: str) -> bool:
         .eq("tds_id", tds_id)
         .execute()
     )
+    return True
+
+
+# =============================
+# PRICING JUNCTION (CRM ↔ PMS)
+# =============================
+
+
+def list_pricing_locations(limit: int = 500, offset: int = 0) -> List[PricingLocation]:
+    supabase: Client = get_supabase_client()
+    response = (
+        supabase.table("pricing_locations")
+        .select("*")
+        .order("country")
+        .order("city")
+        .limit(limit)
+        .offset(offset)
+        .execute()
+    )
+    return [PricingLocation(**row) for row in (response.data or [])]
+
+
+def count_pricing_locations() -> int:
+    supabase: Client = get_supabase_client()
+    response = supabase.table("pricing_locations").select("id", count="exact").execute()
+    return response.count or 0
+
+
+def create_pricing_location(body: PricingLocationCreate) -> PricingLocation:
+    supabase: Client = get_supabase_client()
+    payload = {
+        "country": body.country.strip(),
+        "city": body.city.strip() if body.city else None,
+        "port": body.port.strip() if body.port else None,
+    }
+    if not payload["country"]:
+        raise ValueError("Country is required")
+    response = supabase.table("pricing_locations").insert(payload).execute()
+    if not response.data:
+        raise RuntimeError("Failed to create pricing location")
+    return PricingLocation(**response.data[0])
+
+
+def list_pricing_junction_records(
+    limit: int = 500,
+    offset: int = 0,
+    crm_partner_id: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[PricingJunctionRecord]:
+    supabase: Client = get_supabase_client()
+    query = supabase.table("pricing_records").select("*")
+    if crm_partner_id:
+        query = query.eq("crm_partner_id", crm_partner_id)
+    if status:
+        query = query.eq("status", status)
+    response = (
+        query.order("valid_from", desc=True)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+        .execute()
+    )
+    return [PricingJunctionRecord(**row) for row in (response.data or [])]
+
+
+def count_pricing_junction_records(crm_partner_id: Optional[str] = None) -> int:
+    supabase: Client = get_supabase_client()
+    query = supabase.table("pricing_records").select("id", count="exact")
+    if crm_partner_id:
+        query = query.eq("crm_partner_id", crm_partner_id)
+    response = query.execute()
+    return response.count or 0
+
+
+def create_pricing_junction_record(body: PricingJunctionRecordCreate) -> PricingJunctionRecord:
+    supabase: Client = get_supabase_client()
+    now = datetime.now(timezone.utc).isoformat()
+    payload = body.model_dump(mode="json")
+    payload["updated_at"] = now
+    response = supabase.table("pricing_records").insert(payload).execute()
+    if not response.data:
+        raise RuntimeError("Failed to create pricing junction record")
+    return PricingJunctionRecord(**response.data[0])
+
+
+def get_pricing_junction_record_by_id(record_id: str) -> Optional[PricingJunctionRecord]:
+    supabase: Client = get_supabase_client()
+    response = (
+        supabase.table("pricing_records")
+        .select("*")
+        .eq("id", record_id)
+        .single()
+        .execute()
+    )
+    if response.data:
+        return PricingJunctionRecord(**response.data)
+    return None
+
+
+def revise_pricing_junction_record(
+    record_id: str, body: PricingJunctionRecordCreate
+) -> PricingJunctionRecord:
+    """Archive the active row and insert a new active record (append-only update)."""
+    supabase: Client = get_supabase_client()
+    existing = get_pricing_junction_record_by_id(record_id)
+    if not existing:
+        raise ValueError("Pricing record not found")
+
+    today = date.today().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    archive = (
+        supabase.table("pricing_records")
+        .update({"valid_to": today, "status": "historical", "updated_at": now})
+        .eq("id", record_id)
+        .execute()
+    )
+    if not archive.data:
+        raise RuntimeError("Failed to archive pricing record")
+
+    payload = body.model_dump(mode="json")
+    payload["updated_at"] = now
+    response = supabase.table("pricing_records").insert(payload).execute()
+    if not response.data:
+        raise RuntimeError("Failed to create revised pricing record")
+    return PricingJunctionRecord(**response.data[0])
+
+
+def delete_pricing_junction_record(record_id: str) -> bool:
+    supabase: Client = get_supabase_client()
+    supabase.table("pricing_records").delete().eq("id", record_id).execute()
     return True
 
 

@@ -11,6 +11,8 @@ import {
 import type {
   CRMPartner,
   PMSProduct,
+  PricingLocation,
+  PricingLocationInput,
   PricingRecord,
   PricingRecordInput,
 } from "./types";
@@ -30,9 +32,12 @@ type PricingDetailsMatrixProps = {
   records: PricingRecord[];
   pmsProducts: PMSProduct[];
   crmPartners: CRMPartner[];
-  onAddRecord: (input: PricingRecordInput) => void;
-  onUpdatePricing: (sourceRecordId: string, input: PricingRecordInput) => void;
-  onDeleteRecord: (recordId: string) => void;
+  locations: PricingLocation[];
+  onAddLocation: (location: PricingLocationInput) => Promise<string>;
+  onAddRecord: (input: PricingRecordInput) => void | Promise<void>;
+  onUpdatePricing: (sourceRecordId: string, input: PricingRecordInput) => void | Promise<void>;
+  onDeleteRecord: (recordId: string) => void | Promise<void>;
+  readOnly?: boolean;
 };
 
 function StatusBadge({ status }: { status: PricingRecord["status"] }) {
@@ -68,19 +73,34 @@ type MarginCellProps = {
 function MarginCell({ record, marginOptions }: MarginCellProps) {
   const margin = computeMargin(record, marginOptions);
 
-  if (margin.missingRate) {
+  if (margin.conversionSkipped) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 text-xs text-amber-700"
-        title="No exchange rate recorded for this entry."
+        className="text-xs text-slate-400"
+        title="Cross-currency entry — conversion not applied for margin."
       >
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-slate-500">N/A</span>
+        —
       </span>
     );
   }
 
-  const value = margin.amount ?? 0;
+  if (margin.missingRate) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs text-slate-500"
+        title="Conversion enabled — exchange rate not set (optional)."
+      >
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        N/A
+      </span>
+    );
+  }
+
+  if (margin.amount == null) {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
+
+  const value = margin.amount;
   const positive = value >= 0;
 
   let colorClass: string;
@@ -119,7 +139,9 @@ function defaultSimulatePair(records: PricingRecord[]): {
   to: string;
   rate: number | null;
 } {
-  const cross = records.find((r) => r.costCurrency !== r.priceCurrency);
+  const cross = records.find(
+    (r) => r.needsCurrencyConversion && r.costCurrency !== r.priceCurrency,
+  );
   if (cross) {
     return {
       from: cross.costCurrency,
@@ -135,16 +157,19 @@ export function PricingDetailsMatrix({
   records,
   pmsProducts,
   crmPartners,
+  locations,
+  onAddLocation,
   onAddRecord,
   onUpdatePricing,
   onDeleteRecord,
+  readOnly = false,
 }: PricingDetailsMatrixProps) {
   const [showHistorical, setShowHistorical] = useState(false);
   const [simulateLive, setSimulateLive] = useState(false);
   const [simulateFrom, setSimulateFrom] = useState("USD");
   const [simulateTo, setSimulateTo] = useState("KES");
   const [liveRate, setLiveRate] = useState<number | null>(129.5);
-  const [activeLocation, setActiveLocation] = useState<string>("");
+  const [activeLocationId, setActiveLocationId] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"add" | "update">("add");
   const [sourceRecord, setSourceRecord] = useState<PricingRecord | null>(null);
@@ -155,6 +180,12 @@ export function PricingDetailsMatrix({
     for (const p of pmsProducts) map.set(p.id, p);
     return map;
   }, [pmsProducts]);
+
+  const locationById = useMemo(() => {
+    const map = new Map<string, PricingLocation>();
+    for (const loc of locations) map.set(loc.id, loc);
+    return map;
+  }, [locations]);
 
   const visibleRecords = useMemo(
     () =>
@@ -179,16 +210,16 @@ export function PricingDetailsMatrix({
     : undefined;
 
   const groups = useMemo(
-    () => groupRecordsByLocation(visibleRecords),
-    [visibleRecords],
+    () => groupRecordsByLocation(visibleRecords, locationById),
+    [visibleRecords, locationById],
   );
 
   const effectiveTab =
-    activeLocation && groups.some((g) => g.location === activeLocation)
-      ? activeLocation
-      : groups[0]?.location ?? "";
+    activeLocationId && groups.some((g) => g.locationId === activeLocationId)
+      ? activeLocationId
+      : groups[0]?.locationId ?? "";
 
-  const activeGroup = groups.find((g) => g.location === effectiveTab);
+  const activeGroup = groups.find((g) => g.locationId === effectiveTab);
 
   if (!partner) {
     return (
@@ -220,13 +251,23 @@ export function PricingDetailsMatrix({
     setOpenMenuId(null);
   }
 
-  function handleSave(input: PricingRecordInput) {
-    if (drawerMode === "update" && sourceRecord) {
-      onUpdatePricing(sourceRecord.id, input);
-    } else {
-      onAddRecord(input);
-      setActiveLocation(input.location);
+  async function handleSave(input: PricingRecordInput) {
+    try {
+      if (drawerMode === "update" && sourceRecord) {
+        await onUpdatePricing(sourceRecord.id, input);
+      } else {
+        await onAddRecord(input);
+        setActiveLocationId(input.locationId);
+      }
+    } catch {
+      // Parent surfaces error banner; keep drawer open.
     }
+  }
+
+  function locationLabel(locationId: string): string {
+    const loc = locationById.get(locationId);
+    if (!loc) return locationId;
+    return [loc.country, loc.city, loc.port].filter(Boolean).join(" · ");
   }
 
   function productLabel(productId: string): string {
@@ -248,7 +289,8 @@ export function PricingDetailsMatrix({
           <button
             type="button"
             onClick={openAdd}
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-shadow"
+            disabled={readOnly}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-shadow disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
             Add pricing entry
@@ -331,20 +373,20 @@ export function PricingDetailsMatrix({
         <>
           <div className="shrink-0 border-b border-slate-200 bg-slate-50/60 px-4 pt-3">
             <div className="flex gap-1 overflow-x-auto pb-0">
-              {groups.map(({ location, records: locRecords }) => {
-                const active = location === effectiveTab;
+              {groups.map(({ locationId, label, records: locRecords }) => {
+                const active = locationId === effectiveTab;
                 return (
                   <button
-                    key={location}
+                    key={locationId}
                     type="button"
-                    onClick={() => setActiveLocation(location)}
+                    onClick={() => setActiveLocationId(locationId)}
                     className={`shrink-0 rounded-t-lg border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors ${
                       active
                         ? "border-slate-200 bg-white text-orange-700"
                         : "border-transparent bg-transparent text-slate-600 hover:bg-white/60"
                     }`}
                   >
-                    {location}
+                    {label}
                     <span
                       className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
                         active ? "bg-orange-100 text-orange-800" : "bg-slate-200 text-slate-600"
@@ -457,14 +499,20 @@ export function PricingDetailsMatrix({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (
-                                          window.confirm(
-                                            `Delete ${productLabel(record.pmsProductId)} @ ${record.location}?`,
-                                          )
-                                        ) {
-                                          onDeleteRecord(record.id);
-                                        }
-                                        setOpenMenuId(null);
+                                        void (async () => {
+                                          if (
+                                            window.confirm(
+                                              `Delete ${productLabel(record.pmsProductId)} @ ${locationLabel(record.locationId)}?`,
+                                            )
+                                          ) {
+                                            try {
+                                              await onDeleteRecord(record.id);
+                                            } catch {
+                                              // error shown by parent
+                                            }
+                                          }
+                                          setOpenMenuId(null);
+                                        })();
                                       }}
                                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
                                     >
@@ -492,8 +540,11 @@ export function PricingDetailsMatrix({
         mode={drawerMode}
         sourceRecord={sourceRecord}
         defaultPartnerId={partner.id}
+        defaultLocationId={effectiveTab || locations[0]?.id}
         crmPartners={crmPartners}
         pmsProducts={pmsProducts}
+        locations={locations}
+        onAddLocation={onAddLocation}
         onClose={() => {
           setDrawerOpen(false);
           setSourceRecord(null);

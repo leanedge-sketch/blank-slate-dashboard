@@ -1,38 +1,47 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Archive, X } from "lucide-react";
 import { CurrencyConverterWidget } from "./CurrencyConverterWidget";
+import { LocationPicker } from "./LocationPicker";
 import type {
   CRMPartner,
   PMSProduct,
+  PricingLocation,
+  PricingLocationInput,
   PricingRecord,
   PricingRecordInput,
 } from "./types";
 
-const LOCATIONS = ["Mombasa", "Addis Ababa", "Nairobi"] as const;
 const INCOTERMS = ["EXW", "FCA", "FOB", "CFR", "CIF", "DAP"] as const;
-const CURRENCIES = ["USD", "EUR", "ETB", "KES"] as const;
+const CURRENCIES = ["USD", "EUR", "GBP", "ETB", "KES", "CNY"] as const;
 
 type PricingEntryDrawerProps = {
   open: boolean;
   mode: "add" | "update";
   sourceRecord?: PricingRecord | null;
   defaultPartnerId?: string | null;
+  defaultLocationId?: string | null;
   crmPartners: CRMPartner[];
   pmsProducts: PMSProduct[];
+  locations: PricingLocation[];
+  onAddLocation: (location: PricingLocationInput) => Promise<string>;
   onClose: () => void;
-  onSave: (input: PricingRecordInput) => void;
+  onSave: (input: PricingRecordInput) => void | Promise<void>;
 };
 
-function emptyForm(defaultPartnerId?: string | null): PricingRecordInput {
+function emptyForm(
+  defaultPartnerId?: string | null,
+  defaultLocationId?: string | null,
+): PricingRecordInput {
   return {
     crmPartnerId: defaultPartnerId ?? "",
     pmsProductId: "",
     incoterm: "FOB",
-    location: "Mombasa",
+    locationId: defaultLocationId ?? "",
     costCurrency: "USD",
     costAmount: 0,
     priceCurrency: "ETB",
     priceAmount: 0,
+    needsCurrencyConversion: false,
     exchangeRateUsed: null,
     baseCurrency: null,
   };
@@ -43,12 +52,19 @@ export function PricingEntryDrawer({
   mode,
   sourceRecord,
   defaultPartnerId,
+  defaultLocationId,
   crmPartners,
   pmsProducts,
+  locations,
+  onAddLocation,
   onClose,
   onSave,
 }: PricingEntryDrawerProps) {
-  const [form, setForm] = useState<PricingRecordInput>(emptyForm(defaultPartnerId));
+  const [form, setForm] = useState<PricingRecordInput>(
+    emptyForm(defaultPartnerId, defaultLocationId),
+  );
+  const [needsConversion, setNeedsConversion] = useState(false);
+  const [marginCurrency, setMarginCurrency] = useState("");
 
   const currenciesDiffer = form.costCurrency !== form.priceCurrency;
 
@@ -59,23 +75,36 @@ export function PricingEntryDrawer({
         crmPartnerId: sourceRecord.crmPartnerId,
         pmsProductId: sourceRecord.pmsProductId,
         incoterm: sourceRecord.incoterm,
-        location: sourceRecord.location,
+        locationId: sourceRecord.locationId,
         costCurrency: sourceRecord.costCurrency,
         costAmount: sourceRecord.costAmount,
         priceCurrency: sourceRecord.priceCurrency,
         priceAmount: sourceRecord.priceAmount,
+        needsCurrencyConversion: sourceRecord.needsCurrencyConversion,
         exchangeRateUsed: sourceRecord.exchangeRateUsed,
         baseCurrency: sourceRecord.baseCurrency,
       });
+      setNeedsConversion(sourceRecord.needsCurrencyConversion);
+      setMarginCurrency(
+        sourceRecord.baseCurrency ??
+          sourceRecord.priceCurrency ??
+          sourceRecord.costCurrency,
+      );
     } else {
-      setForm(emptyForm(defaultPartnerId));
+      setForm(emptyForm(defaultPartnerId, defaultLocationId ?? locations[0]?.id));
+      setNeedsConversion(false);
+      setMarginCurrency("");
     }
-  }, [open, mode, sourceRecord, defaultPartnerId]);
+  }, [open, mode, sourceRecord, defaultPartnerId, defaultLocationId, locations]);
 
-  const fxValid = useMemo(() => {
-    if (!currenciesDiffer) return true;
-    return form.exchangeRateUsed != null && form.exchangeRateUsed > 0;
-  }, [currenciesDiffer, form.exchangeRateUsed]);
+  useEffect(() => {
+    if (!currenciesDiffer) {
+      setNeedsConversion(false);
+      setMarginCurrency(form.priceCurrency);
+    } else if (!marginCurrency) {
+      setMarginCurrency(form.priceCurrency);
+    }
+  }, [currenciesDiffer, form.priceCurrency, form.costCurrency, marginCurrency]);
 
   if (!open) return null;
 
@@ -85,10 +114,10 @@ export function PricingEntryDrawer({
   ) {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
-      const mismatch = next.costCurrency !== next.priceCurrency;
-      if (!mismatch) {
+      if (next.costCurrency === next.priceCurrency) {
         return {
           ...next,
+          needsCurrencyConversion: false,
           exchangeRateUsed: null,
           baseCurrency: next.priceCurrency,
         };
@@ -96,29 +125,50 @@ export function PricingEntryDrawer({
       return {
         ...next,
         exchangeRateUsed: null,
-        baseCurrency: next.priceCurrency,
+        baseCurrency: null,
       };
+    });
+    if (field === "priceCurrency" || value === form.costCurrency) {
+      setMarginCurrency(value === form.costCurrency ? form.priceCurrency : value);
+    }
+  }
+
+  function handleAddLocation(input: PricingLocationInput) {
+    void onAddLocation(input).then((id) => {
+      setForm((prev) => ({ ...prev, locationId: id }));
     });
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!form.crmPartnerId || !form.pmsProductId) return;
-    if (!fxValid) return;
+    if (!form.crmPartnerId || !form.pmsProductId || !form.locationId) return;
 
-    const payload: PricingRecordInput = currenciesDiffer
-      ? {
-          ...form,
-          exchangeRateUsed: form.exchangeRateUsed,
-          baseCurrency: form.priceCurrency,
-        }
-      : {
-          ...form,
-          exchangeRateUsed: null,
-          baseCurrency: form.priceCurrency,
-        };
+    let payload: PricingRecordInput;
 
-    onSave(payload);
+    if (!currenciesDiffer) {
+      payload = {
+        ...form,
+        needsCurrencyConversion: false,
+        exchangeRateUsed: null,
+        baseCurrency: form.priceCurrency,
+      };
+    } else if (!needsConversion) {
+      payload = {
+        ...form,
+        needsCurrencyConversion: false,
+        exchangeRateUsed: null,
+        baseCurrency: null,
+      };
+    } else {
+      payload = {
+        ...form,
+        needsCurrencyConversion: true,
+        baseCurrency: marginCurrency || form.priceCurrency,
+        exchangeRateUsed: form.exchangeRateUsed,
+      };
+    }
+
+    await onSave(payload);
     onClose();
   }
 
@@ -211,22 +261,14 @@ export function PricingEntryDrawer({
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">
-                  Location
-                </label>
-                <select
-                  value={form.location}
-                  onChange={(e) => setForm({ ...form, location: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
-                >
-                  {LOCATIONS.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                </select>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
+              <div className="sm:col-span-2">
+                <LocationPicker
+                  locations={locations}
+                  value={form.locationId}
+                  onChange={(locationId) => setForm({ ...form, locationId })}
+                  onAddLocation={handleAddLocation}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -248,7 +290,10 @@ export function PricingEntryDrawer({
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Cost (acquisition)
+                Cost currency & amount
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Currency you pay / acquire in
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -287,7 +332,10 @@ export function PricingEntryDrawer({
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Price (sell to partner)
+                Price currency & amount
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Currency you sell to the partner in
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -325,28 +373,83 @@ export function PricingEntryDrawer({
             </div>
 
             {currenciesDiffer && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-600">
-                  Exchange rate at entry{" "}
-                  <span className="text-rose-600">*</span>
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <p className="text-xs font-medium text-slate-700">
+                  Cost is in <span className="font-semibold">{form.costCurrency}</span> and
+                  price is in <span className="font-semibold">{form.priceCurrency}</span>.
                 </p>
-                <CurrencyConverterWidget
-                  fromCurrency={form.costCurrency}
-                  toCurrency={form.priceCurrency}
-                  amount={form.costAmount}
-                  rate={form.exchangeRateUsed}
-                  onRateChange={(rate) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      exchangeRateUsed: rate,
-                      baseCurrency: prev.priceCurrency,
-                    }))
-                  }
-                />
-                {!fxValid && (
-                  <p className="text-xs text-rose-600">
-                    Enter a valid exchange rate before saving.
-                  </p>
+                <fieldset>
+                  <legend className="mb-2 text-xs font-medium text-slate-600">
+                    Is currency conversion needed for margin calculation?
+                  </legend>
+                  <div className="flex gap-4">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="needs-conversion"
+                        checked={!needsConversion}
+                        onChange={() => {
+                          setNeedsConversion(false);
+                          setForm((prev) => ({
+                            ...prev,
+                            exchangeRateUsed: null,
+                            baseCurrency: null,
+                          }));
+                        }}
+                        className="text-orange-600 focus:ring-orange-500"
+                      />
+                      No
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="needs-conversion"
+                        checked={needsConversion}
+                        onChange={() => {
+                          setNeedsConversion(true);
+                          setMarginCurrency(form.priceCurrency);
+                        }}
+                        className="text-orange-600 focus:ring-orange-500"
+                      />
+                      Yes
+                    </label>
+                  </div>
+                </fieldset>
+
+                {needsConversion && (
+                  <div className="space-y-3 border-t border-slate-100 pt-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Display margin in
+                      </label>
+                      <select
+                        value={marginCurrency}
+                        onChange={(e) => setMarginCurrency(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        <option value={form.costCurrency}>{form.costCurrency}</option>
+                        <option value={form.priceCurrency}>{form.priceCurrency}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-xs text-slate-500">
+                        Exchange rate <span className="text-slate-400">(optional)</span> — lock
+                        a rate for this record if known
+                      </p>
+                      <CurrencyConverterWidget
+                        fromCurrency={form.costCurrency}
+                        toCurrency={form.priceCurrency}
+                        amount={form.costAmount}
+                        rate={form.exchangeRateUsed}
+                        onRateChange={(rate) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            exchangeRateUsed: rate,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -362,8 +465,7 @@ export function PricingEntryDrawer({
             </button>
             <button
               type="submit"
-              disabled={!fxValid}
-              className="rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white hover:shadow-md"
             >
               {isUpdate ? "Update pricing" : "Add entry"}
             </button>
