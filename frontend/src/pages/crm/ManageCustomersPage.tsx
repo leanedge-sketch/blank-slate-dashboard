@@ -206,13 +206,9 @@ export function ManageCustomersPage() {
       if (!adding) {
         alert("Profile built successfully! The profile has been saved as an interaction.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Profile build error:", err);
-      console.error("Error response:", err?.response?.data);
-      const msg =
-        err?.response?.data?.detail ??
-        err?.message ??
-        "Failed to build profile.";
+      const msg = err instanceof Error ? err.message : "Failed to build profile.";
       setProfileError(msg);
       // Only show alert if not called automatically (user clicked button manually)
       if (!adding) {
