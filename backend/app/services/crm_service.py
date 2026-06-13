@@ -275,7 +275,8 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
     # ---------------------------------------------
     # 2) Create the base customer row
     # ---------------------------------------------
-    data = customer_in.model_dump()
+    # initial_pipeline_stage is request-only (used below for pipeline setup).
+    data = customer_in.model_dump(exclude={"initial_pipeline_stage"})
     if not data.get("display_id"):
         data["display_id"] = _generate_display_id()
 
