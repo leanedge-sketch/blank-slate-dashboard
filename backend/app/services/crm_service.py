@@ -395,7 +395,12 @@ def delete_customer(customer_id: str) -> None:
     supabase.table("customers").delete().eq("customer_id", customer_id).execute()
 
 
-def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> Customer:
+def build_customer_profile(
+    customer_id: str,
+    user_id: Optional[str] = None,
+    *,
+    skip_external_research: bool = False,
+) -> Customer:
     """
     Generate a customer profile using AI, existing conversations, and web search.
     
@@ -415,10 +420,11 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
     if not customer:
         raise RuntimeError("Customer not found")
     
-    # CRM history: public.interactions + sales_pipeline only (not public.conversation)
+    # CRM history: cap rows for profile builds to stay within serverless time limits.
     try:
         interactions, table_total, _, pipeline_added, _ = merge_customer_interaction_history(
-            str(customer.customer_id)
+            str(customer.customer_id),
+            max_rows=150,
         )
         logging.info(
             "Profile build for %s: %s merged history (%s interactions + %s pipeline)",
@@ -436,7 +442,10 @@ def build_customer_profile(customer_id: str, user_id: Optional[str] = None) -> C
         pipeline_added = 0
 
     research_inputs = gather_profile_research_inputs(
-        customer, interactions, user_id=user_id
+        customer,
+        interactions,
+        user_id=user_id,
+        skip_external_research=skip_external_research,
     )
     context, research_meta = build_profile_research_context(
         customer,
@@ -571,7 +580,7 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     
     # Step 8: Get AI response (three-tier fallback in ai_service.ai_chat)
     try:
-        profile_text = gemini_chat(messages, max_tokens=16384)
+        profile_text = gemini_chat(messages, max_tokens=8192)
         if not profile_text or not profile_text.strip():
             raise RuntimeError("AI service returned empty response. Please check OPENAI_API_KEY configuration.")
     except Exception as e:

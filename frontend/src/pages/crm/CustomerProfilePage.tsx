@@ -7,6 +7,7 @@ import {
   CustomerProfileUpdate,
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
+  buildCustomerProfile,
 } from "../../services/api";
 import { ProfileICPLayout } from "../../components/ProfileICPLayout";
 import { ProfileResearchContext } from "../../components/ProfileResearchContext";
@@ -38,8 +39,8 @@ export function CustomerProfilePage() {
     try {
       setCreatingICP(true);
       console.log("Generating ICP for customer:", customerId);
-      const res = await api.post<Customer>(`/crm/customers/${customerId}/build-profile`);
-      console.log("ICP creation response:", res.data);
+      const data = await buildCustomerProfile(customerId);
+      console.log("ICP creation response:", data);
 
       // Always re-fetch the customer after build-profile so the UI reflects the latest DB state.
       const refreshed = await api.get<Customer>(`/crm/customers/${customerId}`);
@@ -55,9 +56,10 @@ export function CustomerProfilePage() {
       } catch {
         /* keep prior live history */
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to create/regenerate ICP profile:", err);
-      const errorMsg = err?.response?.data?.detail ?? err?.message ?? "Failed to create/regenerate ICP profile";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to create/regenerate ICP profile";
       console.error("Error details:", errorMsg);
       alert(errorMsg);
     } finally {

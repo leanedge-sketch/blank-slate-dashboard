@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, Customer, Interaction } from "../../services/api";
+import { api, Customer, Interaction, buildCustomerProfile } from "../../services/api";
 
 type InitialPipelineStage = "Lead ID" | "Discovery" | "Sample";
 
@@ -43,7 +43,9 @@ export function AddCustomerPage() {
       const res = await api.post<Customer>("/crm/customers", payload);
       const created = res.data;
       setCreatedCustomer(created);
-      setSuccess("Customer created successfully! Auto-filling sales stage and building AI profile...");
+      setSuccess(
+        "Customer created successfully! Build the AI profile when ready using the button below.",
+      );
       
       // Automatically auto-fill sales stage after creating customer
       try {
@@ -52,31 +54,7 @@ export function AddCustomerPage() {
         console.log("Sales stage auto-filled:", stageRes.data.sales_stage);
       } catch (stageErr: any) {
         console.error("Auto-fill sales stage error:", stageErr);
-        // Don't show error - continue with profile building
-      }
-      
-      // Automatically build profile after creating customer
-      try {
-        setBuildingProfile(true);
-        setProfileError(null);
-        console.log("Building profile for customer:", created.customer_id);
-        const profileRes = await api.post<Customer>(
-          `/crm/customers/${created.customer_id}/build-profile`
-        );
-        console.log("Profile build response:", profileRes.data);
-        setProfileResult(profileRes.data);
-        setSuccess("Customer created, sales stage auto-filled, and profile built successfully! The profile has been saved as an interaction.");
-      } catch (profileErr: any) {
-        console.error("Profile build error:", profileErr);
-        console.error("Error response:", profileErr?.response?.data);
-        const msg =
-          profileErr?.response?.data?.detail ??
-          profileErr?.message ??
-          "Failed to build profile.";
-        setProfileError(msg);
-        setSuccess("Customer created and sales stage auto-filled successfully, but profile building failed. You can try building the profile later.");
-      } finally {
-        setBuildingProfile(false);
+        // Don't show error - customer was created
       }
     } catch (err: any) {
       console.error(err);
@@ -111,24 +89,16 @@ export function AddCustomerPage() {
       setProfileResult(null);
 
       console.log("Building profile for customer:", createdCustomer.customer_id);
-      const res = await api.post<Customer>(
-        `/crm/customers/${createdCustomer.customer_id}/build-profile`
-      );
-      console.log("Profile build response:", res.data);
-      setProfileResult(res.data);
+      const data = await buildCustomerProfile(createdCustomer.customer_id, {
+        quick: false,
+      });
+      console.log("Profile build response:", data);
+      setProfileResult(data);
       setSuccess("Profile built successfully! The profile has been saved as an interaction.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Profile build error:", err);
-      console.error("Error response:", err?.response?.data);
-      const msg =
-        err?.response?.data?.detail ??
-        err?.message ??
-        "Failed to build profile.";
+      const msg = err instanceof Error ? err.message : "Failed to build profile.";
       setProfileError(msg);
-      // Show full error details in console for debugging
-      if (err?.response?.data?.detail) {
-        console.error("Full error detail:", err.response.data.detail);
-      }
     } finally {
       setBuildingProfile(false);
     }
@@ -232,7 +202,7 @@ export function AddCustomerPage() {
                     }}
                   />
                   <span style={{ color: "#1e40af", fontWeight: "500" }}>
-                    Building AI profile... This may take a moment.
+                    Building AI profile… This may take up to a minute.
                   </span>
                 </div>
               </div>

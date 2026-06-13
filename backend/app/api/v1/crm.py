@@ -205,6 +205,10 @@ async def create_customer_endpoint(
 @router.post("/customers/{customer_id}/build-profile", response_model=Customer)
 async def build_profile_endpoint(
     customer_id: str,
+    quick: bool = Query(
+        False,
+        description="Skip web/LinkedIn research for faster builds (helps avoid 504 on Vercel)",
+    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """
@@ -229,6 +233,7 @@ async def build_profile_endpoint(
         updated_customer = build_customer_profile(
             customer_id=customer_id,
             user_id=None,
+            skip_external_research=quick,
         )
         return updated_customer
     except RuntimeError as e:

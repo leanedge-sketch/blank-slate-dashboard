@@ -179,6 +179,40 @@ export async function updateCustomerProfile(
   return res.data;
 }
 
+/** Build AI ICP profile. Use quick=true to skip web/LinkedIn (faster, avoids Vercel 504). */
+export async function buildCustomerProfile(
+  customerId: string,
+  options?: { quick?: boolean },
+) {
+  try {
+    const res = await api.post<Customer>(
+      `/crm/customers/${customerId}/build-profile`,
+      {},
+      {
+        params: { quick: options?.quick ?? false },
+        timeout: 55_000,
+      },
+    );
+    return res.data;
+  } catch (err: unknown) {
+    const ax = err as {
+      response?: { status?: number; data?: { detail?: string } };
+      message?: string;
+    };
+    if (ax.response?.status === 504) {
+      throw new Error(
+        "Profile generation timed out (504). Try again with Quick build, or retry in a moment.",
+      );
+    }
+    const detail = ax.response?.data?.detail;
+    throw new Error(
+      typeof detail === "string"
+        ? detail
+        : ax.message ?? "Failed to build profile.",
+    );
+  }
+}
+
 export async function fetchCustomerProfileFeedback(customerId: string, limit = 10) {
   const res = await api.get<CustomerProfileFeedback[]>(
     `/crm/customers/${customerId}/profile/feedback`,

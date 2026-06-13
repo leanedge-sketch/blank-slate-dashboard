@@ -4,6 +4,7 @@ Assemble rich research context for ICP / customer profile generation.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
 import logging
@@ -340,28 +341,40 @@ def gather_profile_research_inputs(
     interactions: List[Interaction],
     *,
     user_id: Optional[str] = None,
+    skip_external_research: bool = False,
 ) -> Dict[str, Any]:
     """Fetch RAG, web, and LinkedIn inputs (CRM interactions passed in)."""
     rag_docs = _gather_rag_documents(customer, interactions, user_id=user_id)
 
-    try:
-        web_context = enrich_web_context_for_profile(
-            customer.customer_name,
-            website_url=customer.website_url,
-        )
-    except Exception as exc:
-        logging.warning("Web search failed: %s", exc)
-        web_context = ""
+    web_context = ""
+    linkedin_context = ""
+    if not skip_external_research:
+        def _web() -> str:
+            try:
+                return enrich_web_context_for_profile(
+                    customer.customer_name,
+                    website_url=customer.website_url,
+                )
+            except Exception as exc:
+                logging.warning("Web search failed: %s", exc)
+                return ""
 
-    try:
-        linkedin_context = search_linkedin_profiles_ethiopia(
-            customer.customer_name,
-            company_linkedin_url=customer.linkedin_company_url,
-            max_profiles=20,
-        )
-    except Exception as exc:
-        logging.warning("LinkedIn search failed: %s", exc)
-        linkedin_context = ""
+        def _linkedin() -> str:
+            try:
+                return search_linkedin_profiles_ethiopia(
+                    customer.customer_name,
+                    company_linkedin_url=customer.linkedin_company_url,
+                    max_profiles=12,
+                )
+            except Exception as exc:
+                logging.warning("LinkedIn search failed: %s", exc)
+                return ""
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            web_future = pool.submit(_web)
+            linkedin_future = pool.submit(_linkedin)
+            web_context = web_future.result()
+            linkedin_context = linkedin_future.result()
 
     return {
         "rag_docs": rag_docs,

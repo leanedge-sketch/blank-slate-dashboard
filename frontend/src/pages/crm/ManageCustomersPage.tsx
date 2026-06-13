@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, Customer, CustomerListResponse, CustomerUpdate } from "../../services/api";
+import { api, Customer, CustomerListResponse, CustomerUpdate, buildCustomerProfile } from "../../services/api";
 import { Plus, Edit2, Trash2, X, Save, Search, Sparkles } from "lucide-react";
 
 // Sales stage definitions
@@ -196,11 +196,11 @@ export function ManageCustomersPage() {
       setBuildingProfile(customerId);
       setProfileError(null);
       console.log("Building profile for customer:", customerId);
-      const res = await api.post<Customer>(`/crm/customers/${customerId}/build-profile`);
-      console.log("Profile build response:", res.data);
+      const data = await buildCustomerProfile(customerId);
+      console.log("Profile build response:", data);
       // Update the customer in the list with the new profile data
       setCustomers((prev) =>
-        prev.map((c) => (c.customer_id === customerId ? res.data : c))
+        prev.map((c) => (c.customer_id === customerId ? data : c))
       );
       // Don't show alert if called automatically after creation
       if (!adding) {
