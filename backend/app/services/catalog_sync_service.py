@@ -35,27 +35,37 @@ def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
         supabase = get_supabase_service_client()
     except RuntimeError:
         supabase = get_supabase_client()
-    try:
-        response = (
-            supabase.table(TABLE)
-            .update({"uuid_id": new_uuid})
-            .eq("Row_No", chemical_id)
-            .execute()
-        )
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "uuid_id" in msg or "pgrst204" in msg or "schema cache" in msg:
-            logger.warning(
-                "uuid_id column not available on %s; skipping assignment for id %s",
-                TABLE,
-                chemical_id,
+    for _ in range(6):
+        try:
+            response = (
+                supabase.table(TABLE)
+                .update({"uuid_id": new_uuid})
+                .eq("Row_No", chemical_id)
+                .is_("uuid_id", "null")
+                .execute()
             )
+            if response.data:
+                return new_uuid
+            # Row already has uuid_id (possibly set concurrently).
+            chem = get_chemical_full_data_by_id(chemical_id)
+            if chem and chem.uuid_id:
+                return str(chem.uuid_id)
             return None
-        raise
-    if not response.data:
-        logger.warning("Failed to assign uuid_id for catalog id %s", chemical_id)
-        return None
-    return new_uuid
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "uuid_id" in msg or "pgrst204" in msg or "schema cache" in msg:
+                logger.warning(
+                    "uuid_id column not available on %s; skipping assignment for id %s",
+                    TABLE,
+                    chemical_id,
+                )
+                return None
+            if "23505" in msg or "duplicate" in msg:
+                new_uuid = str(uuid4())
+                continue
+            raise
+    logger.warning("Could not assign unique uuid_id for catalog id %s", chemical_id)
+    return None
 
 
 def resolve_catalog_product_uuid(value: Union[str, int, UUID, None]) -> Optional[str]:

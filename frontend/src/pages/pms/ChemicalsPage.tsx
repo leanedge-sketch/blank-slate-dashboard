@@ -312,7 +312,7 @@ export function ChemicalsPage() {
         hs_code: formData.hs_code || null,
         price: formData.price,
       };
-      await createChemicalFullData(createData);
+      const created = await createChemicalFullData(createData);
       await refreshCatalog();
       setShowCreateForm(false);
       setFormData({
@@ -330,7 +330,16 @@ export function ChemicalsPage() {
         hs_code: "",
         price: null,
       });
-      await loadChemicals();
+      // New rows sort last by supplier/name — jump to a search that includes the new product.
+      const createdName = created.product_name?.trim() || "";
+      if (createdName) {
+        setSearch(createdName);
+        setOffset(0);
+        await loadChemicals({ offset: 0, search: createdName });
+      } else {
+        setOffset(0);
+        await loadChemicals({ offset: 0, search: "" });
+      }
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create chemical");
@@ -365,11 +374,14 @@ export function ChemicalsPage() {
   async function handleUpdate(id: number) {
     try {
       setUpdating(true);
-      await updateChemicalFullData(id, editData);
+      const updated = await updateChemicalFullData(id, editData);
       await refreshCatalog();
       setEditingId(null);
       setEditData({});
-      await loadChemicals();
+      setChemicals((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, ...updated } : c)),
+      );
+      await loadChemicals({ search });
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to update chemical");

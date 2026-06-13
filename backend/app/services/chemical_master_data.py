@@ -174,7 +174,11 @@ def row_to_api(row: Dict[str, Any]) -> ChemicalFullData:
     return ChemicalFullData(**data)
 
 
-def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _prepare_write_payload(
+    payload: Dict[str, Any],
+    *,
+    assign_uuid_if_missing: bool = False,
+) -> Dict[str, Any]:
     """Map API fields to DB columns that exist on Chemical_Master_Data."""
     raw: Dict[str, Any] = {}
     for api_col, db_col in _API_TO_DB.items():
@@ -188,13 +192,17 @@ def _prepare_write_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raw["Product_Type"] = industry_val
         raw.pop("Industry", None)
     trimmed = {k: v for k, v in raw.items() if k in allowed and v is not None}
-    if "uuid_id" in optional_live and trimmed.get("uuid_id") is None:
+    if (
+        assign_uuid_if_missing
+        and "uuid_id" in optional_live
+        and trimmed.get("uuid_id") is None
+    ):
         trimmed["uuid_id"] = str(uuid4())
     return _convert_uuids(trimmed)
 
 
-def api_to_db(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return _prepare_write_payload(payload)
+def api_to_db(payload: Dict[str, Any], *, assign_uuid_if_missing: bool = False) -> Dict[str, Any]:
+    return _prepare_write_payload(payload, assign_uuid_if_missing=assign_uuid_if_missing)
 
 
 def _next_row_no(client: Client) -> int:
@@ -384,7 +392,7 @@ def _update_master_row(client: Client, chemical_id: int, payload: Dict[str, Any]
 
 def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullData:
     client = _master_client()
-    payload = api_to_db(body.model_dump(exclude_unset=True))
+    payload = api_to_db(body.model_dump(exclude_unset=True), assign_uuid_if_missing=True)
     if "Row_No" not in payload or payload.get("Row_No") is None:
         payload["Row_No"] = _next_row_no(client)
 
@@ -436,7 +444,9 @@ def update_chemical_master_data(
     chemical_id: int, body: ChemicalFullDataUpdate
 ) -> ChemicalFullData:
     client = _master_client()
-    payload = api_to_db(body.model_dump(exclude_unset=True))
+    # Never rewrite uuid_id on edit — avoids duplicate-key errors; ensure runs after.
+    payload = api_to_db(body.model_dump(exclude_unset=True), assign_uuid_if_missing=False)
+    payload.pop("uuid_id", None)
     response = _update_master_row(client, chemical_id, payload)
     if not response or not response.data:
         raise RuntimeError(f"Failed to update Chemical_Master_Data Row_No={chemical_id}")
