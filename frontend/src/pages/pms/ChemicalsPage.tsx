@@ -330,7 +330,16 @@ export function ChemicalsPage() {
         hs_code: "",
         price: null,
       });
-      // New rows sort last by supplier/name — jump to a search that includes the new product.
+      // Merge created row immediately so Industry and other optional fields show in the table.
+      setChemicals((prev) => {
+        const idx = prev.findIndex((c) => c.id === created.id);
+        const next =
+          idx >= 0
+            ? prev.map((c, i) => (i === idx ? created : c))
+            : [...prev, created];
+        return sortChemicalsBySupplier(next);
+      });
+      setTotal((t) => t + 1);
       const createdName = created.product_name?.trim() || "";
       if (createdName) {
         setSearch(createdName);

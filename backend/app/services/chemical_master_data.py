@@ -169,7 +169,7 @@ def row_to_api(row: Dict[str, Any]) -> ChemicalFullData:
     if not data.get("industry"):
         if row.get("Industry"):
             data["industry"] = row["Industry"]
-        elif row.get("Product_Type") and row["Product_Type"] in PMS_INDUSTRY_OPTIONS:
+        elif row.get("Product_Type"):
             data["industry"] = row["Product_Type"]
     return ChemicalFullData(**data)
 
@@ -328,8 +328,12 @@ def _is_missing_column_error(exc: Exception) -> bool:
 
 def _insert_master_row(client: Client, payload: Dict[str, Any]):
     base_payload = {k: v for k, v in payload.items() if k in _BASE_DB_COLUMNS}
+    optional_payload = {
+        k: v for k, v in payload.items() if k in _OPTIONAL_DB_COLUMNS
+    }
+    merged = {**base_payload, **optional_payload}
     try:
-        return client.table(TABLE).insert(base_payload).execute()
+        return client.table(TABLE).insert(merged).execute()
     except Exception as exc:
         if _is_missing_column_error(exc):
             optional = {
@@ -337,9 +341,9 @@ def _insert_master_row(client: Client, payload: Dict[str, Any]):
                 for k, v in payload.items()
                 if k in _OPTIONAL_DB_COLUMNS and v is not None
             }
-            merged = {**base_payload, **optional}
+            retry_merged = {**base_payload, **optional}
             try:
-                return client.table(TABLE).insert(merged).execute()
+                return client.table(TABLE).insert(retry_merged).execute()
             except Exception as retry_exc:
                 if _is_missing_column_error(retry_exc):
                     return client.table(TABLE).insert(base_payload).execute()
