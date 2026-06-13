@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchChemicalFullData,
@@ -44,6 +44,22 @@ import {
   PMS_SECTOR_OPTIONS,
   sortChemicalsBySupplier,
 } from "../../utils/chemicalMasterColumns";
+
+function dedupeChemicalsById(rows: ChemicalFullData[]): ChemicalFullData[] {
+  const seen = new Set<number>();
+  const out: ChemicalFullData[] = [];
+  for (const row of rows) {
+    const id = row.id;
+    if (id == null) {
+      out.push(row);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(row);
+  }
+  return out;
+}
 
 export function ChemicalsPage() {
   const { refreshCatalog } = useProductCatalog();
@@ -104,6 +120,7 @@ export function ChemicalsPage() {
 
   // Delete state
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const creatingRef = useRef(false);
 
   type AddOptionType = "vendor" | "product_category" | "sub_category";
 
@@ -238,7 +255,7 @@ export function ChemicalsPage() {
       if (effectiveSearch.trim()) params.search = effectiveSearch.trim();
 
       const res = await fetchChemicalFullData(params);
-      setChemicals(sortChemicalsBySupplier(res.chemicals));
+      setChemicals(sortChemicalsBySupplier(dedupeChemicalsById(res.chemicals)));
       setTotal(res.total);
     } catch (err: unknown) {
       console.error(err);
@@ -290,11 +307,13 @@ export function ChemicalsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (creatingRef.current) return;
     if (!formData.product_name?.trim()) {
       alert("Product name is required");
       return;
     }
 
+    creatingRef.current = true;
     try {
       setCreating(true);
       // Row_No is assigned by the backend (_next_row_no) — do not guess from the current page.
@@ -330,16 +349,6 @@ export function ChemicalsPage() {
         hs_code: "",
         price: null,
       });
-      // Merge created row immediately so Industry and other optional fields show in the table.
-      setChemicals((prev) => {
-        const idx = prev.findIndex((c) => c.id === created.id);
-        const next =
-          idx >= 0
-            ? prev.map((c, i) => (i === idx ? created : c))
-            : [...prev, created];
-        return sortChemicalsBySupplier(next);
-      });
-      setTotal((t) => t + 1);
       const createdName = created.product_name?.trim() || "";
       if (createdName) {
         setSearch(createdName);
@@ -353,6 +362,7 @@ export function ChemicalsPage() {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create chemical");
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   }
@@ -969,7 +979,7 @@ export function ChemicalsPage() {
                 const lineNo = supplierLineNumbers[index] ?? index + 1;
 
                 return (
-                      <Fragment key={chemical.id}>
+                      <Fragment key={`${chemical.id ?? "row"}-${index}`}>
                         {showSupplierHeader && (
                           <tr className="bg-slate-100 border-y border-slate-200">
                             <td

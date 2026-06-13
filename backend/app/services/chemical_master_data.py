@@ -327,28 +327,18 @@ def _is_missing_column_error(exc: Exception) -> bool:
 
 
 def _insert_master_row(client: Client, payload: Dict[str, Any]):
+    """Insert one master row — single attempt using columns known to exist (no retry insert)."""
+    optional_live = _probe_live_optional_columns(client)
     base_payload = {k: v for k, v in payload.items() if k in _BASE_DB_COLUMNS}
     optional_payload = {
-        k: v for k, v in payload.items() if k in _OPTIONAL_DB_COLUMNS
+        k: v
+        for k, v in payload.items()
+        if k in _OPTIONAL_DB_COLUMNS and k in optional_live
     }
     merged = {**base_payload, **optional_payload}
-    try:
-        return client.table(TABLE).insert(merged).execute()
-    except Exception as exc:
-        if _is_missing_column_error(exc):
-            optional = {
-                k: v
-                for k, v in payload.items()
-                if k in _OPTIONAL_DB_COLUMNS and v is not None
-            }
-            retry_merged = {**base_payload, **optional}
-            try:
-                return client.table(TABLE).insert(retry_merged).execute()
-            except Exception as retry_exc:
-                if _is_missing_column_error(retry_exc):
-                    return client.table(TABLE).insert(base_payload).execute()
-                raise
-        raise
+    if not merged:
+        raise RuntimeError("Nothing to insert for Chemical_Master_Data")
+    return client.table(TABLE).insert(merged).execute()
 
 
 def _update_master_row(client: Client, chemical_id: int, payload: Dict[str, Any]):
@@ -399,6 +389,37 @@ def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullDat
     payload = api_to_db(body.model_dump(exclude_unset=True), assign_uuid_if_missing=True)
     if "Row_No" not in payload or payload.get("Row_No") is None:
         payload["Row_No"] = _next_row_no(client)
+
+    # Avoid duplicate rows when the same product+supplier is submitted twice quickly.
+    product_name = (payload.get("Product_Name") or "").strip()
+    supplier = (payload.get("Supplier_Name") or "").strip()
+    category = (payload.get("Category") or "").strip()
+    packing = (payload.get("Packaging") or "").strip()
+    if product_name and supplier:
+        probe = (
+            client.table(TABLE)
+            .select("Row_No, Product_Name, Category, Packaging")
+            .ilike("Product_Name", product_name)
+            .ilike("Supplier_Name", supplier)
+            .order("Row_No", desc=True)
+            .limit(5)
+            .execute()
+        )
+        for row in probe.data or []:
+            if (
+                (row.get("Product_Name") or "").strip().lower() == product_name.lower()
+                and (row.get("Category") or "").strip().lower() == category.lower()
+                and (row.get("Packaging") or "").strip().lower() == packing.lower()
+            ):
+                existing_id = row.get("Row_No")
+                if existing_id is not None:
+                    existing = get_chemical_master_data_by_id(int(existing_id))
+                    if existing:
+                        logger.info(
+                            "Reusing existing Chemical_Master_Data Row_No=%s (duplicate create)",
+                            existing_id,
+                        )
+                        return existing
 
     response = _insert_master_row(client, payload)
     if not response.data:
