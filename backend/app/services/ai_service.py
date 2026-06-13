@@ -29,6 +29,7 @@ from openai import (
     APIConnectionError,
     APIError,
     APITimeoutError,
+    AuthenticationError,
     OpenAI,
     RateLimitError,
 )
@@ -114,21 +115,26 @@ def reset_gemini_client() -> None:
 
 
 def _provider_fallback_eligible(exc: BaseException) -> bool:
-    """True when we should try the next tier (rate limit, timeout, connection)."""
-    if isinstance(exc, (RateLimitError, APIConnectionError, APITimeoutError)):
+    """True when we should try the next tier (rate limit, timeout, connection, bad key)."""
+    if isinstance(
+        exc, (RateLimitError, APIConnectionError, APITimeoutError, AuthenticationError)
+    ):
         return True
     status = getattr(exc, "status_code", None)
-    if status == 429:
+    if status in (401, 429):
         return True
     if isinstance(exc, APIError):
         code = getattr(exc, "code", None)
-        if code == "rate_limit_exceeded":
+        if code in ("rate_limit_exceeded", "invalid_api_key"):
             return True
     msg = str(exc).lower()
     return (
         "rate limit" in msg
         or "rate_limit" in msg
         or "429" in msg
+        or "401" in msg
+        or "invalid_api_key" in msg
+        or "incorrect api key" in msg
         or "connection" in msg
         or "timeout" in msg
         or "timed out" in msg
