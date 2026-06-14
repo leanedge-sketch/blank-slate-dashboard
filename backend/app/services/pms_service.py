@@ -13,6 +13,7 @@ operations on top of Supabase:
 
 from typing import List, Optional, Dict, Any
 import json
+import logging
 import re
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -22,6 +23,9 @@ from supabase import Client
 from app.database.connection import get_supabase_client
 from app.services.ai_service import gemini_chat
 from app.services.file_service import extract_text_from_file, normalize_tds_metadata
+
+logger = logging.getLogger(__name__)
+
 from app.models.pms import (
     ChemicalType,
     ChemicalTypeCreate,
@@ -912,7 +916,9 @@ def create_pricing_junction_record(body: PricingJunctionRecordCreate) -> Pricing
     response = supabase.table("pricing_records").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create pricing junction record")
-    return PricingJunctionRecord(**response.data[0])
+    record = PricingJunctionRecord(**response.data[0])
+    _sync_active_pricing_outward(record)
+    return record
 
 
 def get_pricing_junction_record_by_id(record_id: str) -> Optional[PricingJunctionRecord]:
@@ -954,7 +960,115 @@ def revise_pricing_junction_record(
     response = supabase.table("pricing_records").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create revised pricing record")
-    return PricingJunctionRecord(**response.data[0])
+    record = PricingJunctionRecord(**response.data[0])
+    _sync_active_pricing_outward(record)
+    return record
+
+
+def _pricing_location_label(supabase: Client, location_id: str) -> str:
+    try:
+        response = (
+            supabase.table("pricing_locations")
+            .select("country, city, port")
+            .eq("id", location_id)
+            .limit(1)
+            .execute()
+        )
+        row = (response.data or [None])[0]
+        if not row:
+            return location_id
+        parts = [row.get("country") or ""]
+        if row.get("city"):
+            parts.append(row["city"])
+        if row.get("port"):
+            parts.append(row["port"])
+        return " · ".join(p for p in parts if p)
+    except Exception:
+        return location_id
+
+
+def _resolve_chemical_for_product_id(pms_product_id: str):
+    from app.services.chemical_master_data import (
+        get_chemical_master_data_by_id,
+        get_chemical_master_data_by_uuid,
+    )
+
+    chem = get_chemical_master_data_by_uuid(pms_product_id)
+    if chem:
+        return chem
+    if str(pms_product_id).isdigit():
+        return get_chemical_master_data_by_id(int(pms_product_id))
+    return None
+
+
+def _sync_pms_catalog_price(record: PricingJunctionRecord) -> None:
+    if record.status != "active":
+        return
+    chem = _resolve_chemical_for_product_id(record.pms_product_id)
+    if not chem or chem.id is None:
+        return
+    try:
+        from app.models.pms import ChemicalFullDataUpdate
+        from app.services.chemical_master_data import update_chemical_master_data
+
+        update_chemical_master_data(
+            int(chem.id),
+            ChemicalFullDataUpdate(price=float(record.price_amount)),
+        )
+    except Exception as exc:
+        logger.warning("PMS price sync failed for product %s: %s", record.pms_product_id, exc)
+
+
+def _sync_crm_customer_pricing(record: PricingJunctionRecord) -> None:
+    if record.status != "active" or record.partner_kind != "crm":
+        return
+    supabase: Client = get_supabase_client()
+    now = datetime.now(timezone.utc).isoformat()
+    location_label = _pricing_location_label(supabase, str(record.location_id))
+    snapshot = {
+        "pms_product_id": record.pms_product_id,
+        "incoterm": record.incoterm,
+        "location_label": location_label,
+        "cost_currency": record.cost_currency,
+        "cost_amount": float(record.cost_amount),
+        "price_currency": record.price_currency,
+        "price_amount": float(record.price_amount),
+        "valid_from": str(record.valid_from),
+        "updated_at": now,
+    }
+    try:
+        existing_resp = (
+            supabase.table("customers")
+            .select("latest_pricing_summary")
+            .eq("customer_id", str(record.crm_partner_id))
+            .limit(1)
+            .execute()
+        )
+        existing = (existing_resp.data or [{}])[0].get("latest_pricing_summary") or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        by_product = existing.get("by_product") if isinstance(existing.get("by_product"), dict) else {}
+        by_product[str(record.pms_product_id)] = snapshot
+        (
+            supabase.table("customers")
+            .update({"latest_pricing_summary": {"by_product": by_product}})
+            .eq("customer_id", str(record.crm_partner_id))
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning(
+            "CRM pricing sync failed for customer %s (run docs/0010b): %s",
+            record.crm_partner_id,
+            exc,
+        )
+
+
+def _sync_active_pricing_outward(record: PricingJunctionRecord) -> None:
+    """Push latest active sell price to PMS catalog and CRM customer snapshot."""
+    if record.status != "active":
+        return
+    _sync_pms_catalog_price(record)
+    _sync_crm_customer_pricing(record)
 
 
 def delete_pricing_junction_record(record_id: str) -> bool:
@@ -1363,6 +1477,25 @@ def find_or_create_partner(partner_name: str, partner_country: Optional[str] = N
         if (row.get("partner") or "").strip().lower() == name.lower():
             return Partner(**row)
     return create_partner(PartnerCreate(partner=name, partner_country=partner_country))
+
+
+def sync_catalog_suppliers_to_partners() -> dict:
+    """Ensure Chemical_Master_Data supplier names exist in partner_data."""
+    from app.services.chemical_master_data import get_all_suppliers
+
+    before = count_partners()
+    supplier_names = get_all_suppliers()
+    for name in supplier_names:
+        try:
+            find_or_create_partner(name)
+        except Exception as exc:
+            logger.warning("Could not sync catalog supplier %r to partner_data: %s", name, exc)
+    after = count_partners()
+    return {
+        "supplier_names": len(supplier_names),
+        "partners_created": max(0, after - before),
+        "partners_total": after,
+    }
 
 
 def list_partner_chemicals(

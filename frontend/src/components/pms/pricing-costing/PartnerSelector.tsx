@@ -37,11 +37,16 @@ export function PartnerSelector({
     );
   }, [partners, query]);
 
+  const pmsProviderCount = useMemo(
+    () => partners.filter((p) => p.partnerKind === "pms").length,
+    [partners],
+  );
+
   return (
     <aside className="flex h-full min-h-0 w-80 shrink-0 flex-col border-r border-slate-200 bg-slate-50/80 lg:w-96">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 p-3 backdrop-blur-sm">
         <label htmlFor="partner-search" className="sr-only">
-          Search CRM partners
+          Search partners and providers
         </label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -50,17 +55,28 @@ export function PartnerSelector({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search CRM partners…"
+            placeholder="Search buyers & providers…"
             className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
           />
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          {filtered.length} partner{filtered.length === 1 ? "" : "s"}
+          {filtered.length} counterparty{filtered.length === 1 ? "" : "ies"} · CRM buyers + PMS
+          providers ({pmsProviderCount})
         </p>
+        {pmsProviderCount === 0 && partners.length > 0 ? (
+          <p className="mt-1 text-[11px] text-amber-700">
+            No PMS providers yet — add suppliers on the Chemicals catalog or PMS → Partners.
+          </p>
+        ) : null}
       </div>
 
       <ul className="min-h-0 flex-1 overflow-y-auto p-2 space-y-1">
-        {filtered.length === 0 ? (
+        {partners.length === 0 ? (
+          <li className="px-3 py-8 text-center text-sm text-slate-500">
+            No CRM buyers or PMS providers yet. Add customers in CRM and suppliers on PMS
+            Chemicals or Partners.
+          </li>
+        ) : filtered.length === 0 ? (
           <li className="px-3 py-8 text-center text-sm text-slate-500">
             No partners match your search.
           </li>
@@ -81,7 +97,7 @@ export function PartnerSelector({
                 >
                   <p className="text-sm font-semibold text-slate-900">{partner.name}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {partnerTypeLabel(partner.type)}
+                    {partnerTypeLabel(partner.type)} · {partner.partnerKind.toUpperCase()}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-400">
                     {activeCount} active price{activeCount === 1 ? "" : "s"}

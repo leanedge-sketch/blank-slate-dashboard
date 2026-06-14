@@ -58,6 +58,7 @@ class Customer(CustomerBase):
     latest_profile_updated_at: Optional[datetime] = None
     latest_profile_research_meta: Optional[Dict[str, Any]] = None
     external_last_fetched_at: Optional[datetime] = None
+    latest_pricing_summary: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True  # Allows conversion from SQLAlchemy/ORM objects

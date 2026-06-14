@@ -30,6 +30,19 @@ function getSalesStageBadge(stage: string | null | undefined) {
   );
 }
 
+function formatLatestPricingSummary(
+  summary: Customer["latest_pricing_summary"],
+): string | null {
+  const byProduct = summary?.by_product;
+  if (!byProduct || typeof byProduct !== "object") return null;
+  const entries = Object.values(byProduct);
+  if (entries.length === 0) return null;
+  const latest = entries[entries.length - 1];
+  if (!latest?.price_amount) return null;
+  const cur = latest.price_currency ?? "";
+  return `${latest.price_amount.toLocaleString()} ${cur}`.trim();
+}
+
 export function CustomerListPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -179,6 +192,9 @@ export function CustomerListPage() {
                         Name
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
+                        Latest pricing
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
                         ICP Status
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
@@ -211,6 +227,15 @@ export function CustomerListPage() {
                                   : "—"}
                               </span>
                             </div>
+                          </td>
+                          <td className="px-3 py-2 align-middle text-xs text-slate-600">
+                            {formatLatestPricingSummary(c.latest_pricing_summary) ? (
+                              <span title="Synced from Pricing & Costing">
+                                {formatLatestPricingSummary(c.latest_pricing_summary)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2 align-middle">
                             {c.latest_profile_text ? (

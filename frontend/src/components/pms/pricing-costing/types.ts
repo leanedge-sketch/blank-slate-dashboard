@@ -5,9 +5,12 @@ export interface PricingLocation {
   port?: string | null;
 }
 
+export type PartnerKind = "crm" | "pms";
+
 export interface PricingRecord {
   id: string;
   crmPartnerId: string;
+  partnerKind: PartnerKind;
   pmsProductId: string;
   incoterm: string;
   locationId: string;
@@ -27,6 +30,7 @@ export interface CRMPartner {
   id: string;
   name: string;
   type: "buyer" | "supplier" | "logistics";
+  partnerKind: PartnerKind;
 }
 
 export interface PMSProduct {

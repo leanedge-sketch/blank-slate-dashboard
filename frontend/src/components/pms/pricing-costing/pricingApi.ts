@@ -1,4 +1,5 @@
 import { api } from "../../../services/api";
+import type { Partner } from "../../../services/api";
 import type {
   CRMPartner,
   PMSProduct,
@@ -6,6 +7,7 @@ import type {
   PricingLocationInput,
   PricingRecord,
   PricingRecordInput,
+  PartnerKind,
 } from "./types";
 import { todayISO } from "./utils";
 
@@ -20,6 +22,7 @@ type ApiPricingLocation = {
 type ApiPricingRecord = {
   id: string;
   crm_partner_id: string;
+  partner_kind?: PartnerKind | null;
   pms_product_id: string;
   incoterm: string;
   location_id: string;
@@ -50,6 +53,7 @@ function mapRecord(row: ApiPricingRecord): PricingRecord {
   return {
     id: row.id,
     crmPartnerId: row.crm_partner_id,
+    partnerKind: row.partner_kind ?? "crm",
     pmsProductId: row.pms_product_id,
     incoterm: row.incoterm,
     locationId: row.location_id,
@@ -68,10 +72,16 @@ function mapRecord(row: ApiPricingRecord): PricingRecord {
 
 function toApiRecordInput(
   input: PricingRecordInput,
-  status: PricingRecord["status"] = "active",
+  options?: {
+    status?: PricingRecord["status"];
+    validFrom?: string;
+    validTo?: string | null;
+  },
 ): Record<string, unknown> {
+  const today = todayISO();
   return {
     crm_partner_id: input.crmPartnerId,
+    partner_kind: input.partnerKind,
     pms_product_id: input.pmsProductId,
     incoterm: input.incoterm,
     location_id: input.locationId,
@@ -82,10 +92,18 @@ function toApiRecordInput(
     needs_currency_conversion: input.needsCurrencyConversion,
     exchange_rate_used: input.exchangeRateUsed,
     base_currency: input.baseCurrency,
-    valid_from: todayISO(),
-    valid_to: null,
-    status,
+    valid_from: options?.validFrom ?? today,
+    valid_to: options?.validTo ?? null,
+    status: options?.status ?? "active",
   };
+}
+
+function inferPmsPartnerType(partner: Partner): CRMPartner["type"] {
+  const name = (partner.partner || "").toLowerCase();
+  if (/logistics|freight|shipping|dhl|fedex|transport|forwarding/.test(name)) {
+    return "logistics";
+  }
+  return "supplier";
 }
 
 export function mapCustomerToCRMPartner(customer: {
@@ -96,6 +114,16 @@ export function mapCustomerToCRMPartner(customer: {
     id: customer.customer_id,
     name: customer.customer_name,
     type: "buyer",
+    partnerKind: "crm",
+  };
+}
+
+export function mapPmsPartnerToCRMPartner(partner: Partner): CRMPartner {
+  return {
+    id: partner.id,
+    name: partner.partner?.trim() || partner.partner_country?.trim() || "Unnamed provider",
+    type: inferPmsPartnerType(partner),
+    partnerKind: "pms",
   };
 }
 
@@ -152,10 +180,15 @@ export async function loadPricingRecords(params?: {
 
 export async function createPricingRecordApi(
   input: PricingRecordInput,
+  options?: {
+    status?: PricingRecord["status"];
+    validFrom?: string;
+    validTo?: string | null;
+  },
 ): Promise<PricingRecord> {
   const res = await api.post<ApiPricingRecord>(
     "/pms/pricing-junction/records",
-    toApiRecordInput(input),
+    toApiRecordInput(input, options),
   );
   return mapRecord(res.data);
 }
@@ -185,4 +218,8 @@ export function isPricingJunctionMissingError(error: unknown): boolean {
       detail.includes("does not exist") ||
       detail.includes("relation"))
   );
+}
+
+export function partnerKindLabel(kind: PartnerKind): string {
+  return kind === "crm" ? "CRM" : "PMS";
 }

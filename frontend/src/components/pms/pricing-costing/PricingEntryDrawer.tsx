@@ -34,6 +34,7 @@ function emptyForm(
 ): PricingRecordInput {
   return {
     crmPartnerId: defaultPartnerId ?? "",
+    partnerKind: "crm",
     pmsProductId: "",
     incoterm: "FOB",
     locationId: defaultLocationId ?? "",
@@ -73,6 +74,7 @@ export function PricingEntryDrawer({
     if (mode === "update" && sourceRecord) {
       setForm({
         crmPartnerId: sourceRecord.crmPartnerId,
+        partnerKind: sourceRecord.partnerKind,
         pmsProductId: sourceRecord.pmsProductId,
         incoterm: sourceRecord.incoterm,
         locationId: sourceRecord.locationId,
@@ -91,11 +93,15 @@ export function PricingEntryDrawer({
           sourceRecord.costCurrency,
       );
     } else {
-      setForm(emptyForm(defaultPartnerId, defaultLocationId ?? locations[0]?.id));
+      const defaultPartner = crmPartners.find((p) => p.id === defaultPartnerId);
+      setForm({
+        ...emptyForm(defaultPartnerId, defaultLocationId ?? locations[0]?.id),
+        partnerKind: defaultPartner?.partnerKind ?? "crm",
+      });
       setNeedsConversion(false);
       setMarginCurrency("");
     }
-  }, [open, mode, sourceRecord, defaultPartnerId, defaultLocationId, locations]);
+  }, [open, mode, sourceRecord, defaultPartnerId, defaultLocationId, locations, crmPartners]);
 
   useEffect(() => {
     if (!currenciesDiffer) {
@@ -223,19 +229,26 @@ export function PricingEntryDrawer({
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                CRM partner
+                Counterparty (CRM buyer or PMS provider)
               </label>
               <select
                 required
                 value={form.crmPartnerId}
                 disabled={isUpdate}
-                onChange={(e) => setForm({ ...form, crmPartnerId: e.target.value })}
+                onChange={(e) => {
+                  const partner = crmPartners.find((p) => p.id === e.target.value);
+                  setForm({
+                    ...form,
+                    crmPartnerId: e.target.value,
+                    partnerKind: partner?.partnerKind ?? "crm",
+                  });
+                }}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
               >
                 <option value="">Select partner…</option>
                 {crmPartners.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.type})
+                  <option key={`${p.partnerKind}-${p.id}`} value={p.id}>
+                    [{p.type}] {p.name}
                   </option>
                 ))}
               </select>

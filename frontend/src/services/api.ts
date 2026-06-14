@@ -37,8 +37,23 @@ export interface Customer {
   display_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  product_alignment_scores?: Record<string, number> | null; // Strategic-Fit Matrix: {"Cement": 0-3, "Dry-Mix": 0-3, ...}
-  sales_stage?: string | null; // Current sales stage (1-7 from Brian Tracy process)
+  product_alignment_scores?: Record<string, number> | null;
+  latest_pricing_summary?: {
+    by_product?: Record<
+      string,
+      {
+        price_amount?: number;
+        price_currency?: string;
+        cost_amount?: number;
+        cost_currency?: string;
+        incoterm?: string;
+        location_label?: string;
+        valid_from?: string;
+        updated_at?: string;
+      }
+    >;
+  } | null;
+  sales_stage?: string | null;
   website_url?: string | null;
   linkedin_company_url?: string | null;
   primary_contact_name?: string | null;
@@ -345,6 +360,16 @@ export async function fetchPartners(params?: {
   partner_name?: string;
 }) {
   const res = await api.get<PartnerListResponse>("/pms/partners", { params });
+  return res.data;
+}
+
+/** Ensure Chemical_Master_Data supplier names exist in partner_data (PMS providers). */
+export async function syncCatalogSuppliersToPartners() {
+  const res = await api.post<{
+    supplier_names: number;
+    partners_created: number;
+    partners_total: number;
+  }>("/pms/partners/sync-catalog-suppliers");
   return res.data;
 }
 

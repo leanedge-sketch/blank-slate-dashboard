@@ -316,6 +316,7 @@ class PricingLocationListResponse(BaseModel):
 
 class PricingJunctionRecordBase(BaseModel):
     crm_partner_id: UUID
+    partner_kind: str = "crm"
     pms_product_id: str
     incoterm: str
     location_id: UUID

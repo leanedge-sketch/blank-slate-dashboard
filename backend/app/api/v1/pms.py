@@ -85,6 +85,7 @@ from app.services.pms_service import (
     get_partner_by_id,
     update_partner,
     delete_partner,
+    sync_catalog_suppliers_to_partners,
     list_leanchem_products,
     count_leanchem_products,
     create_leanchem_product,
@@ -487,6 +488,18 @@ async def create_partner_endpoint(
         return create_partner(body)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating partner: {str(e)}")
+
+
+@router.post("/partners/sync-catalog-suppliers")
+async def sync_catalog_suppliers_endpoint():
+    """Create partner_data rows for each Chemical_Master_Data supplier name."""
+    try:
+        return sync_catalog_suppliers_to_partners()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error syncing catalog suppliers to partners: {str(e)}",
+        )
 
 
 @router.get("/partners/{partner_id}", response_model=Partner)

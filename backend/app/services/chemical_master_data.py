@@ -519,3 +519,7 @@ def get_all_sub_categories() -> List[str]:
 
 def get_all_product_names() -> List[str]:
     return _distinct_column(_read_client(), "Product_Name")
+
+
+def get_all_suppliers() -> List[str]:
+    return _distinct_column(_read_client(), "Supplier_Name")
