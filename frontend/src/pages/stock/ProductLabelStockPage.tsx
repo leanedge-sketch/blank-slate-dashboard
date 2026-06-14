@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Package,
   Search,
@@ -37,7 +37,9 @@ import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 
 export function ProductLabelStockPage() {
   const navigate = useNavigate();
-  const { chemicalTypes } = useProductCatalog();
+  const [searchParams] = useSearchParams();
+  const deepLinkApplied = useRef(false);
+  const { chemicalTypes, chemicals: chemicalFullData } = useProductCatalog();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tdsList, setTdsList] = useState<Tds[]>([]);
@@ -76,11 +78,67 @@ export function ProductLabelStockPage() {
     supplier_name: null,
     customer_id: null,
     customer_name: null,
+    pipeline_id: null,
+    catalog_uuid_id: null,
   });
+
+  const catalogIdParam = searchParams.get("catalog_id");
+  const customerIdParam = searchParams.get("customer_id");
+  const pipelineIdParam = searchParams.get("pipeline_id");
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (deepLinkApplied.current || loading) return;
+    if (!catalogIdParam && !customerIdParam && !pipelineIdParam) return;
+
+    deepLinkApplied.current = true;
+
+    if (pipelineIdParam || catalogIdParam) {
+      setFormData((prev) => ({
+        ...prev,
+        pipeline_id: pipelineIdParam,
+        catalog_uuid_id: catalogIdParam,
+        customer_id: customerIdParam ?? prev.customer_id,
+        ...(pipelineIdParam
+          ? { transaction_type: "Sales" as const, location: "addis_ababa" as const }
+          : {}),
+      }));
+    }
+
+    if (customerIdParam && customers.length > 0) {
+      const cust = customers.find((c) => String(c.customer_id) === customerIdParam);
+      if (cust) {
+        setSelectedCustomer(cust);
+        setFormData((prev) => ({
+          ...prev,
+          customer_id: cust.customer_id,
+          customer_name: cust.customer_name,
+        }));
+      }
+    }
+
+    if (catalogIdParam && chemicalTypes.length > 0) {
+      const full = chemicalFullData.find((c) => String(c.uuid_id) === catalogIdParam);
+      const ct = full
+        ? chemicalTypes.find((t) => String(t.id) === String(full.id))
+        : chemicalTypes.find(
+            (t) =>
+              (t.metadata as { uuid_id?: string } | null)?.uuid_id === catalogIdParam,
+          );
+      if (ct) setSelectedProduct(ct);
+    }
+  }, [
+    loading,
+    customers,
+    chemicalTypes,
+    chemicalFullData,
+    catalogIdParam,
+    customerIdParam,
+    pipelineIdParam,
+  ]);
 
   useEffect(() => {
     if (selectedProduct) {
@@ -271,16 +329,29 @@ export function ProductLabelStockPage() {
       
       // Search for products - try both exact match and partial match
       const products = await fetchStockProducts({
-        limit: 1000, // Get more products to search through
+        limit: 1000,
       });
+
+      const catalogUuid =
+        catalogIdParam ||
+        formData.catalog_uuid_id ||
+        (selectedProduct.metadata as { uuid_id?: string } | null)?.uuid_id ||
+        null;
+
+      let matchingProduct = catalogUuid
+        ? products.products.find(
+            (p) => p.catalog_uuid_id && String(p.catalog_uuid_id) === String(catalogUuid),
+          )
+        : undefined;
       
       // Look for a product that matches the chemical type name (case-insensitive)
-      // This allows finding products even without TDS selected
-      let matchingProduct = products.products.find(
-        (p) => 
-          (p.chemical && p.chemical.toLowerCase() === chemicalName.toLowerCase()) ||
-          (p.chemical_type && p.chemical_type.toLowerCase() === chemicalName.toLowerCase())
-      );
+      if (!matchingProduct) {
+        matchingProduct = products.products.find(
+          (p) => 
+            (p.chemical && p.chemical.toLowerCase() === chemicalName.toLowerCase()) ||
+            (p.chemical_type && p.chemical_type.toLowerCase() === chemicalName.toLowerCase())
+        );
+      }
       
       // If TDS is selected, also try matching by TDS ID or brand (for more precise matching)
       if (!matchingProduct && selectedTds) {
@@ -513,6 +584,11 @@ export function ProductLabelStockPage() {
         const fullBrand = selectedTds?.grade
           ? `${displayBrand} -- ${selectedTds.grade}`
           : displayBrand;
+        const catalogUuid =
+          catalogIdParam ||
+          formData.catalog_uuid_id ||
+          (selectedProduct?.metadata as { uuid_id?: string } | null)?.uuid_id ||
+          null;
         const productData: ProductCreate = {
           chemical: selectedProduct.name || "Unknown",
           chemical_type: selectedProduct.name || "Unknown",
@@ -521,6 +597,7 @@ export function ProductLabelStockPage() {
           kg_per_unit: 1.0,
           use_case: "sales",
           tds_id: selectedTds?.id || null,
+          catalog_uuid_id: catalogUuid,
           tds_link: null,
         };
         const createdProduct = await createStockProduct(productData);
@@ -534,13 +611,21 @@ export function ProductLabelStockPage() {
       const displayBrand = selectedTds?.brand || "";
       const fullBrand = selectedTds?.grade ? `${displayBrand} -- ${selectedTds.grade}` : displayBrand;
       
+      const catalogUuid =
+        catalogIdParam ||
+        formData.catalog_uuid_id ||
+        (selectedProduct?.metadata as { uuid_id?: string } | null)?.uuid_id ||
+        null;
+
       const movementData: StockMovementCreate = {
         ...formData,
         product_id: productId,
         tds_id: selectedTds?.id || null,
         brand: fullBrand || formData.brand || null,
-        customer_id: selectedCustomer?.customer_id || null,
-        customer_name: selectedCustomer?.customer_name || null,
+        customer_id: selectedCustomer?.customer_id || formData.customer_id || null,
+        customer_name: selectedCustomer?.customer_name || formData.customer_name || null,
+        pipeline_id: pipelineIdParam || formData.pipeline_id || null,
+        catalog_uuid_id: catalogUuid,
       };
 
       console.log("Creating movement with brand:", movementData.brand, "from TDS brand:", selectedTds?.brand, "grade:", selectedTds?.grade);

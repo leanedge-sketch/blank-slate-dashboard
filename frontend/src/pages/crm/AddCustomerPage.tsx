@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Sparkles } from "lucide-react";
 import { api, Customer, Interaction, buildCustomerProfile } from "../../services/api";
 
 type InitialPipelineStage = "Lead ID" | "Discovery" | "Sample";
@@ -208,7 +209,29 @@ export function AddCustomerPage() {
               </div>
             )}
 
-            <div className="form-actions" style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+            <div className="form-actions" style={{ display: "flex", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
+              {!profileResult && (
+                <button
+                  type="button"
+                  onClick={() => void handleBuildProfile()}
+                  disabled={buildingProfile}
+                  style={{
+                    padding: "0.75rem 1.5rem",
+                    backgroundColor: buildingProfile ? "#93c5fd" : "#2563eb",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.5rem",
+                    fontWeight: "600",
+                    cursor: buildingProfile ? "wait" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <Sparkles size={18} />
+                  {buildingProfile ? "Building AI profile…" : "Build AI profile"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleViewCustomer}

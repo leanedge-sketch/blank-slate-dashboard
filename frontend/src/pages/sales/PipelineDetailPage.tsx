@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelinePricingUpdateBanner } from "../../components/sales/PipelinePricingUpdateBanner";
+import { StockIntegrationPanel } from "../../components/sales/StockIntegrationPanel";
 import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
@@ -813,6 +814,13 @@ export function PipelineDetailPage() {
             busy={pricingBannerBusy}
             onAcceptNew={() => resolvePendingPricing(true)}
             onKeepOld={() => resolvePendingPricing(false)}
+          />
+        ) : null}
+        {pipelineId && currentPipeline ? (
+          <StockIntegrationPanel
+            pipelineId={pipelineId}
+            catalogUuidId={currentPipeline.chemical_type_id}
+            customerId={currentPipeline.customer_id}
           />
         ) : null}
         {/* Summary Statistics Cards */}

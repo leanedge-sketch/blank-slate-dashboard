@@ -24,6 +24,8 @@ from app.models.stock import (
     StockMovementCreate,
     StockMovementUpdate,
     StockAvailabilitySummary,
+    StockCatalogAvailability,
+    StockPipelineContext,
     LOCATIONS,
     TRANSACTION_TYPES,
 )
@@ -335,6 +337,9 @@ def list_stock_movements(
     business_model: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    customer_id: Optional[str] = None,
+    pipeline_id: Optional[str] = None,
+    catalog_uuid_id: Optional[str] = None,
 ) -> List[StockMovement]:
     """
     List stock movements with optional filters.
@@ -368,6 +373,12 @@ def list_stock_movements(
         query = query.gte("date", start_date.isoformat())
     if end_date:
         query = query.lte("date", end_date.isoformat())
+    if customer_id:
+        query = query.eq("customer_id", customer_id)
+    if pipeline_id:
+        query = query.eq("pipeline_id", pipeline_id)
+    if catalog_uuid_id:
+        query = query.eq("catalog_uuid_id", catalog_uuid_id)
     
     response = (
         query.order("date", desc=True)
@@ -390,6 +401,9 @@ def count_stock_movements(
     business_model: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    customer_id: Optional[str] = None,
+    pipeline_id: Optional[str] = None,
+    catalog_uuid_id: Optional[str] = None,
 ) -> int:
     """Count total stock movements with optional filters."""
     supabase: Client = get_supabase_client()
@@ -407,6 +421,12 @@ def count_stock_movements(
         query = query.gte("date", start_date.isoformat())
     if end_date:
         query = query.lte("date", end_date.isoformat())
+    if customer_id:
+        query = query.eq("customer_id", customer_id)
+    if pipeline_id:
+        query = query.eq("pipeline_id", pipeline_id)
+    if catalog_uuid_id:
+        query = query.eq("catalog_uuid_id", catalog_uuid_id)
     
     response = query.execute()
     return response.count or 0
@@ -477,6 +497,26 @@ def create_stock_movement(body: StockMovementCreate) -> StockMovement:
         # Populate customer_name if not provided
         if not body.customer_name and customer.customer_name:
             body.customer_name = customer.customer_name
+
+    if body.pipeline_id:
+        from app.services.sales_pipeline_service import get_sales_pipeline_by_id
+
+        pipeline = get_sales_pipeline_by_id(str(body.pipeline_id))
+        if not pipeline:
+            raise ValueError("Sales pipeline deal not found")
+        if not body.customer_id and pipeline.customer_id:
+            body.customer_id = pipeline.customer_id
+            if not body.customer_name:
+                from app.services.crm_service import get_customer_by_id as _get_cust
+
+                cust = _get_cust(str(pipeline.customer_id))
+                if cust and cust.customer_name:
+                    body.customer_name = cust.customer_name
+        if not body.catalog_uuid_id and pipeline.chemical_type_id:
+            body.catalog_uuid_id = pipeline.chemical_type_id
+
+    if not body.catalog_uuid_id and product.catalog_uuid_id:
+        body.catalog_uuid_id = product.catalog_uuid_id
     
     # Get previous balance for beginning_balance if not provided
     # For Stock Availability, we don't need previous balance
@@ -825,3 +865,143 @@ def get_stock_availability_summary(
         summaries.append(summary)
     
     return summaries
+
+
+def _deal_quantity_to_kg(amount: Optional[float], unit: Optional[str]) -> Optional[float]:
+    """Normalize deal quantity to kg for stock comparison."""
+    if amount is None:
+        return None
+    u = (unit or "kg").strip().lower()
+    if u in ("ton", "tons", "mt", "metric ton", "metric tons"):
+        return amount * 1000.0
+    return amount
+
+
+def list_products_by_catalog_uuid(catalog_uuid_id: str) -> List[Product]:
+    """Products linked to a PMS catalog uuid_id."""
+    supabase: Client = get_supabase_client()
+    response = (
+        supabase.table("products")
+        .select("*")
+        .eq("catalog_uuid_id", catalog_uuid_id)
+        .execute()
+    )
+    products: List[Product] = []
+    for row in response.data or []:
+        products.append(_compute_product_stock(Product(**row)))
+    return products
+
+
+def get_stock_availability_by_catalog(
+    catalog_uuid_id: str,
+    *,
+    tds_id: Optional[str] = None,
+) -> StockCatalogAvailability:
+    """
+    Aggregate stock across stock SKUs linked to a PMS catalog uuid_id (and optional TDS).
+    """
+    from app.services.chemical_master_data import get_chemical_master_data_by_uuid
+
+    seen: set[str] = set()
+    products: List[Product] = []
+
+    if catalog_uuid_id:
+        for product in list_products_by_catalog_uuid(catalog_uuid_id):
+            pid = str(product.id)
+            if pid not in seen:
+                seen.add(pid)
+                products.append(product)
+
+    if tds_id:
+        by_tds = get_product_by_tds_id(tds_id)
+        if by_tds:
+            pid = str(by_tds.id)
+            if pid not in seen:
+                seen.add(pid)
+                products.append(by_tds)
+
+    product_name = "Unknown"
+    chemical = ""
+    if catalog_uuid_id:
+        chem = get_chemical_master_data_by_uuid(catalog_uuid_id)
+        if chem and chem.product_name:
+            product_name = chem.product_name
+            chemical = chem.product_name
+    elif products:
+        product_name = f"{products[0].chemical} - {products[0].brand}"
+        chemical = products[0].chemical
+
+    addis = sez = nairobi = 0.0
+    addis_avail = sez_avail = nairobi_avail = 0.0
+    for product in products:
+        addis += product.total_stock_addis_ababa
+        sez += product.total_stock_sez_kenya
+        nairobi += product.total_stock_nairobi_partner
+        addis_avail += product.available_stock_addis_ababa
+        sez_avail += product.available_stock_sez_kenya
+        nairobi_avail += product.available_stock_nairobi_partner
+
+    primary_id = products[0].id if len(products) == 1 else None
+
+    return StockCatalogAvailability(
+        catalog_uuid_id=catalog_uuid_id or None,
+        product_name=product_name,
+        chemical=chemical,
+        stock_product_count=len(products),
+        stock_product_id=primary_id,
+        addis_ababa_stock=addis,
+        sez_kenya_stock=sez,
+        nairobi_partner_stock=nairobi,
+        total_stock=addis + sez + nairobi,
+        addis_ababa_available=addis_avail,
+        sez_kenya_available=sez_avail,
+        nairobi_partner_available=nairobi_avail,
+        total_available=addis_avail + sez_avail + nairobi_avail,
+    )
+
+
+def get_pipeline_stock_context(pipeline_id: str) -> StockPipelineContext:
+    """CRM deal context with linked PMS catalog stock and recent movements."""
+    from app.services.sales_pipeline_service import get_sales_pipeline_by_id
+
+    pipeline = get_sales_pipeline_by_id(pipeline_id)
+    if not pipeline:
+        raise ValueError("Sales pipeline deal not found")
+
+    customer_name: Optional[str] = None
+    cust = get_customer_by_id(str(pipeline.customer_id))
+    if cust and cust.customer_name:
+        customer_name = cust.customer_name
+
+    catalog_uuid_id = str(pipeline.chemical_type_id) if pipeline.chemical_type_id else None
+    tds_id = str(pipeline.tds_id) if pipeline.tds_id else None
+
+    product_name: Optional[str] = None
+    availability: Optional[StockCatalogAvailability] = None
+    if catalog_uuid_id or tds_id:
+        availability = get_stock_availability_by_catalog(
+            catalog_uuid_id or "",
+            tds_id=tds_id,
+        )
+        product_name = availability.product_name
+
+    recent = list_stock_movements(pipeline_id=pipeline_id, limit=10)
+
+    deal_kg = _deal_quantity_to_kg(pipeline.amount, pipeline.unit)
+    exceeds = False
+    if deal_kg is not None and availability is not None:
+        exceeds = deal_kg > availability.addis_ababa_available
+
+    return StockPipelineContext(
+        pipeline_id=pipeline.id,
+        customer_id=pipeline.customer_id,
+        customer_name=customer_name,
+        catalog_uuid_id=catalog_uuid_id,
+        tds_id=tds_id,
+        product_name=product_name,
+        deal_quantity=pipeline.amount,
+        deal_unit=pipeline.unit,
+        availability=availability,
+        recent_movements=recent,
+        quantity_exceeds_addis_stock=exceeds,
+    )

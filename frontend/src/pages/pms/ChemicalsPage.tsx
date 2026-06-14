@@ -40,9 +40,12 @@ import {
   chemicalCellValue,
   chemicalMasterCellClass,
   chemicalMasterHeaderClass,
+  isChemicalColumnEditable,
   PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
   sortChemicalsBySupplier,
+  type ChemicalMasterColumn,
+  type ChemicalMasterColumnKey,
 } from "../../utils/chemicalMasterColumns";
 
 function dedupeChemicalsById(rows: ChemicalFullData[]): ChemicalFullData[] {
@@ -106,9 +109,12 @@ export function ChemicalsPage() {
     country_of_origin: "",
   });
 
-  // Edit state
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editData, setEditData] = useState<ChemicalFullDataUpdate>({});
+  // Inline cell edit (click a column to edit only that field)
+  const [editingCell, setEditingCell] = useState<{
+    id: number;
+    key: ChemicalMasterColumnKey;
+  } | null>(null);
+  const [cellEditValue, setCellEditValue] = useState("");
   const [updating, setUpdating] = useState(false);
 
   // View details modal
@@ -367,36 +373,59 @@ export function ChemicalsPage() {
     }
   }
 
-  function startEdit(chemical: ChemicalFullData) {
-    setEditingId(chemical.id);
-    setEditData({
-      sector: chemical.sector || null,
-      industry: chemical.industry || null,
-      partner_id: chemical.partner_id || null,
-      vendor: chemical.vendor || null,
-      product_category: chemical.product_category || null,
-      sub_category: chemical.sub_category || null,
-      product_name: chemical.product_name || null,
-      packing: chemical.packing || null,
-      typical_application: chemical.typical_application || null,
-      product_description: chemical.product_description || null,
-      hs_code: chemical.hs_code || null,
-      price: chemical.price || null,
-    });
+  function startCellEdit(chemical: ChemicalFullData, key: ChemicalMasterColumnKey) {
+    if (!isChemicalColumnEditable(key)) return;
+    setEditingCell({ id: chemical.id, key });
+    const raw = chemical[key as keyof ChemicalFullData];
+    setCellEditValue(raw != null && raw !== "" ? String(raw) : "");
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setEditData({});
+  function cancelCellEdit() {
+    setEditingCell(null);
+    setCellEditValue("");
   }
 
-  async function handleUpdate(id: number) {
+  function buildCellPatch(key: ChemicalMasterColumnKey): ChemicalFullDataUpdate {
+    const patch: ChemicalFullDataUpdate = {};
+    if (key === "price") {
+      patch.price = cellEditValue.trim() ? parseFloat(cellEditValue) : null;
+      return patch;
+    }
+    const textKeys: Array<keyof ChemicalFullDataUpdate> = [
+      "vendor",
+      "sector",
+      "industry",
+      "product_category",
+      "product_name",
+      "generic_name",
+      "product_type",
+      "packing",
+      "hs_code",
+      "country_of_origin",
+      "typical_application",
+      "product_description",
+    ];
+    if (textKeys.includes(key as keyof ChemicalFullDataUpdate)) {
+      (patch as Record<string, unknown>)[key] = cellEditValue.trim() || null;
+    }
+    return patch;
+  }
+
+  async function saveCellEdit(chemical: ChemicalFullData) {
+    if (!editingCell || editingCell.id !== chemical.id) return;
+    if (editingCell.key === "product_name" && !cellEditValue.trim()) {
+      alert("Product name is required");
+      return;
+    }
+    await handleUpdate(chemical.id, buildCellPatch(editingCell.key));
+    cancelCellEdit();
+  }
+
+  async function handleUpdate(id: number, patch: ChemicalFullDataUpdate) {
     try {
       setUpdating(true);
-      const updated = await updateChemicalFullData(id, editData);
+      const updated = await updateChemicalFullData(id, patch);
       await refreshCatalog();
-      setEditingId(null);
-      setEditData({});
       setChemicals((prev) =>
         prev.map((c) => (c.id === id ? { ...c, ...updated } : c)),
       );
@@ -452,6 +481,200 @@ export function ChemicalsPage() {
       return lineNo;
     });
   }, [chemicals]);
+
+  const inputClass =
+    "w-full min-w-[120px] rounded border border-blue-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+  function renderMasterDataCell(
+    chemical: ChemicalFullData,
+    col: ChemicalMasterColumn,
+    lineNo: number,
+  ) {
+    const isEditing =
+      editingCell?.id === chemical.id && editingCell.key === col.key;
+    const editable = isChemicalColumnEditable(col.key);
+    const display = chemicalCellValue(chemical, col.key, lineNo);
+
+    if (isEditing) {
+      const saveCancel = (
+        <div className="mt-1 flex gap-1">
+          <button
+            type="button"
+            disabled={updating}
+            onClick={() => void saveCellEdit(chemical)}
+            className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {updating ? "…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={cancelCellEdit}
+            className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+        </div>
+      );
+
+      if (col.key === "sector") {
+        return (
+          <div className="min-w-[140px]">
+            <select
+              autoFocus
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">—</option>
+              {PMS_SECTOR_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            {saveCancel}
+          </div>
+        );
+      }
+      if (col.key === "industry") {
+        return (
+          <div className="min-w-[140px]">
+            <select
+              autoFocus
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">—</option>
+              {PMS_INDUSTRY_OPTIONS.map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+            {saveCancel}
+          </div>
+        );
+      }
+      if (col.key === "vendor") {
+        return (
+          <div className="min-w-[140px]">
+            <select
+              autoFocus
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">—</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.vendor}>
+                  {v.vendor}
+                </option>
+              ))}
+            </select>
+            {saveCancel}
+          </div>
+        );
+      }
+      if (col.key === "product_category") {
+        return (
+          <div className="min-w-[140px]">
+            <select
+              autoFocus
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">—</option>
+              {productCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {saveCancel}
+          </div>
+        );
+      }
+      if (col.key === "price") {
+        return (
+          <div className="min-w-[100px]">
+            <input
+              autoFocus
+              type="number"
+              step="0.01"
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveCellEdit(chemical);
+                if (e.key === "Escape") cancelCellEdit();
+              }}
+              className={inputClass}
+            />
+            {saveCancel}
+          </div>
+        );
+      }
+      if (col.key === "typical_application" || col.key === "product_description") {
+        return (
+          <div className="min-w-[200px] max-w-xs">
+            <textarea
+              autoFocus
+              rows={2}
+              value={cellEditValue}
+              onChange={(e) => setCellEditValue(e.target.value)}
+              className={inputClass}
+            />
+            {saveCancel}
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-w-[120px]">
+          <input
+            autoFocus
+            type="text"
+            value={cellEditValue}
+            onChange={(e) => setCellEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveCellEdit(chemical);
+              if (e.key === "Escape") cancelCellEdit();
+            }}
+            className={inputClass}
+          />
+          {saveCancel}
+        </div>
+      );
+    }
+
+    if (!editable) {
+      return (
+        <span
+          className={col.key === "current_price" || col.key === "current_cost" ? "text-slate-500" : ""}
+          title={
+            col.key === "current_price" || col.key === "current_cost"
+              ? "Synced from Pricing & Costing"
+              : display
+          }
+        >
+          {display}
+        </span>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => startCellEdit(chemical, col.key)}
+        className="group/cell flex w-full items-center gap-1 text-left hover:text-blue-700"
+        title={`Click to edit ${col.label}`}
+      >
+        <span className="truncate">{display}</span>
+        <Edit2 className="h-3 w-3 shrink-0 opacity-0 group-hover/cell:opacity-60" />
+      </button>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
@@ -955,8 +1178,12 @@ export function ChemicalsPage() {
 
             {/* Chemical List - Table View */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+                Click any editable cell to update that field only. Scroll horizontally for all
+                columns — current price/cost sync from Pricing &amp; Costing.
+              </p>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[1600px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       {CHEMICAL_MASTER_COLUMNS.map((col) => (
@@ -996,229 +1223,36 @@ export function ChemicalsPage() {
                         <tr
                           className="hover:bg-slate-50 transition-colors"
                 >
-                  {editingId === chemical.id ? (
-                          // Edit Row
-                          <>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-900 text-right tabular-nums">
-                              <span className="font-medium">{lineNo}</span>
-                              <span className="block text-xs font-mono text-slate-500">
-                                ref {chemical.id}
-                              </span>
-                            </td>
-                            <td colSpan={CHEMICAL_MASTER_COLUMNS.length} className="px-4 py-4">
-                              <div className="space-y-3">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Sector
-                                    </label>
-                                    <select
-                                      value={editData.sector || ""}
-                                      onChange={(e) =>
-                                        setEditData({ ...editData, sector: e.target.value || null })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                      <option value="">Select...</option>
-                                      {PMS_SECTOR_OPTIONS.map((s) => (
-                                        <option key={s} value={s}>
-                                          {s}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Industry
-                                    </label>
-                                    <select
-                                      value={editData.industry || ""}
-                                      onChange={(e) =>
-                                        setEditData({
-                                          ...editData,
-                                          industry: e.target.value || null,
-                                        })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                      <option value="">Select...</option>
-                                      {PMS_INDUSTRY_OPTIONS.map((i) => (
-                                        <option key={i} value={i}>
-                                          {i}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Vendor
-                                    </label>
-                                    <select
-                                      value={editData.vendor || ""}
-                                      onChange={(e) =>
-                                        setEditData({ ...editData, vendor: e.target.value || null })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                      <option value="">Select...</option>
-                                      {vendors.map((v) => (
-                                        <option key={v.id} value={v.vendor}>
-                                          {v.vendor}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Product Category
-                                    </label>
-                                    <select
-                                      value={editData.product_category || ""}
-                                      onChange={(e) =>
-                                        setEditData({
-                                          ...editData,
-                                          product_category: e.target.value || null,
-                                        })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                      <option value="">Select...</option>
-                                      {productCategories.map((c) => (
-                                        <option key={c} value={c}>
-                                          {c}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Product Name <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                                      value={editData.product_name || ""}
-                                      onChange={(e) =>
-                                        setEditData({ ...editData, product_name: e.target.value })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
-                      </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Packing
-                          </label>
-                          <input
-                            type="text"
-                                      value={editData.packing || ""}
-                            onChange={(e) =>
-                                        setEditData({ ...editData, packing: e.target.value })
-                            }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">
-                            HS Code
-                          </label>
-                          <input
-                            type="text"
-                            value={editData.hs_code || ""}
-                            onChange={(e) =>
-                              setEditData({ ...editData, hs_code: e.target.value })
-                            }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
-                                      Price
-                        </label>
-                          <input
-                                      type="number"
-                                      step="0.01"
-                                      value={editData.price || ""}
-                                      onChange={(e) =>
-                                        setEditData({
-                                          ...editData,
-                                          price: parseFloat(e.target.value) || null,
-                                        })
-                                      }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                        </div>
-                          </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                                    Typical Application
-                                  </label>
-                                  <textarea
-                                    value={editData.typical_application || ""}
-                                    onChange={(e) =>
-                                      setEditData({
-                                        ...editData,
-                                        typical_application: e.target.value,
-                                      })
-                                    }
-                                    rows={2}
-                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                                    Product Description
-                                  </label>
-                                  <textarea
-                                    value={editData.product_description || ""}
-                                    onChange={(e) =>
-                                      setEditData({
-                                        ...editData,
-                                        product_description: e.target.value,
-                                      })
-                                    }
-                                    rows={2}
-                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleUpdate(chemical.id)}
-                                    disabled={updating || !editData.product_name?.trim()}
-                                    className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
-                        >
-                          {updating ? (
-                            <>
-                              <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
-                              Saving...
-                            </>
-                          ) : (
-                            "Save"
-                          )}
-                        </button>
-                        <button
-                          onClick={cancelEdit}
-                                    className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                            </td>
-                          </>
-                        ) : (
-                          // View Row
-                          <>
                             {CHEMICAL_MASTER_COLUMNS.map((col) => (
                               <td
                                 key={col.key}
-                                className={chemicalMasterCellClass(col)}
-                                title={chemicalCellValue(chemical, col.key, lineNo)}
+                                className={`${chemicalMasterCellClass(col)} ${
+                                  isChemicalColumnEditable(col.key) &&
+                                  editingCell?.id !== chemical.id
+                                    ? "cursor-pointer"
+                                    : ""
+                                } ${
+                                  editingCell?.id === chemical.id &&
+                                  editingCell.key === col.key
+                                    ? "bg-blue-50/80 ring-1 ring-inset ring-blue-200"
+                                    : ""
+                                }`}
                               >
-                                {chemicalCellValue(chemical, col.key, lineNo)}
+                                {renderMasterDataCell(chemical, col, lineNo)}
                               </td>
                             ))}
-                            <td className="px-4 py-3 whitespace-nowrap text-sm sticky right-0 bg-white">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
                         <div className="flex items-center gap-2">
+                          {chemical.uuid_id ? (
+                            <Link
+                              to={`/stock/product-label?catalog_id=${encodeURIComponent(String(chemical.uuid_id))}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                              title="Stock ledger"
+                            >
+                              <Package size={16} />
+                            </Link>
+                          ) : null}
                           <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1229,16 +1263,6 @@ export function ChemicalsPage() {
                                 >
                                   <Eye size={16} />
                                 </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    startEdit(chemical);
-                                  }}
-                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                            title="Edit"
-                          >
-                            <Edit2 size={16} />
-                          </button>
                           <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1256,9 +1280,7 @@ export function ChemicalsPage() {
                           </button>
                         </div>
                             </td>
-                          </>
-                        )}
-                      </tr>
+                        </tr>
                       </Fragment>
                 );
               })}

@@ -411,17 +411,19 @@ export function PricingDetailsMatrix({
 
           <div className="min-h-0 flex-1 overflow-auto bg-white p-4 sm:p-6">
             {activeGroup && (
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[880px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Product</th>
-                      <th className="px-4 py-3">Incoterm</th>
-                      <th className="px-4 py-3">Cost</th>
-                      <th className="px-4 py-3">Price</th>
-                      <th className="px-4 py-3">Margin</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 w-16 text-right">Actions</th>
+                      <th className="whitespace-nowrap px-4 py-3">Product</th>
+                      <th className="whitespace-nowrap px-4 py-3">Incoterm</th>
+                      <th className="whitespace-nowrap px-4 py-3">Cost</th>
+                      <th className="whitespace-nowrap px-4 py-3">Price</th>
+                      <th className="whitespace-nowrap px-4 py-3">Margin</th>
+                      <th className="whitespace-nowrap px-4 py-3">Status</th>
+                      <th className="sticky right-0 z-10 w-16 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-4 py-3 text-right">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -473,8 +475,8 @@ export function PricingDetailsMatrix({
                               </p>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="relative inline-flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                          <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-4 py-3 text-right group-hover:bg-slate-50/80">
+                            <div className="relative inline-flex opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                               <button
                                 type="button"
                                 onClick={() =>

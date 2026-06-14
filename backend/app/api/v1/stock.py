@@ -31,6 +31,8 @@ from app.models.stock import (
     StockMovementUpdate,
     StockMovementListResponse,
     StockAvailabilitySummary,
+    StockCatalogAvailability,
+    StockPipelineContext,
 )
 from app.services.stock_service import (
     list_products,
@@ -47,6 +49,8 @@ from app.services.stock_service import (
     update_stock_movement,
     delete_stock_movement,
     get_stock_availability_summary,
+    get_stock_availability_by_catalog,
+    get_pipeline_stock_context,
 )
 from app.dependencies import get_current_user
 
@@ -190,6 +194,9 @@ async def list_stock_movements_endpoint(
     business_model: Optional[str] = Query(None, description="Filter by business model"),
     start_date: Optional[date] = Query(None, description="Filter by start date"),
     end_date: Optional[date] = Query(None, description="Filter by end date"),
+    customer_id: Optional[str] = Query(None, description="Filter by CRM customer ID"),
+    pipeline_id: Optional[str] = Query(None, description="Filter by CRM pipeline deal ID"),
+    catalog_uuid_id: Optional[str] = Query(None, description="Filter by PMS catalog uuid_id"),
     # user: dict = Depends(get_current_user)
 ):
     """
@@ -206,6 +213,9 @@ async def list_stock_movements_endpoint(
             business_model=business_model,
             start_date=start_date,
             end_date=end_date,
+            customer_id=customer_id,
+            pipeline_id=pipeline_id,
+            catalog_uuid_id=catalog_uuid_id,
         )
         total = count_stock_movements(
             product_id=product_id,
@@ -214,6 +224,9 @@ async def list_stock_movements_endpoint(
             business_model=business_model,
             start_date=start_date,
             end_date=end_date,
+            customer_id=customer_id,
+            pipeline_id=pipeline_id,
+            catalog_uuid_id=catalog_uuid_id,
         )
         return StockMovementListResponse(
             movements=movements,
@@ -331,4 +344,39 @@ async def get_stock_availability_summary_endpoint(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting stock availability: {str(e)}")
+
+
+@router.get(
+    "/stock/availability/by-catalog/{catalog_uuid_id}",
+    response_model=StockCatalogAvailability,
+)
+async def get_stock_availability_by_catalog_endpoint(
+    catalog_uuid_id: str,
+    tds_id: Optional[str] = Query(None, description="Optional TDS id to include linked stock SKU"),
+):
+    """Stock totals for a PMS Chemical Master Data uuid_id."""
+    try:
+        return get_stock_availability_by_catalog(catalog_uuid_id, tds_id=tds_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting catalog stock availability: {str(e)}",
+        )
+
+
+@router.get(
+    "/stock/context/pipeline/{pipeline_id}",
+    response_model=StockPipelineContext,
+)
+async def get_pipeline_stock_context_endpoint(pipeline_id: str):
+    """CRM deal linked to PMS catalog stock and recent movements."""
+    try:
+        return get_pipeline_stock_context(pipeline_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting pipeline stock context: {str(e)}",
+        )
 

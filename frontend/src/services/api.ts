@@ -1491,6 +1491,7 @@ export interface Product {
   kg_per_unit: number;
   use_case: "sales" | "internal";
   tds_id?: string | null;
+  catalog_uuid_id?: string | null;
   tds_link?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -1516,6 +1517,7 @@ export interface ProductCreate {
   kg_per_unit: number;
   use_case: "sales" | "internal";
   tds_id?: string | null;
+  catalog_uuid_id?: string | null;
   tds_link?: string | null;
 }
 
@@ -1526,6 +1528,8 @@ export interface ProductUpdate {
   packaging?: string;
   kg_per_unit?: number;
   use_case?: "sales" | "internal";
+  tds_id?: string | null;
+  catalog_uuid_id?: string | null;
   tds_link?: string | null;
 }
 
@@ -1550,6 +1554,8 @@ export interface StockMovement {
   supplier_name?: string | null;
   customer_id?: string | null;
   customer_name?: string | null;
+  pipeline_id?: string | null;
+  catalog_uuid_id?: string | null;
   business_model?: "Stock" | "Direct Delivery" | null;
   brand?: string | null;
   reference?: string | null;
@@ -1578,6 +1584,8 @@ export interface StockMovementCreate {
   supplier_name?: string | null;
   customer_id?: string | null;
   customer_name?: string | null;
+  pipeline_id?: string | null;
+  catalog_uuid_id?: string | null;
   business_model?: "Stock" | "Direct Delivery" | null;
   brand?: string | null;
   reference?: string | null;
@@ -1602,6 +1610,8 @@ export interface StockMovementUpdate {
   supplier_name?: string | null;
   customer_id?: string | null;
   customer_name?: string | null;
+  pipeline_id?: string | null;
+  catalog_uuid_id?: string | null;
   business_model?: "Stock" | "Direct Delivery" | null;
   brand?: string | null;
   reference?: string | null;
@@ -1640,6 +1650,36 @@ export interface StockAvailabilitySummary {
   sez_kenya_available: number;
   nairobi_partner_available: number;
   total_available: number;
+}
+
+export interface StockCatalogAvailability {
+  catalog_uuid_id?: string | null;
+  product_name: string;
+  chemical: string;
+  stock_product_count: number;
+  stock_product_id?: string | null;
+  addis_ababa_stock: number;
+  sez_kenya_stock: number;
+  nairobi_partner_stock: number;
+  total_stock: number;
+  addis_ababa_available: number;
+  sez_kenya_available: number;
+  nairobi_partner_available: number;
+  total_available: number;
+}
+
+export interface StockPipelineContext {
+  pipeline_id: string;
+  customer_id: string;
+  customer_name?: string | null;
+  catalog_uuid_id?: string | null;
+  tds_id?: string | null;
+  product_name?: string | null;
+  deal_quantity?: number | null;
+  deal_unit?: string | null;
+  availability?: StockCatalogAvailability | null;
+  recent_movements: StockMovement[];
+  quantity_exceeds_addis_stock: boolean;
 }
 
 // Stock Product API functions
@@ -1688,6 +1728,9 @@ export async function fetchStockMovements(params?: {
   business_model?: string;
   start_date?: string;
   end_date?: string;
+  customer_id?: string;
+  pipeline_id?: string;
+  catalog_uuid_id?: string;
 }): Promise<StockMovementListResponse> {
   const response = await api.get<StockMovementListResponse>("/stock/movements", { params });
   return response.data;
@@ -1723,6 +1766,26 @@ export async function fetchStockAvailability(params?: {
   brand?: string;
 }): Promise<StockAvailabilitySummary[]> {
   const response = await api.get<StockAvailabilitySummary[]>("/stock/availability", { params });
+  return response.data;
+}
+
+export async function fetchStockAvailabilityByCatalog(
+  catalogUuidId: string,
+  params?: { tds_id?: string },
+): Promise<StockCatalogAvailability> {
+  const response = await api.get<StockCatalogAvailability>(
+    `/stock/availability/by-catalog/${catalogUuidId}`,
+    { params },
+  );
+  return response.data;
+}
+
+export async function fetchPipelineStockContext(
+  pipelineId: string,
+): Promise<StockPipelineContext> {
+  const response = await api.get<StockPipelineContext>(
+    `/stock/context/pipeline/${pipelineId}`,
+  );
   return response.data;
 }
 

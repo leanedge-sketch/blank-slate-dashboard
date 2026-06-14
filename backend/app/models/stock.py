@@ -35,6 +35,7 @@ class ProductBase(BaseModel):
     kg_per_unit: float = Field(gt=0, description="Kilograms per unit")
     use_case: str = Field(description="'sales' or 'internal'")
     tds_id: Optional[UUID] = Field(None, description="Link to TDS/product from PMS")
+    catalog_uuid_id: Optional[UUID] = Field(None, description="Link to PMS catalog uuid_id")
     tds_link: Optional[str] = None
 
 
@@ -52,6 +53,7 @@ class ProductUpdate(BaseModel):
     kg_per_unit: Optional[float] = Field(None, gt=0)
     use_case: Optional[str] = None
     tds_id: Optional[UUID] = None
+    catalog_uuid_id: Optional[UUID] = None
     tds_link: Optional[str] = None
 
 
@@ -139,6 +141,8 @@ class StockMovementBase(BaseModel):
     supplier_name: Optional[str] = Field(None, description="Supplier name (for display)")
     customer_id: Optional[UUID] = Field(None, description="Customer from CRM")
     customer_name: Optional[str] = Field(None, description="Customer name (for display)")
+    pipeline_id: Optional[UUID] = Field(None, description="CRM sales pipeline deal")
+    catalog_uuid_id: Optional[UUID] = Field(None, description="PMS catalog product uuid_id")
     
     # Business model (for Nairobi Partner)
     business_model: Optional[str] = Field(None, description="'Stock' or 'Direct Delivery' (for Nairobi Partner)")
@@ -204,6 +208,8 @@ class StockMovementUpdate(BaseModel):
     supplier_name: Optional[str] = None
     customer_id: Optional[UUID] = None
     customer_name: Optional[str] = None
+    pipeline_id: Optional[UUID] = None
+    catalog_uuid_id: Optional[UUID] = None
     business_model: Optional[str] = None
     brand: Optional[str] = None
     reference: Optional[str] = None
@@ -252,6 +258,38 @@ class StockAvailabilitySummary(BaseModel):
     sez_kenya_available: float
     nairobi_partner_available: float
     total_available: float
+
+
+class StockCatalogAvailability(BaseModel):
+    """Aggregated stock for a PMS catalog product (may span multiple stock SKUs)."""
+    catalog_uuid_id: Optional[str] = None
+    product_name: str
+    chemical: str
+    stock_product_count: int = 0
+    stock_product_id: Optional[UUID] = None
+    addis_ababa_stock: float = 0.0
+    sez_kenya_stock: float = 0.0
+    nairobi_partner_stock: float = 0.0
+    total_stock: float = 0.0
+    addis_ababa_available: float = 0.0
+    sez_kenya_available: float = 0.0
+    nairobi_partner_available: float = 0.0
+    total_available: float = 0.0
+
+
+class StockPipelineContext(BaseModel):
+    """CRM deal + PMS product linked to stock availability and recent movements."""
+    pipeline_id: UUID
+    customer_id: UUID
+    customer_name: Optional[str] = None
+    catalog_uuid_id: Optional[str] = None
+    tds_id: Optional[str] = None
+    product_name: Optional[str] = None
+    deal_quantity: Optional[float] = None
+    deal_unit: Optional[str] = None
+    availability: Optional[StockCatalogAvailability] = None
+    recent_movements: list[StockMovement] = []
+    quantity_exceeds_addis_stock: bool = False
 
 
 class NairobiPartnerStock(BaseModel):

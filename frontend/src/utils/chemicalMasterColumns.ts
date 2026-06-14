@@ -107,6 +107,27 @@ export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "tds_grade", label: "TDS Grade", format: () => "—" },
 ];
 
+/** Columns users can click to edit inline (read-only: #, ref, synced prices, TDS placeholders). */
+export const CHEMICAL_EDITABLE_COLUMN_KEYS = new Set<ChemicalMasterColumnKey>([
+  "vendor",
+  "sector",
+  "industry",
+  "product_category",
+  "product_name",
+  "generic_name",
+  "product_type",
+  "packing",
+  "hs_code",
+  "country_of_origin",
+  "price",
+  "typical_application",
+  "product_description",
+]);
+
+export function isChemicalColumnEditable(key: ChemicalMasterColumnKey): boolean {
+  return CHEMICAL_EDITABLE_COLUMN_KEYS.has(key);
+}
+
 export function chemicalMasterHeaderClass(col: ChemicalMasterColumn): string {
   const base =
     "px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap";
