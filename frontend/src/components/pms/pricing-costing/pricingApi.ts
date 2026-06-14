@@ -23,6 +23,7 @@ type ApiPricingRecord = {
   id: string;
   crm_partner_id: string;
   partner_kind?: PartnerKind | null;
+  supplier_partner_id?: string | null;
   pms_product_id: string;
   incoterm: string;
   location_id: string;
@@ -53,6 +54,7 @@ function mapRecord(row: ApiPricingRecord): PricingRecord {
   return {
     id: row.id,
     crmPartnerId: row.crm_partner_id,
+    supplierPartnerId: row.supplier_partner_id ?? null,
     partnerKind: row.partner_kind ?? "crm",
     pmsProductId: row.pms_product_id,
     incoterm: row.incoterm,
@@ -82,6 +84,7 @@ function toApiRecordInput(
   return {
     crm_partner_id: input.crmPartnerId,
     partner_kind: input.partnerKind,
+    supplier_partner_id: input.supplierPartnerId ?? null,
     pms_product_id: input.pmsProductId,
     incoterm: input.incoterm,
     location_id: input.locationId,
@@ -133,11 +136,15 @@ export function mapChemicalToPMSProduct(chemical: {
   product_name?: string | null;
   hs_code?: string | null;
   generic_name?: string | null;
+  vendor?: string | null;
+  partner_id?: string | null;
 }): PMSProduct {
   return {
     id: chemical.uuid_id ?? String(chemical.id),
     sku: chemical.hs_code || chemical.generic_name || `SKU-${chemical.id}`,
     name: chemical.product_name || chemical.generic_name || `Product ${chemical.id}`,
+    vendor: chemical.vendor ?? null,
+    partnerId: chemical.partner_id ?? null,
   };
 }
 
@@ -165,13 +172,16 @@ export async function createPricingLocationApi(
 
 export async function loadPricingRecords(params?: {
   crmPartnerId?: string;
+  pmsProductId?: string;
+  limit?: number;
 }): Promise<PricingRecord[]> {
   const res = await api.get<{ records: ApiPricingRecord[]; total: number }>(
     "/pms/pricing-junction/records",
     {
       params: {
-        limit: 5000,
+        limit: params?.limit ?? 5000,
         ...(params?.crmPartnerId && { crm_partner_id: params.crmPartnerId }),
+        ...(params?.pmsProductId && { pms_product_id: params.pmsProductId }),
       },
     },
   );
@@ -196,10 +206,16 @@ export async function createPricingRecordApi(
 export async function revisePricingRecordApi(
   sourceRecordId: string,
   input: PricingRecordInput,
+  options?: { offerUpdateOpenDeals?: boolean },
 ): Promise<PricingRecord> {
   const res = await api.post<ApiPricingRecord>(
     `/pms/pricing-junction/records/${sourceRecordId}/revise`,
     toApiRecordInput(input),
+    {
+      params: options?.offerUpdateOpenDeals
+        ? { offer_update_open_deals: true }
+        : undefined,
+    },
   );
   return mapRecord(res.data);
 }

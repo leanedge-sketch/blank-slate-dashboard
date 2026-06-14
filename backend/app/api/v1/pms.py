@@ -767,6 +767,7 @@ async def get_pricing_junction_records(
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     crm_partner_id: Optional[str] = Query(None),
+    pms_product_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
 ):
     try:
@@ -774,6 +775,7 @@ async def get_pricing_junction_records(
             limit=limit,
             offset=offset,
             crm_partner_id=crm_partner_id,
+            pms_product_id=pms_product_id,
             status=status,
         )
         total = count_pricing_junction_records(crm_partner_id=crm_partner_id)
@@ -796,10 +798,16 @@ async def create_pricing_junction_record_endpoint(body: PricingJunctionRecordCre
     status_code=201,
 )
 async def revise_pricing_junction_record_endpoint(
-    record_id: str, body: PricingJunctionRecordCreate
+    record_id: str,
+    body: PricingJunctionRecordCreate,
+    offer_update_open_deals: bool = Query(False),
 ):
     try:
-        return revise_pricing_junction_record(record_id, body)
+        return revise_pricing_junction_record(
+            record_id,
+            body,
+            offer_update_open_deals=offer_update_open_deals,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:

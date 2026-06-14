@@ -559,6 +559,11 @@ export interface ChemicalFullData {
   product_description?: string | null;
   hs_code?: string | null;
   price?: number | null;
+  /** Synced from Pricing & Costing — read-only on master data grid. */
+  current_price?: number | null;
+  current_price_currency?: string | null;
+  current_cost?: number | null;
+  current_cost_currency?: string | null;
   industry?: string | null;
   sector?: string | null;
   generic_name?: string | null;

@@ -95,6 +95,7 @@ export type PipelineDealFormValues = {
   currency: string;
   forex: string;
   incoterm: string;
+  pricing_record_id?: string;
 };
 
 export function pipelineToDealFormValues(
@@ -120,6 +121,8 @@ export function pipelineToDealFormValues(
     currency: pipeline.currency || "",
     forex: pipeline.forex || "",
     incoterm: pipeline.incoterm || "",
+    pricing_record_id:
+      typeof meta.pricing_record_id === "string" ? meta.pricing_record_id : "",
   };
 }
 
@@ -258,6 +261,10 @@ export function buildPipelineCommercialUpdatePayload(
   const metadata: Record<string, unknown> = { ...existingMetadata };
   if (dealForm.vendor_name.trim()) {
     metadata.vendor = dealForm.vendor_name.trim();
+  }
+  if (dealForm.pricing_record_id?.trim()) {
+    metadata.pricing_record_id = dealForm.pricing_record_id.trim();
+    metadata.pricing_locked = true;
   }
   return {
     chemical_type_id: dealForm.chemical_type_id.trim() || null,

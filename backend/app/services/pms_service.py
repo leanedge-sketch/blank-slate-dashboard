@@ -881,12 +881,15 @@ def list_pricing_junction_records(
     limit: int = 500,
     offset: int = 0,
     crm_partner_id: Optional[str] = None,
+    pms_product_id: Optional[str] = None,
     status: Optional[str] = None,
 ) -> List[PricingJunctionRecord]:
     supabase: Client = get_supabase_client()
     query = supabase.table("pricing_records").select("*")
     if crm_partner_id:
         query = query.eq("crm_partner_id", crm_partner_id)
+    if pms_product_id:
+        query = query.eq("pms_product_id", pms_product_id)
     if status:
         query = query.eq("status", status)
     response = (
@@ -936,7 +939,10 @@ def get_pricing_junction_record_by_id(record_id: str) -> Optional[PricingJunctio
 
 
 def revise_pricing_junction_record(
-    record_id: str, body: PricingJunctionRecordCreate
+    record_id: str,
+    body: PricingJunctionRecordCreate,
+    *,
+    offer_update_open_deals: bool = False,
 ) -> PricingJunctionRecord:
     """Archive the active row and insert a new active record (append-only update)."""
     supabase: Client = get_supabase_client()
@@ -961,7 +967,7 @@ def revise_pricing_junction_record(
     if not response.data:
         raise RuntimeError("Failed to create revised pricing record")
     record = PricingJunctionRecord(**response.data[0])
-    _sync_active_pricing_outward(record)
+    _sync_active_pricing_outward(record, offer_update_open_deals=offer_update_open_deals)
     return record
 
 
@@ -1008,24 +1014,23 @@ def _sync_pms_catalog_price(record: PricingJunctionRecord) -> None:
     if not chem or chem.id is None:
         return
     try:
-        from app.models.pms import ChemicalFullDataUpdate
-        from app.services.chemical_master_data import update_chemical_master_data
+        from app.services.chemical_master_data import sync_pricing_snapshot_to_catalog
 
-        update_chemical_master_data(
+        sync_pricing_snapshot_to_catalog(
             int(chem.id),
-            ChemicalFullDataUpdate(price=float(record.price_amount)),
+            price_amount=float(record.price_amount),
+            price_currency=str(record.price_currency),
+            cost_amount=float(record.cost_amount),
+            cost_currency=str(record.cost_currency),
         )
     except Exception as exc:
         logger.warning("PMS price sync failed for product %s: %s", record.pms_product_id, exc)
 
 
-def _sync_crm_customer_pricing(record: PricingJunctionRecord) -> None:
-    if record.status != "active" or record.partner_kind != "crm":
-        return
-    supabase: Client = get_supabase_client()
+def _pricing_record_snapshot(record: PricingJunctionRecord, location_label: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
-    location_label = _pricing_location_label(supabase, str(record.location_id))
-    snapshot = {
+    return {
+        "record_id": str(record.id),
         "pms_product_id": record.pms_product_id,
         "incoterm": record.incoterm,
         "location_label": location_label,
@@ -1034,25 +1039,165 @@ def _sync_crm_customer_pricing(record: PricingJunctionRecord) -> None:
         "price_currency": record.price_currency,
         "price_amount": float(record.price_amount),
         "valid_from": str(record.valid_from),
+        "valid_to": str(record.valid_to) if record.valid_to else None,
+        "status": record.status,
         "updated_at": now,
     }
+
+
+def _fetch_pricing_history_for_product(
+    buyer_id: str,
+    product_id: str,
+    limit: int = 10,
+) -> List[dict]:
+    rows = list_pricing_junction_records(
+        limit=limit,
+        crm_partner_id=buyer_id,
+        pms_product_id=product_id,
+    )
+    supabase: Client = get_supabase_client()
+    history: List[dict] = []
+    for row in rows:
+        location_label = _pricing_location_label(supabase, str(row.location_id))
+        history.append(_pricing_record_snapshot(row, location_label))
+    return history
+
+
+def _open_pipeline_ids_for_customer_product(
+    customer_id: str,
+    product_id: str,
+) -> List[str]:
+    """Pipeline deals that are still open for this customer + catalog product."""
+    closed = {"Closed", "Lost"}
+    try:
+        from app.services.sales_pipeline_service import list_sales_pipelines
+
+        pipelines = list_sales_pipelines(
+            limit=200,
+            offset=0,
+            customer_id=customer_id,
+            latest_per_deal=True,
+        )
+    except Exception as exc:
+        logger.warning("Could not list pipelines for pricing sync: %s", exc)
+        return []
+
+    ids: List[str] = []
+    product_key = str(product_id)
+    for pipeline in pipelines:
+        stage = (pipeline.stage or "").strip()
+        if stage in closed:
+            continue
+        chem = getattr(pipeline, "chemical_type_id", None)
+        if chem and str(chem) == product_key:
+            if pipeline.id:
+                ids.append(str(pipeline.id))
+    return ids
+
+
+def _flag_pipeline_pricing_updates(
+    supabase: Client,
+    pipeline_ids: List[str],
+    snapshot: dict,
+    previous_price: Optional[float],
+) -> None:
+    if not pipeline_ids:
+        return
+    pending = {
+        "new_pricing": snapshot,
+        "previous_price_amount": previous_price,
+        "notified_at": datetime.now(timezone.utc).isoformat(),
+    }
+    for pipeline_id in pipeline_ids:
+        try:
+            resp = (
+                supabase.table("sales_pipeline")
+                .select("metadata")
+                .eq("id", pipeline_id)
+                .limit(1)
+                .execute()
+            )
+            row = (resp.data or [{}])[0]
+            meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            meta = {**meta, "pending_pricing_update": pending}
+            (
+                supabase.table("sales_pipeline")
+                .update({"metadata": meta})
+                .eq("id", pipeline_id)
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not flag pending pricing on pipeline %s: %s",
+                pipeline_id,
+                exc,
+            )
+
+
+def _sync_crm_customer_pricing(
+    record: PricingJunctionRecord,
+    *,
+    offer_update_open_deals: bool = False,
+) -> None:
+    if record.status != "active" or record.partner_kind != "crm":
+        return
+    supabase: Client = get_supabase_client()
+    location_label = _pricing_location_label(supabase, str(record.location_id))
+    snapshot = _pricing_record_snapshot(record, location_label)
+    product_key = str(record.pms_product_id)
+    buyer_id = str(record.crm_partner_id)
+    history = _fetch_pricing_history_for_product(buyer_id, product_key, limit=10)
+    open_pipeline_ids = _open_pipeline_ids_for_customer_product(buyer_id, product_key)
     try:
         existing_resp = (
             supabase.table("customers")
             .select("latest_pricing_summary")
-            .eq("customer_id", str(record.crm_partner_id))
+            .eq("customer_id", buyer_id)
             .limit(1)
             .execute()
         )
         existing = (existing_resp.data or [{}])[0].get("latest_pricing_summary") or {}
         if not isinstance(existing, dict):
             existing = {}
-        by_product = existing.get("by_product") if isinstance(existing.get("by_product"), dict) else {}
-        by_product[str(record.pms_product_id)] = snapshot
+        by_product = (
+            existing.get("by_product")
+            if isinstance(existing.get("by_product"), dict)
+            else {}
+        )
+        prev_entry = by_product.get(product_key) if isinstance(by_product.get(product_key), dict) else {}
+        previous_price = prev_entry.get("price_amount")
+        if isinstance(previous_price, str):
+            try:
+                previous_price = float(previous_price)
+            except ValueError:
+                previous_price = None
+
+        by_product[product_key] = {
+            **snapshot,
+            "history": history,
+            "open_pipeline_count": len(open_pipeline_ids),
+        }
+        summary = {"by_product": by_product}
+        if offer_update_open_deals and open_pipeline_ids:
+            summary["pending_pricing_alerts"] = {
+                product_key: {
+                    "pipeline_ids": open_pipeline_ids,
+                    "new_pricing": snapshot,
+                    "previous_price_amount": previous_price,
+                    "notified_at": datetime.now(timezone.utc).isoformat(),
+                }
+            }
+            _flag_pipeline_pricing_updates(
+                supabase,
+                open_pipeline_ids,
+                snapshot,
+                float(previous_price) if previous_price is not None else None,
+            )
+
         (
             supabase.table("customers")
-            .update({"latest_pricing_summary": {"by_product": by_product}})
-            .eq("customer_id", str(record.crm_partner_id))
+            .update({"latest_pricing_summary": summary})
+            .eq("customer_id", buyer_id)
             .execute()
         )
     except Exception as exc:
@@ -1063,12 +1208,19 @@ def _sync_crm_customer_pricing(record: PricingJunctionRecord) -> None:
         )
 
 
-def _sync_active_pricing_outward(record: PricingJunctionRecord) -> None:
+def _sync_active_pricing_outward(
+    record: PricingJunctionRecord,
+    *,
+    offer_update_open_deals: bool = False,
+) -> None:
     """Push latest active sell price to PMS catalog and CRM customer snapshot."""
     if record.status != "active":
         return
     _sync_pms_catalog_price(record)
-    _sync_crm_customer_pricing(record)
+    _sync_crm_customer_pricing(
+        record,
+        offer_update_open_deals=offer_update_open_deals,
+    )
 
 
 def delete_pricing_junction_record(record_id: str) -> bool:

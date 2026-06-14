@@ -317,6 +317,7 @@ class PricingLocationListResponse(BaseModel):
 class PricingJunctionRecordBase(BaseModel):
     crm_partner_id: UUID
     partner_kind: str = "crm"
+    supplier_partner_id: Optional[UUID] = None
     pms_product_id: str
     incoterm: str
     location_id: UUID
@@ -415,6 +416,10 @@ class ChemicalFullDataBase(BaseModel):
     product_description: Optional[str] = None
     hs_code: Optional[str] = None
     price: Optional[float] = None
+    current_price: Optional[float] = None
+    current_price_currency: Optional[str] = None
+    current_cost: Optional[float] = None
+    current_cost_currency: Optional[str] = None
     industry: Optional[str] = None
     sector: Optional[str] = None
     generic_name: Optional[str] = None
@@ -438,6 +443,10 @@ class ChemicalFullDataUpdate(BaseModel):
     product_description: Optional[str] = None
     hs_code: Optional[str] = None
     price: Optional[float] = None
+    current_price: Optional[float] = None
+    current_price_currency: Optional[str] = None
+    current_cost: Optional[float] = None
+    current_cost_currency: Optional[str] = None
     industry: Optional[str] = None
     sector: Optional[str] = None
     generic_name: Optional[str] = None

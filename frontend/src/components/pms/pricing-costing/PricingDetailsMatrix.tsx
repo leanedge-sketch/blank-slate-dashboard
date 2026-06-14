@@ -35,7 +35,11 @@ type PricingDetailsMatrixProps = {
   locations: PricingLocation[];
   onAddLocation: (location: PricingLocationInput) => Promise<string>;
   onAddRecord: (input: PricingRecordInput) => void | Promise<void>;
-  onUpdatePricing: (sourceRecordId: string, input: PricingRecordInput) => void | Promise<void>;
+  onUpdatePricing: (
+    sourceRecordId: string,
+    input: PricingRecordInput,
+    options?: { offerUpdateOpenDeals?: boolean },
+  ) => void | Promise<void>;
   onDeleteRecord: (recordId: string) => void | Promise<void>;
   readOnly?: boolean;
 };
@@ -251,10 +255,15 @@ export function PricingDetailsMatrix({
     setOpenMenuId(null);
   }
 
-  async function handleSave(input: PricingRecordInput) {
+  async function handleSave(
+    input: PricingRecordInput,
+    options?: { applyPolicy?: import("./PricingEntryDrawer").PricingApplyPolicy },
+  ) {
     try {
       if (drawerMode === "update" && sourceRecord) {
-        await onUpdatePricing(sourceRecord.id, input);
+        await onUpdatePricing(sourceRecord.id, input, {
+          offerUpdateOpenDeals: options?.applyPolicy === "offer_update_open_deals",
+        });
       } else {
         await onAddRecord(input);
         setActiveLocationId(input.locationId);

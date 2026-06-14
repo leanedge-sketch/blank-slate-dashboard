@@ -331,7 +331,12 @@ export function PricingCostingView() {
 
   const partnerRecords = useMemo(
 
-    () => pricingRecords.filter((r) => r.crmPartnerId === selectedPartnerId),
+    () =>
+      pricingRecords.filter(
+        (r) =>
+          r.crmPartnerId === selectedPartnerId ||
+          r.supplierPartnerId === selectedPartnerId,
+      ),
 
     [pricingRecords, selectedPartnerId],
 
@@ -389,7 +394,11 @@ export function PricingCostingView() {
 
   const handleUpdatePricing = useCallback(
 
-    async (sourceRecordId: string, input: PricingRecordInput) => {
+    async (
+      sourceRecordId: string,
+      input: PricingRecordInput,
+      options?: { offerUpdateOpenDeals?: boolean },
+    ) => {
 
       setSaving(true);
 
@@ -397,7 +406,9 @@ export function PricingCostingView() {
 
       try {
 
-        await revisePricingRecordApi(sourceRecordId, input);
+        await revisePricingRecordApi(sourceRecordId, input, {
+          offerUpdateOpenDeals: options?.offerUpdateOpenDeals,
+        });
 
         await reloadRecords();
 

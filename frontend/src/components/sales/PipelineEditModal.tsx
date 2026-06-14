@@ -142,6 +142,7 @@ export function PipelineEditModal({
           <PipelineDealFields
             form={form}
             onChange={setForm}
+            customerId={pipeline.customer_id ? String(pipeline.customer_id) : undefined}
             requiredLevel={
               pipelineStageRequiresProductAndAmount(pipeline.stage)
                 ? "product_amount"

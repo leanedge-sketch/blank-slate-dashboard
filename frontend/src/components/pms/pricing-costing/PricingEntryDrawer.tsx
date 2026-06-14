@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Archive, X } from "lucide-react";
 import { CurrencyConverterWidget } from "./CurrencyConverterWidget";
+import { CurrencySelect } from "./CurrencySelect";
 import { LocationPicker } from "./LocationPicker";
 import type {
   CRMPartner,
@@ -12,7 +13,8 @@ import type {
 } from "./types";
 
 const INCOTERMS = ["EXW", "FCA", "FOB", "CFR", "CIF", "DAP"] as const;
-const CURRENCIES = ["USD", "EUR", "GBP", "ETB", "KES", "CNY"] as const;
+
+export type PricingApplyPolicy = "keep_open_deals" | "offer_update_open_deals";
 
 type PricingEntryDrawerProps = {
   open: boolean;
@@ -25,15 +27,21 @@ type PricingEntryDrawerProps = {
   locations: PricingLocation[];
   onAddLocation: (location: PricingLocationInput) => Promise<string>;
   onClose: () => void;
-  onSave: (input: PricingRecordInput) => void | Promise<void>;
+  onSave: (
+    input: PricingRecordInput,
+    options?: { applyPolicy?: PricingApplyPolicy },
+  ) => void | Promise<void>;
 };
 
 function emptyForm(
   defaultPartnerId?: string | null,
   defaultLocationId?: string | null,
-): PricingRecordInput {
+): PricingRecordInput & { buyerId: string; supplierId: string } {
   return {
+    buyerId: defaultPartnerId ?? "",
+    supplierId: "",
     crmPartnerId: defaultPartnerId ?? "",
+    supplierPartnerId: null,
     partnerKind: "crm",
     pmsProductId: "",
     incoterm: "FOB",
@@ -46,6 +54,20 @@ function emptyForm(
     exchangeRateUsed: null,
     baseCurrency: null,
   };
+}
+
+function filterProductsBySupplier(
+  products: PMSProduct[],
+  supplier: CRMPartner | undefined,
+): PMSProduct[] {
+  if (!supplier) return products;
+  const name = supplier.name.trim().toLowerCase();
+  const filtered = products.filter((p) => {
+    if (p.partnerId && p.partnerId === supplier.id) return true;
+    if (p.vendor && p.vendor.trim().toLowerCase() === name) return true;
+    return false;
+  });
+  return filtered.length > 0 ? filtered : products;
 }
 
 export function PricingEntryDrawer({
@@ -61,20 +83,44 @@ export function PricingEntryDrawer({
   onClose,
   onSave,
 }: PricingEntryDrawerProps) {
-  const [form, setForm] = useState<PricingRecordInput>(
-    emptyForm(defaultPartnerId, defaultLocationId),
+  const buyers = useMemo(
+    () => crmPartners.filter((p) => p.partnerKind === "crm"),
+    [crmPartners],
   );
+  const suppliers = useMemo(
+    () => crmPartners.filter((p) => p.partnerKind === "pms"),
+    [crmPartners],
+  );
+
+  const [form, setForm] = useState(emptyForm(defaultPartnerId, defaultLocationId));
   const [needsConversion, setNeedsConversion] = useState(false);
   const [marginCurrency, setMarginCurrency] = useState("");
+  const [applyPolicy, setApplyPolicy] = useState<PricingApplyPolicy>("keep_open_deals");
+  const [converterFrom, setConverterFrom] = useState("USD");
+  const [converterTo, setConverterTo] = useState("ETB");
+
+  const selectedSupplier = suppliers.find((s) => s.id === form.supplierId);
+  const productOptions = useMemo(
+    () => filterProductsBySupplier(pmsProducts, selectedSupplier),
+    [pmsProducts, selectedSupplier],
+  );
 
   const currenciesDiffer = form.costCurrency !== form.priceCurrency;
 
   useEffect(() => {
     if (!open) return;
     if (mode === "update" && sourceRecord) {
+      const buyerId =
+        sourceRecord.partnerKind === "crm" ? sourceRecord.crmPartnerId : "";
+      const supplierId =
+        sourceRecord.supplierPartnerId ??
+        (sourceRecord.partnerKind === "pms" ? sourceRecord.crmPartnerId : "");
       setForm({
-        crmPartnerId: sourceRecord.crmPartnerId,
-        partnerKind: sourceRecord.partnerKind,
+        buyerId,
+        supplierId: supplierId ?? "",
+        crmPartnerId: buyerId || sourceRecord.crmPartnerId,
+        supplierPartnerId: supplierId || null,
+        partnerKind: buyerId ? "crm" : sourceRecord.partnerKind,
         pmsProductId: sourceRecord.pmsProductId,
         incoterm: sourceRecord.incoterm,
         locationId: sourceRecord.locationId,
@@ -92,14 +138,24 @@ export function PricingEntryDrawer({
           sourceRecord.priceCurrency ??
           sourceRecord.costCurrency,
       );
+      setConverterFrom(sourceRecord.costCurrency);
+      setConverterTo(sourceRecord.priceCurrency);
+      setApplyPolicy("keep_open_deals");
     } else {
       const defaultPartner = crmPartners.find((p) => p.id === defaultPartnerId);
+      const isBuyer = defaultPartner?.partnerKind === "crm";
       setForm({
         ...emptyForm(defaultPartnerId, defaultLocationId ?? locations[0]?.id),
-        partnerKind: defaultPartner?.partnerKind ?? "crm",
+        buyerId: isBuyer ? defaultPartnerId ?? "" : "",
+        supplierId: !isBuyer && defaultPartner ? defaultPartner.id : "",
+        supplierPartnerId: !isBuyer && defaultPartner ? defaultPartner.id : null,
+        partnerKind: isBuyer ? "crm" : "pms",
       });
       setNeedsConversion(false);
       setMarginCurrency("");
+      setConverterFrom("USD");
+      setConverterTo("ETB");
+      setApplyPolicy("keep_open_deals");
     }
   }, [open, mode, sourceRecord, defaultPartnerId, defaultLocationId, locations, crmPartners]);
 
@@ -110,33 +166,33 @@ export function PricingEntryDrawer({
     } else if (!marginCurrency) {
       setMarginCurrency(form.priceCurrency);
     }
+    setConverterFrom(form.costCurrency);
+    setConverterTo(form.priceCurrency);
   }, [currenciesDiffer, form.priceCurrency, form.costCurrency, marginCurrency]);
 
   if (!open) return null;
 
-  function updateCurrencyField(
-    field: "costCurrency" | "priceCurrency",
-    value: string,
-  ) {
+  function syncCounterpartyFields(next: {
+    buyerId?: string;
+    supplierId?: string;
+  }) {
     setForm((prev) => {
-      const next = { ...prev, [field]: value };
-      if (next.costCurrency === next.priceCurrency) {
-        return {
-          ...next,
-          needsCurrencyConversion: false,
-          exchangeRateUsed: null,
-          baseCurrency: next.priceCurrency,
-        };
-      }
+      const buyerId = next.buyerId ?? prev.buyerId;
+      const supplierId = next.supplierId ?? prev.supplierId;
+      const primaryId = buyerId || supplierId;
       return {
-        ...next,
-        exchangeRateUsed: null,
-        baseCurrency: null,
+        ...prev,
+        buyerId,
+        supplierId,
+        crmPartnerId: primaryId,
+        supplierPartnerId: supplierId || null,
+        partnerKind: buyerId ? "crm" : "pms",
+        pmsProductId:
+          next.supplierId !== undefined && next.supplierId !== prev.supplierId
+            ? ""
+            : prev.pmsProductId,
       };
     });
-    if (field === "priceCurrency" || value === form.costCurrency) {
-      setMarginCurrency(value === form.costCurrency ? form.priceCurrency : value);
-    }
   }
 
   function handleAddLocation(input: PricingLocationInput) {
@@ -147,13 +203,16 @@ export function PricingEntryDrawer({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!form.crmPartnerId || !form.pmsProductId || !form.locationId) return;
+    if ((!form.buyerId && !form.supplierId) || !form.pmsProductId || !form.locationId) return;
 
     let payload: PricingRecordInput;
 
     if (!currenciesDiffer) {
       payload = {
         ...form,
+        crmPartnerId: form.buyerId || form.supplierId,
+        supplierPartnerId: form.supplierId || null,
+        partnerKind: form.buyerId ? "crm" : "pms",
         needsCurrencyConversion: false,
         exchangeRateUsed: null,
         baseCurrency: form.priceCurrency,
@@ -161,6 +220,9 @@ export function PricingEntryDrawer({
     } else if (!needsConversion) {
       payload = {
         ...form,
+        crmPartnerId: form.buyerId || form.supplierId,
+        supplierPartnerId: form.supplierId || null,
+        partnerKind: form.buyerId ? "crm" : "pms",
         needsCurrencyConversion: false,
         exchangeRateUsed: null,
         baseCurrency: null,
@@ -168,13 +230,16 @@ export function PricingEntryDrawer({
     } else {
       payload = {
         ...form,
+        crmPartnerId: form.buyerId || form.supplierId,
+        supplierPartnerId: form.supplierId || null,
+        partnerKind: form.buyerId ? "crm" : "pms",
         needsCurrencyConversion: true,
         baseCurrency: marginCurrency || form.priceCurrency,
         exchangeRateUsed: form.exchangeRateUsed,
       };
     }
 
-    await onSave(payload);
+    await onSave(payload, { applyPolicy: mode === "update" ? applyPolicy : undefined });
     onClose();
   }
 
@@ -188,7 +253,7 @@ export function PricingEntryDrawer({
         aria-hidden
       />
       <aside
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-2xl"
         role="dialog"
         aria-labelledby="pricing-drawer-title"
       >
@@ -198,9 +263,7 @@ export function PricingEntryDrawer({
               {isUpdate ? "Update pricing" : "Add pricing entry"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              {isUpdate
-                ? "Creates a new active price and archives the current record."
-                : "Link a CRM partner to a PMS product with cost and sell price."}
+              Select buyer and supplier separately, then choose the product.
             </p>
           </div>
           <button
@@ -217,56 +280,73 @@ export function PricingEntryDrawer({
           <div className="mx-5 mt-4 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <Archive className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p>
-              Submitting will set the current price&apos;s end date to today and mark it{" "}
-              <span className="font-semibold">historical</span>. A new{" "}
-              <span className="font-semibold">active</span> record will be created with
-              today as the start date.
+              Submitting archives the current row and creates a new active record.
             </p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">
-                Counterparty (CRM buyer or PMS provider)
-              </label>
-              <select
-                required
-                value={form.crmPartnerId}
-                disabled={isUpdate}
-                onChange={(e) => {
-                  const partner = crmPartners.find((p) => p.id === e.target.value);
-                  setForm({
-                    ...form,
-                    crmPartnerId: e.target.value,
-                    partnerKind: partner?.partnerKind ?? "crm",
-                  });
-                }}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
-              >
-                <option value="">Select partner…</option>
-                {crmPartners.map((p) => (
-                  <option key={`${p.partnerKind}-${p.id}`} value={p.id}>
-                    [{p.type}] {p.name}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  Buyer
+                </label>
+                <select
+                  value={form.buyerId}
+                  disabled={isUpdate}
+                  onChange={(e) => syncCounterpartyFields({ buyerId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
+                >
+                  <option value="">Select buyer…</option>
+                  {buyers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  Supplier
+                </label>
+                <select
+                  value={form.supplierId}
+                  disabled={isUpdate}
+                  onChange={(e) => syncCounterpartyFields({ supplierId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
+                >
+                  <option value="">Select supplier…</option>
+                  {suppliers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+            {!form.buyerId && !form.supplierId ? (
+              <p className="text-xs text-amber-700">Select at least a buyer or a supplier.</p>
+            ) : null}
 
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                PMS product
+                Product
+                {selectedSupplier ? (
+                  <span className="ml-1 font-normal text-slate-400">
+                    — filtered for {selectedSupplier.name}
+                  </span>
+                ) : null}
               </label>
               <select
                 required
                 value={form.pmsProductId}
                 disabled={isUpdate}
                 onChange={(e) => setForm({ ...form, pmsProductId: e.target.value })}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30"
               >
                 <option value="">Select product…</option>
-                {pmsProducts.map((p) => (
+                {productOptions.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.sku} — {p.name}
                   </option>
@@ -303,26 +383,16 @@ export function PricingEntryDrawer({
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Cost currency & amount
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Currency you pay / acquire in
+                Cost
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">Currency</label>
-                  <select
-                    value={form.costCurrency}
-                    onChange={(e) => updateCurrencyField("costCurrency", e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <CurrencySelect
+                  label="Currency"
+                  value={form.costCurrency}
+                  onChange={(costCurrency) =>
+                    setForm((prev) => ({ ...prev, costCurrency, exchangeRateUsed: null }))
+                  }
+                />
                 <div>
                   <label className="mb-1 block text-xs text-slate-600">Amount</label>
                   <input
@@ -332,10 +402,7 @@ export function PricingEntryDrawer({
                     required
                     value={form.costAmount}
                     onChange={(e) =>
-                      setForm({
-                        ...form,
-                        costAmount: Number(e.target.value) || 0,
-                      })
+                      setForm({ ...form, costAmount: Number(e.target.value) || 0 })
                     }
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                   />
@@ -345,26 +412,16 @@ export function PricingEntryDrawer({
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Price currency & amount
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Currency you sell to the partner in
+                Sell price
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">Currency</label>
-                  <select
-                    value={form.priceCurrency}
-                    onChange={(e) => updateCurrencyField("priceCurrency", e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <CurrencySelect
+                  label="Currency"
+                  value={form.priceCurrency}
+                  onChange={(priceCurrency) =>
+                    setForm((prev) => ({ ...prev, priceCurrency, exchangeRateUsed: null }))
+                  }
+                />
                 <div>
                   <label className="mb-1 block text-xs text-slate-600">Amount</label>
                   <input
@@ -374,10 +431,7 @@ export function PricingEntryDrawer({
                     required
                     value={form.priceAmount}
                     onChange={(e) =>
-                      setForm({
-                        ...form,
-                        priceAmount: Number(e.target.value) || 0,
-                      })
+                      setForm({ ...form, priceAmount: Number(e.target.value) || 0 })
                     }
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                   />
@@ -385,18 +439,14 @@ export function PricingEntryDrawer({
               </div>
             </div>
 
-            {currenciesDiffer && (
+            {(currenciesDiffer || needsConversion) && (
               <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-                <p className="text-xs font-medium text-slate-700">
-                  Cost is in <span className="font-semibold">{form.costCurrency}</span> and
-                  price is in <span className="font-semibold">{form.priceCurrency}</span>.
-                </p>
                 <fieldset>
                   <legend className="mb-2 text-xs font-medium text-slate-600">
-                    Is currency conversion needed for margin calculation?
+                    Use currency conversion for margin?
                   </legend>
                   <div className="flex gap-4">
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
                       <input
                         type="radio"
                         name="needs-conversion"
@@ -409,11 +459,10 @@ export function PricingEntryDrawer({
                             baseCurrency: null,
                           }));
                         }}
-                        className="text-orange-600 focus:ring-orange-500"
                       />
                       No
                     </label>
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
                       <input
                         type="radio"
                         name="needs-conversion"
@@ -422,7 +471,6 @@ export function PricingEntryDrawer({
                           setNeedsConversion(true);
                           setMarginCurrency(form.priceCurrency);
                         }}
-                        className="text-orange-600 focus:ring-orange-500"
                       />
                       Yes
                     </label>
@@ -442,30 +490,70 @@ export function PricingEntryDrawer({
                       >
                         <option value={form.costCurrency}>{form.costCurrency}</option>
                         <option value={form.priceCurrency}>{form.priceCurrency}</option>
+                        {converterFrom !== form.costCurrency &&
+                        converterFrom !== form.priceCurrency ? (
+                          <option value={converterFrom}>{converterFrom}</option>
+                        ) : null}
+                        {converterTo !== form.costCurrency &&
+                        converterTo !== form.priceCurrency ? (
+                          <option value={converterTo}>{converterTo}</option>
+                        ) : null}
                       </select>
                     </div>
-                    <div>
-                      <p className="mb-2 text-xs text-slate-500">
-                        Exchange rate <span className="text-slate-400">(optional)</span> — lock
-                        a rate for this record if known
-                      </p>
-                      <CurrencyConverterWidget
-                        fromCurrency={form.costCurrency}
-                        toCurrency={form.priceCurrency}
-                        amount={form.costAmount}
-                        rate={form.exchangeRateUsed}
-                        onRateChange={(rate) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            exchangeRateUsed: rate,
-                          }))
-                        }
-                      />
-                    </div>
+                    <CurrencyConverterWidget
+                      fromCurrency={converterFrom}
+                      toCurrency={converterTo}
+                      amount={form.costAmount}
+                      rate={form.exchangeRateUsed}
+                      onRateChange={(rate) =>
+                        setForm((prev) => ({ ...prev, exchangeRateUsed: rate }))
+                      }
+                      onFromCurrencyChange={(c) => {
+                        setConverterFrom(c);
+                        setForm((prev) => ({ ...prev, costCurrency: c, exchangeRateUsed: null }));
+                      }}
+                      onToCurrencyChange={(c) => {
+                        setConverterTo(c);
+                        setForm((prev) => ({ ...prev, priceCurrency: c, exchangeRateUsed: null }));
+                      }}
+                    />
                   </div>
                 )}
               </div>
             )}
+
+            {isUpdate && form.buyerId ? (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/80 p-3 space-y-2">
+                <p className="text-xs font-semibold text-blue-900">Open CRM deals</p>
+                <p className="text-[11px] text-blue-800">
+                  Open pipeline deals keep their locked price by default. Choose whether to
+                  notify owners about the new price.
+                </p>
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-blue-900">
+                  <input
+                    type="radio"
+                    name="apply-policy"
+                    checked={applyPolicy === "keep_open_deals"}
+                    onChange={() => setApplyPolicy("keep_open_deals")}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Keep existing pricing on open deals{" "}
+                    <span className="text-xs text-blue-700">(default)</span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-blue-900">
+                  <input
+                    type="radio"
+                    name="apply-policy"
+                    checked={applyPolicy === "offer_update_open_deals"}
+                    onChange={() => setApplyPolicy("offer_update_open_deals")}
+                    className="mt-0.5"
+                  />
+                  <span>Notify deal owners — they can accept new pricing or keep the old</span>
+                </label>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-4">

@@ -52,7 +52,7 @@ import {
   Download,
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
-import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
+import { PipelinePricingUpdateBanner } from "../../components/sales/PipelinePricingUpdateBanner";
 import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
@@ -134,6 +134,7 @@ export function PipelineDetailPage() {
     null,
   );
   const [updating, setUpdating] = useState(false);
+  const [pricingBannerBusy, setPricingBannerBusy] = useState(false);
 
   const stageUpdateMap = useMemo(
     () => buildPipelineStageUpdateMap(pipelineVersions),
@@ -648,6 +649,36 @@ export function PipelineDetailPage() {
     }
   }
 
+  async function resolvePendingPricing(acceptNew: boolean) {
+    const head = currentPipeline ?? selectedPipeline;
+    if (!head?.id) return;
+    setPricingBannerBusy(true);
+    try {
+      const meta = {
+        ...((head.metadata || {}) as Record<string, unknown>),
+      };
+      const pending = meta.pending_pricing_update as
+        | {
+            new_pricing?: { price_amount?: number; price_currency?: string };
+          }
+        | undefined;
+      delete meta.pending_pricing_update;
+      const payload: SalesPipelineUpdate = { metadata: meta };
+      if (acceptNew && pending?.new_pricing?.price_amount != null) {
+        payload.unit_price = pending.new_pricing.price_amount;
+        if (pending.new_pricing.price_currency) {
+          payload.currency = pending.new_pricing.price_currency;
+        }
+      }
+      await updateSalesPipeline(String(head.id), payload);
+      await loadPipelineDetails();
+    } catch (err) {
+      alert(formatApiErrorDetail(err, "Could not update deal pricing"));
+    } finally {
+      setPricingBannerBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 flex items-center justify-center">
@@ -776,6 +807,14 @@ export function PipelineDetailPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
+        {currentPipeline ? (
+          <PipelinePricingUpdateBanner
+            pipeline={currentPipeline}
+            busy={pricingBannerBusy}
+            onAcceptNew={() => resolvePendingPricing(true)}
+            onKeepOld={() => resolvePendingPricing(false)}
+          />
+        ) : null}
         {/* Summary Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           {/* Product Card */}
@@ -1827,6 +1866,7 @@ export function PipelineDetailPage() {
                   </p>
                   <PipelineDealFields
                     form={updateDealForm}
+                    customerId={selectedPipeline.customer_id}
                     onChange={(next) => {
                       setUpdateDealForm(next);
                       const amt =
@@ -1852,6 +1892,7 @@ export function PipelineDetailPage() {
                     </p>
                     <PipelineDealFields
                       form={updateDealForm}
+                      customerId={selectedPipeline.customer_id}
                       onChange={(next) => {
                         setUpdateDealForm(next);
                         const amt =

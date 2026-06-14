@@ -51,6 +51,29 @@ function formatPrice(row: ChemicalFullData): string {
   }).format(row.price);
 }
 
+function formatMoneyAmount(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+): string {
+  if (amount == null || amount === undefined) return "—";
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return currency?.trim() ? `${formatted} ${currency.trim()}` : formatted;
+}
+
+function formatCurrentPrice(row: ChemicalFullData): string {
+  if (row.current_price != null) {
+    return formatMoneyAmount(row.current_price, row.current_price_currency);
+  }
+  return formatPrice(row);
+}
+
+function formatCurrentCost(row: ChemicalFullData): string {
+  return formatMoneyAmount(row.current_cost, row.current_cost_currency);
+}
+
 export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "line_no", label: "#", numeric: true },
   { key: "id", label: "Ref", numeric: true },
@@ -64,7 +87,19 @@ export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "packing", label: "Packaging" },
   { key: "hs_code", label: "HS Code" },
   { key: "country_of_origin", label: "Country of Origin" },
-  { key: "price", label: "Price", numeric: true, format: formatPrice },
+  { key: "price", label: "List price", numeric: true, format: formatPrice },
+  {
+    key: "current_price",
+    label: "Current price",
+    numeric: true,
+    format: formatCurrentPrice,
+  },
+  {
+    key: "current_cost",
+    label: "Current cost",
+    numeric: true,
+    format: formatCurrentCost,
+  },
   { key: "typical_application", label: "Typical Application" },
   { key: "product_description", label: "Description" },
   { key: "tds_document", label: "TDS Document", format: () => "—" },

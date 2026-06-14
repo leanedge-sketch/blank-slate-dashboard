@@ -10,6 +10,7 @@ export type PartnerKind = "crm" | "pms";
 export interface PricingRecord {
   id: string;
   crmPartnerId: string;
+  supplierPartnerId?: string | null;
   partnerKind: PartnerKind;
   pmsProductId: string;
   incoterm: string;
@@ -37,6 +38,8 @@ export interface PMSProduct {
   id: string;
   sku: string;
   name: string;
+  vendor?: string | null;
+  partnerId?: string | null;
 }
 
 export type PricingRecordInput = Omit<

@@ -59,7 +59,22 @@ _BASE_DB_COLUMNS = frozenset(
 
 # Added by docs/0005_chemical_master_data_extend.sql when that migration is applied.
 _OPTIONAL_DB_COLUMNS = frozenset(
-    {"Industry", "Price", "Typical_Application", "Product_Description", "Partner_ID", "uuid_id"}
+    {
+        "Industry",
+        "Price",
+        "Typical_Application",
+        "Product_Description",
+        "Partner_ID",
+        "uuid_id",
+        "Current_Price",
+        "Current_Price_Currency",
+        "Current_Cost",
+        "Current_Cost_Currency",
+        "current_price",
+        "current_price_currency",
+        "current_cost",
+        "current_cost_currency",
+    }
 )
 
 # API field -> DB column
@@ -79,6 +94,10 @@ _API_TO_DB = {
     "typical_application": "Typical_Application",
     "product_description": "Product_Description",
     "price": "Price",
+    "current_price": "Current_Price",
+    "current_price_currency": "Current_Price_Currency",
+    "current_cost": "Current_Cost",
+    "current_cost_currency": "Current_Cost_Currency",
     "partner_id": "Partner_ID",
     "uuid_id": "uuid_id",
 }
@@ -171,6 +190,18 @@ def row_to_api(row: Dict[str, Any]) -> ChemicalFullData:
             data["industry"] = row["Industry"]
         elif row.get("Product_Type"):
             data["industry"] = row["Product_Type"]
+    # Support PascalCase or lowercase pricing snapshot columns.
+    for pascal, snake, api_key in (
+        ("Current_Price", "current_price", "current_price"),
+        ("Current_Price_Currency", "current_price_currency", "current_price_currency"),
+        ("Current_Cost", "current_cost", "current_cost"),
+        ("Current_Cost_Currency", "current_cost_currency", "current_cost_currency"),
+    ):
+        if data.get(api_key) is None:
+            if row.get(pascal) is not None:
+                data[api_key] = row[pascal]
+            elif row.get(snake) is not None:
+                data[api_key] = row[snake]
     return ChemicalFullData(**data)
 
 
@@ -480,6 +511,56 @@ def update_chemical_master_data(
 
     refreshed = refresh_catalog_row(chemical_id)
     return refreshed or row_to_api(response.data[0])
+
+
+def sync_pricing_snapshot_to_catalog(
+    chemical_id: int,
+    *,
+    price_amount: float,
+    price_currency: str,
+    cost_amount: float,
+    cost_currency: str,
+) -> None:
+    """Write latest Pricing & Costing sell/cost snapshot onto Chemical_Master_Data."""
+    optional = _probe_live_optional_columns(_read_client())
+    payload: Dict[str, Any] = {}
+    if "Price" in optional:
+        payload["price"] = price_amount
+    if "Current_Price" in optional:
+        payload["current_price"] = price_amount
+    if "Current_Price_Currency" in optional:
+        payload["current_price_currency"] = price_currency
+    if "Current_Cost" in optional:
+        payload["current_cost"] = cost_amount
+    if "Current_Cost_Currency" in optional:
+        payload["current_cost_currency"] = cost_currency
+    if not payload:
+        return
+    client = _master_client()
+    db_payload: Dict[str, Any] = {}
+    for api_key, db_pascal in (
+        ("current_price", "Current_Price"),
+        ("current_price_currency", "Current_Price_Currency"),
+        ("current_cost", "Current_Cost"),
+        ("current_cost_currency", "Current_Cost_Currency"),
+        ("price", "Price"),
+    ):
+        if api_key not in payload:
+            continue
+        snake = api_key
+        if db_pascal in optional:
+            db_payload[db_pascal] = payload[api_key]
+        elif snake in optional:
+            db_payload[snake] = payload[api_key]
+    if not db_payload:
+        return
+    _update_master_row(client, chemical_id, _convert_uuids(db_payload))
+    try:
+        from app.services.catalog_sync_service import refresh_catalog_row
+
+        refresh_catalog_row(chemical_id)
+    except Exception as exc:
+        logger.debug("Catalog refresh after pricing sync skipped: %s", exc)
 
 
 def delete_chemical_master_data(chemical_id: int) -> bool:

@@ -7,6 +7,7 @@ import {
   fetchVendors,
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import { PipelinePricingSelect } from "./PipelinePricingSelect";
 import type { PipelineDealFormValues } from "../../utils/pipelineProduct";
 
 const inputClass =
@@ -21,12 +22,14 @@ function RequiredMark({ show }: { show: boolean }) {
 export function PipelineDealFields({
   form,
   onChange,
+  customerId,
   requiredLevel = "none",
   showAmount = true,
   fieldsMode = "all",
 }: {
   form: PipelineDealFormValues;
   onChange: (form: PipelineDealFormValues) => void;
+  customerId?: string | null;
   requiredLevel?: "none" | "product_amount" | "full";
   showAmount?: boolean;
   /** When product_amount, only product, unit, and quantity are shown. */
@@ -261,6 +264,26 @@ export function PipelineDealFields({
           />
         </div>
       )}
+
+      {showAllFields && customerId && form.chemical_type_id ? (
+        <PipelinePricingSelect
+          customerId={customerId}
+          productId={form.chemical_type_id}
+          value={form.pricing_record_id ?? null}
+          onChange={(sel) => {
+            if (!sel) {
+              onChange({ ...form, pricing_record_id: "" });
+              return;
+            }
+            onChange({
+              ...form,
+              pricing_record_id: sel.recordId,
+              unit_price: sel.unitPrice,
+              currency: sel.currency,
+            });
+          }}
+        />
+      ) : null}
 
       {showAllFields && (
       <div>
