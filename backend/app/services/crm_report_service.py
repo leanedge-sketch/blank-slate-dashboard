@@ -16,6 +16,7 @@ from app.services.sales_pipeline_service import (
     generate_pipeline_insights,
     get_pipeline_forecast,
 )
+from app.services.integrated_report_service import get_integrated_report_snapshot
 
 
 def _safe_text(value: object) -> str:
@@ -58,6 +59,7 @@ def build_crm_report_pdf(
     metrics = get_dashboard_metrics(start_date=start_date, end_date=end_date)
     insights = generate_pipeline_insights(days_back=days_back)
     forecast = get_pipeline_forecast(days_ahead=forecast_days)
+    integrated = get_integrated_report_snapshot(days_back=days_back)
 
     pdf = _CRMReportPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -119,6 +121,48 @@ def build_crm_report_pdf(
 
     pdf.section_title("Revenue forecast")
     _append_forecast(pdf, forecast, forecast_days)
+
+    pdf.add_page()
+    pdf.section_title("PMS catalog & pricing")
+    pms = integrated.pms
+    pdf.bullet_line("Catalog products", str(pms.catalog_product_count))
+    pdf.bullet_line("With synced current price", str(pms.catalog_with_current_price))
+    pdf.bullet_line("Active pricing records", str(pms.active_pricing_records))
+    pdf.bullet_line("Total pricing records", str(pms.total_pricing_records))
+    pdf.bullet_line("Pricing locations", str(pms.pricing_location_count))
+    pdf.bullet_line("Stock SKUs linked to catalog", str(pms.catalog_with_stock_link))
+    pdf.ln(4)
+
+    pdf.section_title("Stock & fulfillment")
+    stock = integrated.stock
+    pdf.bullet_line("Stock SKUs tracked", str(stock.stock_product_count))
+    pdf.bullet_line("Total available (kg)", f"{stock.total_available_kg:,.0f}")
+    pdf.bullet_line("Addis Ababa available (kg)", f"{stock.addis_available_kg:,.0f}")
+    pdf.bullet_line("Low stock SKUs (<500 kg)", str(stock.low_stock_sku_count))
+    pdf.bullet_line("Movements linked to CRM deals", str(stock.pipeline_linked_movements))
+    pdf.bullet_line("Movements linked to customers", str(stock.customer_linked_movements))
+    pdf.ln(2)
+    pdf.bullet_line("Open pipeline deals", str(integrated.links.open_pipeline_deals))
+    pdf.bullet_line("Deals with catalog product", str(integrated.links.open_deals_with_catalog_product))
+    pdf.bullet_line("Deals exceeding Addis stock", str(integrated.links.deals_exceeding_addis_stock))
+    if integrated.fulfillment_risks:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "Top fulfillment risks:", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        for risk in integrated.fulfillment_risks[:12]:
+            qty = risk.deal_quantity
+            unit = risk.deal_unit or "kg"
+            pdf.cell(
+                0,
+                5,
+                _safe_text(
+                    f"  - {risk.product_name or 'Product'} / {risk.customer_name or 'Customer'} "
+                    f"({risk.stage}): need {qty} {unit}, Addis {risk.addis_available_kg:,.0f} kg"
+                ),
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
 
     buffer = BytesIO()
     pdf.output(buffer)

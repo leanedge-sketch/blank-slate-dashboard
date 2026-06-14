@@ -4,12 +4,12 @@ import { ArrowRight, BarChart3, FileText, Sparkles } from "lucide-react";
 const modules = [
   {
     icon: FileText,
-    title: "CRM Reports",
-    subtitle: "Coverage · Pipeline · Forecast",
+    title: "Integrated Reports",
+    subtitle: "CRM · Pipeline · PMS · Stock",
     description:
-      "Live customer coverage, interaction volume, pipeline opportunities, revenue forecast, and CSV / PDF export.",
+      "Connected coverage, pipeline forecast, catalog & pricing, stock availability, fulfillment risks, and CSV / PDF export.",
     href: "/reports/crm",
-    cta: "Open CRM reports",
+    cta: "Open integrated reports",
     accent: "from-rose-600 via-pink-500 to-fuchsia-500",
     accentHover: "group-hover:shadow-rose-500/40",
   },
@@ -54,8 +54,8 @@ export function ReportsHomePage() {
               </span>
             </h1>
             <p className="text-lg sm:text-xl text-slate-300 max-w-3xl leading-relaxed font-light">
-              Pipeline, activity, and interaction intelligence from your Supabase data — export and
-              share with the team.
+              CRM, sales pipeline, PMS catalog, and stock intelligence in one place — export and share
+              with the team.
             </p>
           </div>
         </div>
@@ -71,7 +71,8 @@ export function ReportsHomePage() {
               </div>
               <h2 className="text-3xl sm:text-4xl font-black text-white mb-2">Choose a view</h2>
               <p className="text-slate-400 text-lg font-light max-w-2xl">
-                Customer coverage, interaction trends, opportunity tracking, and revenue forecast.
+                Customer coverage, pipeline forecast, PMS pricing, stock levels, and fulfillment
+                across modules.
               </p>
             </div>
 

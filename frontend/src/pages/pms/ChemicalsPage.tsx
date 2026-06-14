@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchChemicalFullData,
@@ -13,7 +13,10 @@ import {
   fetchProductCategoriesFullData,
   fetchSubCategoriesFullData,
   fetchProductNames,
+  fetchMasterDataProductSuggestions,
+  type MasterDataProductSuggestion,
 } from "../../services/api";
+import { ChemicalDetailCard } from "../../components/pms/ChemicalDetailCard";
 import {
   FlaskConical,
   Search,
@@ -33,6 +36,7 @@ import {
   Box,
   FileText,
   Hash,
+  Sparkles,
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
@@ -73,8 +77,20 @@ export function ChemicalsPage() {
   const [offset, setOffset] = useState(0);
   const limit = 50;
 
-  // Filters
+  // Filters & search
   const [search, setSearch] = useState("");
+  const [selectedChemical, setSelectedChemical] = useState<ChemicalFullData | null>(null);
+  const [searchSuggestions, setSearchSuggestions] = useState<ChemicalFullData[]>([]);
+  const [loadingSearchSuggestions, setLoadingSearchSuggestions] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  const [productNames, setProductNames] = useState<string[]>([]);
+  const [createNameSuggestions, setCreateNameSuggestions] = useState<string[]>([]);
+  const [showCreateNameSuggestions, setShowCreateNameSuggestions] = useState(false);
+  const [masterCreateSuggestions, setMasterCreateSuggestions] = useState<
+    MasterDataProductSuggestion[]
+  >([]);
+  const [loadingCreateSuggestions, setLoadingCreateSuggestions] = useState(false);
   const [filterSector, setFilterSector] = useState("");
   const [filterIndustry, setFilterIndustry] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
@@ -116,13 +132,6 @@ export function ChemicalsPage() {
   } | null>(null);
   const [cellEditValue, setCellEditValue] = useState("");
   const [updating, setUpdating] = useState(false);
-
-  // View details modal
-  const [viewingId, setViewingId] = useState<number | null>(null);
-  const [viewingChemical, setViewingChemical] = useState<ChemicalFullData | null>(null);
-  
-  // Expanded row for showing additional details
-  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   // Delete state
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -287,8 +296,72 @@ export function ChemicalsPage() {
   useEffect(() => {
     if (showCreateForm) {
       loadOptions();
+      fetchProductNames()
+        .then(setProductNames)
+        .catch(() => setProductNames([]));
     }
   }, [showCreateForm]);
+
+  const loadSearchSuggestions = useCallback(async (term: string) => {
+    const q = term.trim();
+    if (q.length < 2) {
+      setSearchSuggestions([]);
+      return;
+    }
+    try {
+      setLoadingSearchSuggestions(true);
+      const res = await fetchChemicalFullData({ search: q, limit: 10 });
+      setSearchSuggestions(sortChemicalsBySupplier(dedupeChemicalsById(res.chemicals)));
+    } catch {
+      setSearchSuggestions([]);
+    } finally {
+      setLoadingSearchSuggestions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedChemical) return;
+    const timer = window.setTimeout(() => {
+      void loadSearchSuggestions(search);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedChemical, loadSearchSuggestions]);
+
+  useEffect(() => {
+    if (!showCreateForm) return;
+    const term = formData.product_name?.trim() || "";
+    if (term.length < 2) {
+      setCreateNameSuggestions([]);
+      setMasterCreateSuggestions([]);
+      return;
+    }
+    const lower = term.toLowerCase();
+    setCreateNameSuggestions(
+      productNames.filter((n) => n.toLowerCase().includes(lower)).slice(0, 8),
+    );
+    const timer = window.setTimeout(async () => {
+      try {
+        setLoadingCreateSuggestions(true);
+        const res = await fetchMasterDataProductSuggestions(term, 6);
+        setMasterCreateSuggestions(res);
+      } catch {
+        setMasterCreateSuggestions([]);
+      } finally {
+        setLoadingCreateSuggestions(false);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [showCreateForm, formData.product_name, productNames]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
   useEffect(() => {
     loadChemicals();
@@ -298,7 +371,34 @@ export function ChemicalsPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setOffset(0);
+    setShowSearchDropdown(false);
+    if (searchSuggestions.length === 1) {
+      selectChemical(searchSuggestions[0]);
+      return;
+    }
+    const exact = searchSuggestions.find(
+      (c) => c.product_name?.toLowerCase() === search.trim().toLowerCase(),
+    );
+    if (exact) {
+      selectChemical(exact);
+      return;
+    }
     await loadChemicals({ offset: 0, search });
+  }
+
+  function selectChemical(chemical: ChemicalFullData) {
+    setSelectedChemical(chemical);
+    setSearch(chemical.product_name || "");
+    setShowSearchDropdown(false);
+    setSearchSuggestions([]);
+    cancelCellEdit();
+  }
+
+  function clearSelectedChemical() {
+    setSelectedChemical(null);
+    setSearch("");
+    cancelCellEdit();
+    void loadChemicals({ offset: 0, search: "" });
   }
 
   function clearFilters() {
@@ -307,6 +407,7 @@ export function ChemicalsPage() {
     setFilterVendor("");
     setFilterProductCategory("");
     setSearch("");
+    setSelectedChemical(null);
     setOffset(0);
     void loadChemicals({ offset: 0, search: "" });
   }
@@ -340,6 +441,7 @@ export function ChemicalsPage() {
       const created = await createChemicalFullData(createData);
       await refreshCatalog();
       setShowCreateForm(false);
+      setShowCreateNameSuggestions(false);
       setFormData({
         id: 0,
         sector: "",
@@ -355,15 +457,7 @@ export function ChemicalsPage() {
         hs_code: "",
         price: null,
       });
-      const createdName = created.product_name?.trim() || "";
-      if (createdName) {
-        setSearch(createdName);
-        setOffset(0);
-        await loadChemicals({ offset: 0, search: createdName });
-      } else {
-        setOffset(0);
-        await loadChemicals({ offset: 0, search: "" });
-      }
+      selectChemical(created);
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create chemical");
@@ -429,20 +523,15 @@ export function ChemicalsPage() {
       setChemicals((prev) =>
         prev.map((c) => (c.id === id ? { ...c, ...updated } : c)),
       );
+      if (selectedChemical?.id === id) {
+        setSelectedChemical((prev) => (prev ? { ...prev, ...updated } : null));
+      }
       await loadChemicals({ search });
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to update chemical");
     } finally {
       setUpdating(false);
-    }
-  }
-
-  async function handleViewDetails(id: number) {
-    const chemical = chemicals.find((c) => c.id === id);
-    if (chemical) {
-      setViewingChemical(chemical);
-      setViewingId(id);
     }
   }
 
@@ -455,6 +544,9 @@ export function ChemicalsPage() {
       setDeletingId(id);
       await deleteChemicalFullData(id);
       await refreshCatalog();
+      if (selectedChemical?.id === id) {
+        setSelectedChemical(null);
+      }
       await loadChemicals();
     } catch (err: any) {
       console.error(err);
@@ -666,7 +758,10 @@ export function ChemicalsPage() {
     return (
       <button
         type="button"
-        onClick={() => startCellEdit(chemical, col.key)}
+        onClick={(e) => {
+          e.stopPropagation();
+          startCellEdit(chemical, col.key);
+        }}
         className="group/cell flex w-full items-center gap-1 text-left hover:text-blue-700"
         title={`Click to edit ${col.label}`}
       >
@@ -930,19 +1025,79 @@ export function ChemicalsPage() {
                     </button>
                   </div>
                 </div>
-                <div>
+                <div className="relative md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Product Name <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.product_name || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, product_name: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setFormData({ ...formData, product_name: e.target.value });
+                      setShowCreateNameSuggestions(true);
+                    }}
+                    onFocus={() => setShowCreateNameSuggestions(true)}
+                    autoComplete="off"
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
+                  {showCreateNameSuggestions &&
+                  (createNameSuggestions.length > 0 || masterCreateSuggestions.length > 0) ? (
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                      {loadingCreateSuggestions ? (
+                        <p className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Finding similar products…
+                        </p>
+                      ) : null}
+                      {createNameSuggestions.length > 0 ? (
+                        <div className="border-b border-slate-100 px-2 py-1.5">
+                          <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Existing names
+                          </p>
+                          {createNameSuggestions.map((name) => (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => {
+                                setFormData({ ...formData, product_name: name });
+                                setShowCreateNameSuggestions(false);
+                              }}
+                              className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 hover:bg-blue-50"
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {masterCreateSuggestions.length > 0 ? (
+                        <div className="px-2 py-1.5">
+                          <p className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                            <Sparkles className="h-3 w-3" />
+                            Already in master data
+                          </p>
+                          {masterCreateSuggestions.map((s, i) => (
+                            <div
+                              key={`${s.master_row_no}-${i}`}
+                              className="rounded-lg px-3 py-2 text-sm text-slate-600"
+                            >
+                              <span className="font-medium text-slate-900">
+                                {s.match_label || s.product_name}
+                              </span>
+                              {s.vendor ? (
+                                <span className="ml-2 text-xs text-slate-500">{s.vendor}</span>
+                              ) : null}
+                              {s.master_row_no != null ? (
+                                <span className="ml-2 text-xs text-amber-700">
+                                  Ref #{s.master_row_no}
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1093,31 +1248,67 @@ export function ChemicalsPage() {
         {/* Search */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
           <form onSubmit={handleSearch} className="flex gap-3">
-            <div className="flex-1 relative">
+            <div className="flex-1 relative" ref={searchBoxRef}>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search product, supplier, category, HS code, industry…"
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setShowSearchDropdown(true);
+                  if (selectedChemical) setSelectedChemical(null);
+                }}
+                onFocus={() => setShowSearchDropdown(true)}
+                autoComplete="off"
+                placeholder="Search product, supplier, category, HS code…"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              {showSearchDropdown && search.trim().length >= 2 ? (
+                <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                  {loadingSearchSuggestions ? (
+                    <p className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                      Searching…
+                    </p>
+                  ) : searchSuggestions.length > 0 ? (
+                    <ul className="max-h-72 overflow-y-auto py-1">
+                      {searchSuggestions.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectChemical(c)}
+                            className="flex w-full flex-col gap-0.5 px-4 py-3 text-left hover:bg-blue-50 transition-colors"
+                          >
+                            <span className="font-medium text-slate-900">
+                              {c.product_name || "Unnamed"}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {[c.vendor, c.product_category, c.sector]
+                                .filter(Boolean)
+                                .join(" · ")}
+                              {c.id != null ? ` · Ref #${c.id}` : ""}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="px-4 py-3 text-sm text-slate-500">No matching chemicals.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
             <button
               type="submit"
-              className="px-6 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold hover:shadow-lg transition-all"
+              className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold hover:shadow-lg transition-all"
             >
               Search
             </button>
-            {search && (
+            {(search || selectedChemical) && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearch("");
-                  setOffset(0);
-                  void loadChemicals({ offset: 0, search: "" });
-                }}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+                onClick={() => clearSelectedChemical()}
+                className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Clear
               </button>
@@ -1140,7 +1331,18 @@ export function ChemicalsPage() {
         )}
 
         {/* Results */}
-        {loading && chemicals.length === 0 ? (
+        {selectedChemical ? (
+          <ChemicalDetailCard
+            chemical={selectedChemical}
+            updating={updating}
+            deleting={deletingId === selectedChemical.id}
+            editingCell={editingCell}
+            onStartEdit={(key) => startCellEdit(selectedChemical, key)}
+            renderEditor={(col) => renderMasterDataCell(selectedChemical, col, 1)}
+            onDelete={() => void handleDelete(selectedChemical.id)}
+            onBack={clearSelectedChemical}
+          />
+        ) : loading && chemicals.length === 0 ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
           </div>
@@ -1221,7 +1423,8 @@ export function ChemicalsPage() {
                           </tr>
                         )}
                         <tr
-                          className="hover:bg-slate-50 transition-colors"
+                          className="hover:bg-slate-50 transition-colors cursor-pointer"
+                          onClick={() => selectChemical(chemical)}
                 >
                             {CHEMICAL_MASTER_COLUMNS.map((col) => (
                               <td
@@ -1256,10 +1459,10 @@ export function ChemicalsPage() {
                           <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleViewDetails(chemical.id);
+                                    selectChemical(chemical);
                                   }}
-                                  className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                                  title="View Details"
+                                  className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                  title="Open detail view"
                                 >
                                   <Eye size={16} />
                                 </button>
@@ -1316,135 +1519,6 @@ export function ChemicalsPage() {
           </>
         )}
       </main>
-
-      {/* View Details Modal */}
-      {viewingId && viewingChemical && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-slate-900">
-                {viewingChemical.product_name || `Chemical #${viewingChemical.id}`}
-              </h2>
-              <button
-                onClick={() => {
-                  setViewingId(null);
-                  setViewingChemical(null);
-                }}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                    ID
-                  </label>
-                  <p className="text-slate-900 font-medium">{viewingChemical.id}</p>
-                </div>
-                {viewingChemical.sector && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Sector
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.sector}</p>
-                  </div>
-                )}
-                {viewingChemical.industry && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Industry
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.industry}</p>
-                  </div>
-                )}
-                {viewingChemical.vendor && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Vendor
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.vendor}</p>
-                  </div>
-                )}
-                {viewingChemical.product_category && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Product Category
-                    </label>
-                    <p className="text-slate-900 font-medium">
-                      {viewingChemical.product_category}
-                    </p>
-                  </div>
-                )}
-                {viewingChemical.product_name && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Product Name
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.product_name}</p>
-                  </div>
-                )}
-                {viewingChemical.packing && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Packing
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.packing}</p>
-                  </div>
-                )}
-                {viewingChemical.hs_code && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      HS Code
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.hs_code}</p>
-                  </div>
-                )}
-                {viewingChemical.price !== null &&
-                  viewingChemical.price !== undefined && (
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                        Price
-                      </label>
-                      <p className="text-slate-900 font-medium">
-                        ${viewingChemical.price.toFixed(2)}
-                      </p>
-                    </div>
-                  )}
-                {viewingChemical.partner_id && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
-                      Partner ID
-                    </label>
-                    <p className="text-slate-900 font-medium">{viewingChemical.partner_id}</p>
-                  </div>
-                )}
-              </div>
-              {viewingChemical.typical_application && (
-                <div>
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">
-                    Typical Application
-                  </label>
-                  <p className="text-slate-900 whitespace-pre-wrap">
-                    {viewingChemical.typical_application}
-                  </p>
-                </div>
-              )}
-              {viewingChemical.product_description && (
-                <div>
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">
-                    Product Description
-                  </label>
-                  <p className="text-slate-900 whitespace-pre-wrap">
-                    {viewingChemical.product_description}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Option Modal */}
       {addOptionType && (

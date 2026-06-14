@@ -1478,6 +1478,63 @@ export async function getPipelineInsights(params?: {
   return res.data;
 }
 
+export interface StockReportSummary {
+  stock_product_count: number;
+  total_available_kg: number;
+  addis_available_kg: number;
+  sez_available_kg: number;
+  nairobi_available_kg: number;
+  low_stock_sku_count: number;
+  catalog_linked_sku_count: number;
+  pipeline_linked_movements: number;
+  customer_linked_movements: number;
+}
+
+export interface PmsReportSummary {
+  catalog_product_count: number;
+  catalog_with_current_price: number;
+  active_pricing_records: number;
+  total_pricing_records: number;
+  pricing_location_count: number;
+  catalog_with_stock_link: number;
+}
+
+export interface PipelineFulfillmentRisk {
+  pipeline_id: string;
+  customer_id: string;
+  customer_name?: string | null;
+  catalog_uuid_id?: string | null;
+  product_name?: string | null;
+  stage: string;
+  deal_quantity?: number | null;
+  deal_unit?: string | null;
+  addis_available_kg: number;
+  total_available_kg: number;
+  exceeds_addis_stock: boolean;
+}
+
+export interface IntegratedLinkStats {
+  open_pipeline_deals: number;
+  open_deals_with_catalog_product: number;
+  open_deals_checked_for_stock: number;
+  deals_exceeding_addis_stock: number;
+}
+
+export interface IntegratedReportSnapshot {
+  stock: StockReportSummary;
+  pms: PmsReportSummary;
+  links: IntegratedLinkStats;
+  fulfillment_risks: PipelineFulfillmentRisk[];
+  product_demand_top: Array<{ product_key: string; quote_count: number }>;
+}
+
+export async function fetchIntegratedReport(params?: { days_back?: number }) {
+  const res = await api.get<IntegratedReportSnapshot>("/reports/integrated", {
+    params: { days_back: params?.days_back ?? 90 },
+  });
+  return res.data;
+}
+
 // =============================
 // STOCK MANAGEMENT
 // =============================
