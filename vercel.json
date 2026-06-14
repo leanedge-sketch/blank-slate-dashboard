@@ -58,16 +58,8 @@
       "destination": "/api/index.py"
     },
     {
-      "handle": "filesystem"
-    },
-    {
       "source": "/(.*)",
-      "destination": "/index.html",
-      "missing": [
-        {
-          "type": "filesystem"
-        }
-      ]
+      "destination": "/index.html"
     }
   ]
 }
