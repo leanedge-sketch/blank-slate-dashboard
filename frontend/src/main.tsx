@@ -18,6 +18,13 @@ window.addEventListener("unhandledrejection", (event) => {
   }
 });
 
+// Clear one-shot reload flag after a successful boot (see stale-chunk-reload in index.html).
+try {
+  sessionStorage.removeItem("stale-chunk-reload");
+} catch {
+  // ignore
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>

@@ -57,6 +57,10 @@ export default defineConfig(({ mode }) => {
           if (mode === "production" && !out.includes("canonical-host-redirect")) {
             out = out.replace("<head>", `<head>${CANONICAL_HOST_INLINE_SCRIPT}`);
           }
+          if (!out.includes("stale-chunk-reload")) {
+            const staleChunkReload = `<script id="stale-chunk-reload">(function(){var k="stale-chunk-reload";window.addEventListener("error",function(e){var t=e.target;if(t&&t.tagName==="SCRIPT"&&t.type==="module"){if(sessionStorage.getItem(k)!=="1"){sessionStorage.setItem(k,"1");location.reload();}}},true);window.addEventListener("vite:preloadError",function(e){e.preventDefault();if(sessionStorage.getItem(k)!=="1"){sessionStorage.setItem(k,"1");location.reload();}});})();</script>`;
+            out = out.replace("</head>", `${staleChunkReload}</head>`);
+          }
           return out;
         },
       },
