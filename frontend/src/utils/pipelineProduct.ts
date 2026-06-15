@@ -98,31 +98,55 @@ export type PipelineDealFormValues = {
   pricing_record_id?: string;
 };
 
+/** Coerce API / legacy values to trimmed strings for form fields. */
+export function dealFormText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+export function hasDealFormText(value: unknown): boolean {
+  return dealFormText(value).length > 0;
+}
+
 export function pipelineToDealFormValues(
   pipeline: SalesPipeline,
+  chemicals: ChemicalFullData[] = [],
 ): PipelineDealFormValues {
   const meta = (pipeline.metadata || {}) as Record<string, unknown>;
   const vendor =
     (meta.vendor as string) || (meta.vendor_name as string) || "";
 
+  let chemical_type_id = dealFormText(pipeline.chemical_type_id);
+  if (chemical_type_id && chemicals.length > 0) {
+    const match =
+      chemicals.find(
+        (c) => c.uuid_id && dealFormText(c.uuid_id) === chemical_type_id,
+      ) ??
+      chemicals.find((c) => dealFormText(c.id) === chemical_type_id);
+    if (match) {
+      chemical_type_id = match.uuid_id
+        ? dealFormText(match.uuid_id)
+        : dealFormText(match.id);
+    }
+  }
+
   return {
-    chemical_type_id: pipeline.chemical_type_id || "",
-    vendor_name: vendor,
+    chemical_type_id,
+    vendor_name: dealFormText(vendor),
     expected_close_date: pipeline.expected_close_date
       ? String(pipeline.expected_close_date).slice(0, 10)
       : "",
-    lead_source: pipeline.lead_source || "",
-    contact_per_lead: pipeline.contact_per_lead || "",
-    business_model: pipeline.business_model || "",
-    business_unit: pipeline.business_unit || "",
-    unit: pipeline.unit || "",
+    lead_source: dealFormText(pipeline.lead_source),
+    contact_per_lead: dealFormText(pipeline.contact_per_lead),
+    business_model: dealFormText(pipeline.business_model),
+    business_unit: dealFormText(pipeline.business_unit),
+    unit: dealFormText(pipeline.unit),
     amount: pipeline.amount ?? ("" as number | ""),
     unit_price: pipeline.unit_price ?? ("" as number | ""),
-    currency: pipeline.currency || "",
-    forex: pipeline.forex || "",
-    incoterm: pipeline.incoterm || "",
-    pricing_record_id:
-      typeof meta.pricing_record_id === "string" ? meta.pricing_record_id : "",
+    currency: dealFormText(pipeline.currency),
+    forex: dealFormText(pipeline.forex),
+    incoterm: dealFormText(pipeline.incoterm),
+    pricing_record_id: dealFormText(meta.pricing_record_id),
   };
 }
 
@@ -167,10 +191,10 @@ export function validateDealFormForProductAndAmount(
   if (!pipelineStageRequiresProductAndAmount(targetStage)) {
     return null;
   }
-  if (!form.chemical_type_id.trim()) {
+  if (!hasDealFormText(form.chemical_type_id)) {
     return "Product is required from Discovery stage onward.";
   }
-  if (!form.unit.trim()) {
+  if (!hasDealFormText(form.unit)) {
     return "Unit is required from Discovery stage onward.";
   }
   if (form.amount === "" || form.amount === null || form.amount === undefined) {
@@ -186,22 +210,22 @@ export function validateDealFormForProductAndAmount(
 export function validateDealFormForProposal(
   form: PipelineDealFormValues,
 ): string | null {
-  if (!form.chemical_type_id.trim()) {
+  if (!hasDealFormText(form.chemical_type_id)) {
     return "Product is required when moving to Proposal.";
   }
-  if (!form.vendor_name.trim()) {
+  if (!hasDealFormText(form.vendor_name)) {
     return "Vendor is required when moving to Proposal.";
   }
-  if (!form.expected_close_date.trim()) {
+  if (!hasDealFormText(form.expected_close_date)) {
     return "Expected close date is required when moving to Proposal.";
   }
-  if (!form.business_model.trim()) {
+  if (!hasDealFormText(form.business_model)) {
     return "Business model is required when moving to Proposal.";
   }
-  if (!form.business_unit.trim()) {
+  if (!hasDealFormText(form.business_unit)) {
     return "Business unit is required when moving to Proposal.";
   }
-  if (!form.unit.trim()) {
+  if (!hasDealFormText(form.unit)) {
     return "Unit is required when moving to Proposal.";
   }
   if (form.amount === "" || form.amount === null || form.amount === undefined) {
@@ -214,13 +238,13 @@ export function validateDealFormForProposal(
   ) {
     return "Unit price is required when moving to Proposal.";
   }
-  if (!form.currency.trim()) {
+  if (!hasDealFormText(form.currency)) {
     return "Currency is required when moving to Proposal.";
   }
-  if (!form.forex.trim()) {
+  if (!hasDealFormText(form.forex)) {
     return "Forex is required when moving to Proposal.";
   }
-  if (!form.incoterm.trim()) {
+  if (!hasDealFormText(form.incoterm)) {
     return "Incoterm is required when moving to Proposal.";
   }
   return null;
@@ -262,8 +286,8 @@ export function buildPipelineProductAmountPayload(
   dealForm: PipelineDealFormValues,
 ): Record<string, unknown> {
   return {
-    chemical_type_id: dealForm.chemical_type_id.trim() || null,
-    unit: dealForm.unit.trim() || null,
+    chemical_type_id: dealFormText(dealForm.chemical_type_id) || null,
+    unit: dealFormText(dealForm.unit) || null,
     amount:
       dealForm.amount === "" || dealForm.amount === null
         ? null
@@ -277,21 +301,23 @@ export function buildPipelineCommercialUpdatePayload(
   existingMetadata: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const metadata: Record<string, unknown> = { ...existingMetadata };
-  if (dealForm.vendor_name.trim()) {
-    metadata.vendor = dealForm.vendor_name.trim();
+  const vendor = dealFormText(dealForm.vendor_name);
+  if (vendor) {
+    metadata.vendor = vendor;
   }
-  if (dealForm.pricing_record_id?.trim()) {
-    metadata.pricing_record_id = dealForm.pricing_record_id.trim();
+  const pricingRecordId = dealFormText(dealForm.pricing_record_id);
+  if (pricingRecordId) {
+    metadata.pricing_record_id = pricingRecordId;
     metadata.pricing_locked = true;
   }
   return {
-    chemical_type_id: dealForm.chemical_type_id.trim() || null,
-    expected_close_date: dealForm.expected_close_date.trim() || null,
-    lead_source: dealForm.lead_source.trim() || null,
-    contact_per_lead: dealForm.contact_per_lead.trim() || null,
-    business_model: dealForm.business_model.trim() || null,
-    business_unit: dealForm.business_unit.trim() || null,
-    unit: dealForm.unit.trim() || null,
+    chemical_type_id: dealFormText(dealForm.chemical_type_id) || null,
+    expected_close_date: dealFormText(dealForm.expected_close_date) || null,
+    lead_source: dealFormText(dealForm.lead_source) || null,
+    contact_per_lead: dealFormText(dealForm.contact_per_lead) || null,
+    business_model: dealFormText(dealForm.business_model) || null,
+    business_unit: dealFormText(dealForm.business_unit) || null,
+    unit: dealFormText(dealForm.unit) || null,
     amount:
       dealForm.amount === "" || dealForm.amount === null
         ? null
@@ -300,9 +326,9 @@ export function buildPipelineCommercialUpdatePayload(
       dealForm.unit_price === "" || dealForm.unit_price === null
         ? null
         : Number(dealForm.unit_price),
-    currency: dealForm.currency.trim() || null,
-    forex: dealForm.forex.trim() || null,
-    incoterm: dealForm.incoterm.trim() || null,
+    currency: dealFormText(dealForm.currency) || null,
+    forex: dealFormText(dealForm.forex) || null,
+    incoterm: dealFormText(dealForm.incoterm) || null,
     metadata,
   };
 }

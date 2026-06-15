@@ -154,11 +154,13 @@ export function PipelineDetailPage() {
       .catch((err) => console.error("Failed to load customers:", err));
   }, []);
 
-  async function loadPipelineDetails() {
+  async function loadPipelineDetails(options?: { silent?: boolean }) {
     if (!pipelineId) return;
 
     try {
-      setLoading(true);
+      if (!options?.silent) {
+        setLoading(true);
+      }
       setError(null);
 
       const pipeline = await fetchSalesPipelineById(pipelineId);
@@ -227,7 +229,9 @@ export function PipelineDetailPage() {
       console.error(err);
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load pipeline details");
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -464,7 +468,7 @@ export function PipelineDetailPage() {
 
     const stageChanged = targetStage !== currentPipeline.stage;
     const dealForm =
-      updateDealForm ?? pipelineToDealFormValues(currentPipeline);
+      updateDealForm ?? pipelineToDealFormValues(currentPipeline, chemicalFullData);
     const showCommercial = pipelineUpdateShowsCommercialForm(
       targetStage,
       dealForm,
@@ -571,7 +575,7 @@ export function PipelineDetailPage() {
       if (updated.id && updated.id !== selectedPipeline.id) {
         navigate(`/sales/pipeline/${updated.id}`, { replace: true });
       } else {
-        await loadPipelineDetails();
+        await loadPipelineDetails({ silent: true });
       }
     } catch (err: unknown) {
       console.error("Error updating pipeline:", err);
@@ -672,7 +676,7 @@ export function PipelineDetailPage() {
         }
       }
       await updateSalesPipeline(String(head.id), payload);
-      await loadPipelineDetails();
+      await loadPipelineDetails({ silent: true });
     } catch (err) {
       alert(formatApiErrorDetail(err, "Could not update deal pricing"));
     } finally {
@@ -680,7 +684,7 @@ export function PipelineDetailPage() {
     }
   }
 
-  if (loading) {
+  if (loading && !selectedPipeline) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -794,7 +798,7 @@ export function PipelineDetailPage() {
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
                   });
-                  setUpdateDealForm(pipelineToDealFormValues(head));
+                  setUpdateDealForm(pipelineToDealFormValues(head, chemicalFullData));
                   setShowUpdateForm(true);
                 }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/30 hover:shadow-emerald-600/50"
@@ -1611,14 +1615,14 @@ export function PipelineDetailPage() {
             if (updated.id && String(updated.id) !== String(pipelineId)) {
               navigate(`/sales/pipeline/${updated.id}`, { replace: true });
             }
-            void loadPipelineDetails();
+            void loadPipelineDetails({ silent: true });
           }}
         />
       )}
 
       {/* Update Pipeline Modal */}
       {showUpdateForm && selectedPipeline && updateDealForm && currentPipeline && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-50">
           <div
             className={`bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto ${
               pipelineUpdateShowsCommercialForm(
@@ -2039,7 +2043,7 @@ export function PipelineDetailPage() {
 
       {/* Quote Generation Modal */}
       {showQuoteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-50">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-200">
               <div className="flex items-center justify-between">

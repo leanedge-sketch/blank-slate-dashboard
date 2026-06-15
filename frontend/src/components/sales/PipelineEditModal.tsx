@@ -1,4 +1,11 @@
-import { useState } from "react";
+import {
+  Component,
+  useEffect,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   SalesPipeline,
   SalesPipelineUpdate,
@@ -6,9 +13,11 @@ import {
 } from "../../services/api";
 import { Edit2, Loader2, X, CheckCircle } from "lucide-react";
 import { PipelineDealFields } from "./PipelineDealFields";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
+  dealFormText,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
   STAGES_REQUIRING_FULL_COMMERCIAL,
@@ -20,6 +29,40 @@ const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500";
 const labelClass = "block text-sm font-medium text-slate-700 mb-1";
 
+class EditModalErrorBoundary extends Component<
+  { children: ReactNode; onClose: () => void },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("PipelineEditModal crashed:", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center space-y-4">
+          <p className="text-red-600 font-semibold">Could not open Edit Pipeline</p>
+          <p className="text-sm text-slate-600">{this.state.error.message}</p>
+          <button
+            type="button"
+            onClick={this.props.onClose}
+            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function PipelineEditModal({
   pipeline,
   onClose,
@@ -29,11 +72,17 @@ export function PipelineEditModal({
   onClose: () => void;
   onSaved: (updated: SalesPipeline) => void;
 }) {
+  const { chemicals } = useProductCatalog();
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<PipelineDealFormValues>(
-    pipelineToDealFormValues(pipeline),
+  const [form, setForm] = useState<PipelineDealFormValues>(() =>
+    pipelineToDealFormValues(pipeline, chemicals),
   );
   const [amountReason, setAmountReason] = useState("");
+
+  useEffect(() => {
+    setForm(pipelineToDealFormValues(pipeline, chemicals));
+    setAmountReason("");
+  }, [pipeline.id]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,23 +109,27 @@ export function PipelineEditModal({
     const metadata: Record<string, unknown> = {
       ...(pipeline.metadata || {}),
     };
-    if (form.vendor_name) metadata.vendor = form.vendor_name;
+    const vendor = dealFormText(form.vendor_name);
+    if (vendor) metadata.vendor = vendor;
 
     const updateData: SalesPipelineUpdate = {
-      chemical_type_id: form.chemical_type_id || null,
-      expected_close_date: form.expected_close_date || null,
-      lead_source: form.lead_source.trim() || null,
-      contact_per_lead: form.contact_per_lead.trim() || null,
-      business_model: form.business_model.trim() || null,
-      business_unit: (form.business_unit as SalesPipelineUpdate["business_unit"]) || null,
-      unit: form.unit || null,
+      chemical_type_id: dealFormText(form.chemical_type_id) || null,
+      expected_close_date: dealFormText(form.expected_close_date) || null,
+      lead_source: dealFormText(form.lead_source) || null,
+      contact_per_lead: dealFormText(form.contact_per_lead) || null,
+      business_model: dealFormText(form.business_model) || null,
+      business_unit: (dealFormText(form.business_unit) ||
+        null) as SalesPipelineUpdate["business_unit"],
+      unit: dealFormText(form.unit) || null,
       unit_price:
         form.unit_price === "" || form.unit_price === null
           ? null
           : Number(form.unit_price),
-      currency: (form.currency as SalesPipelineUpdate["currency"]) || null,
-      forex: (form.forex as SalesPipelineUpdate["forex"]) || null,
-      incoterm: (form.incoterm as SalesPipelineUpdate["incoterm"]) || null,
+      currency: (dealFormText(form.currency) ||
+        null) as SalesPipelineUpdate["currency"],
+      forex: (dealFormText(form.forex) || null) as SalesPipelineUpdate["forex"],
+      incoterm: (dealFormText(form.incoterm) ||
+        null) as SalesPipelineUpdate["incoterm"],
       metadata,
     };
     if (amountChanged) {
@@ -102,97 +155,112 @@ export function PipelineEditModal({
   const showAmountReason =
     amountChanged && amountChangeReasonRequired(pipeline.stage, amountVal);
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  const modal = (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pipeline-edit-title"
+    >
       <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-              <Edit2 className="w-5 h-5 text-blue-600" />
-              Edit Pipeline
-            </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <p className="text-sm text-slate-600 mt-2">
-            Update deal details in place (product, vendor, commercial fields).
-            Stage stays <strong>{pipeline.stage}</strong> — use{" "}
-            <strong>Update Pipeline</strong> to change stage or create a new
-            version.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm">
-            <span className="text-slate-500">Current stage: </span>
-            <span className="font-semibold text-slate-900">{pipeline.stage}</span>
-          </div>
-
-          <PipelineDealFields
-            form={form}
-            onChange={setForm}
-            customerId={pipeline.customer_id ? String(pipeline.customer_id) : undefined}
-            requiredLevel={
-              (STAGES_REQUIRING_FULL_COMMERCIAL as readonly string[]).includes(
-                pipeline.stage,
-              )
-                ? "full"
-                : pipelineStageRequiresProductAndAmount(pipeline.stage)
-                  ? "product_amount"
-                  : "none"
-            }
-            fieldsMode="all"
-          />
-
-          {showAmountReason && (
-            <div>
-              <label className={labelClass}>
-                Reason for amount change <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={amountReason}
-                onChange={(e) => setAmountReason(e.target.value)}
-                required
-                rows={2}
-                className={inputClass}
-                placeholder="Why is the quantity changing?"
-              />
+        <EditModalErrorBoundary onClose={onClose}>
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <h2
+                id="pipeline-edit-title"
+                className="text-xl font-semibold text-slate-900 flex items-center gap-2"
+              >
+                <Edit2 className="w-5 h-5 text-blue-600" />
+                Edit Pipeline
+              </h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Save changes
-                </>
-              )}
-            </button>
+            <p className="text-sm text-slate-600 mt-2">
+              Update deal details in place (product, vendor, commercial fields).
+              Stage stays <strong>{pipeline.stage}</strong> — use{" "}
+              <strong>Update Pipeline</strong> to change stage or create a new
+              version.
+            </p>
           </div>
-        </form>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm">
+              <span className="text-slate-500">Current stage: </span>
+              <span className="font-semibold text-slate-900">{pipeline.stage}</span>
+            </div>
+
+            <PipelineDealFields
+              form={form}
+              onChange={setForm}
+              customerId={
+                pipeline.customer_id ? String(pipeline.customer_id) : undefined
+              }
+              requiredLevel={
+                (STAGES_REQUIRING_FULL_COMMERCIAL as readonly string[]).includes(
+                  pipeline.stage,
+                )
+                  ? "full"
+                  : pipelineStageRequiresProductAndAmount(pipeline.stage)
+                    ? "product_amount"
+                    : "none"
+              }
+              fieldsMode="all"
+            />
+
+            {showAmountReason && (
+              <div>
+                <label className={labelClass}>
+                  Reason for amount change <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={amountReason}
+                  onChange={(e) => setAmountReason(e.target.value)}
+                  required
+                  rows={2}
+                  className={inputClass}
+                  placeholder="Why is the quantity changing?"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Save changes
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </EditModalErrorBoundary>
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(modal, document.body);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { loadPricingRecords, type PricingRecord } from "../pms/pricing-costing/pricingApi";
 import { formatAmount } from "../pms/pricing-costing/utils";
@@ -19,9 +19,17 @@ type PipelinePricingSelectProps = {
 };
 
 function formatOptionLabel(row: PricingRecord): string {
-  const date = row.validFrom;
+  const date = row.validFrom || "—";
   const status = row.status === "active" ? "Active" : "Historical";
   return `${formatAmount(row.priceAmount)} ${row.priceCurrency} · ${date} · ${status}`;
+}
+
+function comparePricingRecords(a: PricingRecord, b: PricingRecord): number {
+  if (a.status === "active" && b.status !== "active") return -1;
+  if (b.status === "active" && a.status !== "active") return 1;
+  const av = a.validFrom ?? "";
+  const bv = b.validFrom ?? "";
+  return bv.localeCompare(av);
 }
 
 export function PipelinePricingSelect({
@@ -33,11 +41,12 @@ export function PipelinePricingSelect({
 }: PipelinePricingSelectProps) {
   const [rows, setRows] = useState<PricingRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const autoSelectedRef = useRef(false);
 
   useEffect(() => {
+    autoSelectedRef.current = false;
     if (!customerId || !productId) {
       setRows([]);
-      onChange(null);
       return;
     }
     let cancelled = false;
@@ -49,19 +58,17 @@ export function PipelinePricingSelect({
     })
       .then((records) => {
         if (cancelled) return;
-        const sorted = [...records].sort((a, b) => {
-          if (a.status === "active" && b.status !== "active") return -1;
-          if (b.status === "active" && a.status !== "active") return 1;
-          return b.validFrom.localeCompare(a.validFrom);
-        });
+        const sorted = [...records].sort(comparePricingRecords);
         setRows(sorted.slice(0, 10));
         const active = sorted.find((r) => r.status === "active") ?? sorted[0];
-        if (active && !value) {
+        const selectedValue = value?.trim() || "";
+        if (active && !selectedValue && !autoSelectedRef.current) {
+          autoSelectedRef.current = true;
           onChange({
             recordId: active.id,
             unitPrice: active.priceAmount,
             currency: active.priceCurrency,
-            validFrom: active.validFrom,
+            validFrom: active.validFrom ?? "",
           });
         }
       })
@@ -87,7 +94,7 @@ export function PipelinePricingSelect({
       recordId: row.id,
       unitPrice: row.priceAmount,
       currency: row.priceCurrency,
-      validFrom: row.validFrom,
+      validFrom: row.validFrom ?? "",
     });
   }
 

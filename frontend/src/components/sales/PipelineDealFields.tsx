@@ -88,7 +88,7 @@ export function PipelineDealFields({
           <RequiredMark show={reqProductAmount} />
         </label>
         <select
-          value={form.chemical_type_id}
+          value={String(form.chemical_type_id ?? "")}
           onChange={(e) => onChange({ ...form, chemical_type_id: e.target.value })}
           className={inputClass}
           required={reqProductAmount}

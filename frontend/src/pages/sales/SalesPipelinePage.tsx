@@ -739,17 +739,17 @@ export function SalesPipelinePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlPipelineId, showCreateForm]);
 
-  // CRITICAL: Ensure editingPipeline is null when form is shown for CREATE (not edit)
+  // Ensure editingPipeline is null when create form is open off the edit route.
   useEffect(() => {
-    if (showCreateForm) {
-      const isEditRoute = window.location.pathname.includes("/edit");
-      if (!isEditRoute && editingPipeline) {
-        console.warn("Form is shown but editingPipeline is set and not on edit route. Clearing it to force CREATE mode.");
-        setEditingPipeline(null);
-      }
+    if (!showCreateForm) return;
+    const isEditRoute = window.location.pathname.includes("/edit");
+    if (!isEditRoute && editingPipeline) {
+      console.warn(
+        "Form shown but editingPipeline is set and not on edit route. Clearing editingPipeline.",
+      );
+      setEditingPipeline(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCreateForm]);
+  }, [showCreateForm, editingPipeline]);
 
   async function openEditForm(pipeline: SalesPipeline) {
     // Format date for HTML date input (YYYY-MM-DD)
@@ -1291,16 +1291,6 @@ export function SalesPipelinePage() {
         </div>
 
         {/* Create/Edit Form */}
-        {showCreateForm && (() => {
-          // CRITICAL: If form is shown and we're NOT on an edit route, force editingPipeline to null
-          // This prevents any accidental updates when creating new pipelines
-          const isEditRoute = window.location.pathname.includes("/edit");
-          if (!isEditRoute && editingPipeline) {
-            console.warn("Form shown but editingPipeline is set and not on edit route. Clearing editingPipeline.");
-            setEditingPipeline(null);
-          }
-          return null;
-        })()}
         {showCreateForm && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
