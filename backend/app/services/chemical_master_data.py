@@ -251,6 +251,25 @@ def _next_row_no(client: Client) -> int:
     return 1
 
 
+def _row_no_exists(client: Client, row_no: int) -> bool:
+    resp = (
+        client.table(TABLE)
+        .select("Row_No")
+        .eq("Row_No", row_no)
+        .limit(1)
+        .execute()
+    )
+    return bool(resp.data)
+
+
+def _allocate_unique_row_no(client: Client) -> int:
+    """Lowest unused Row_No — skips gaps and avoids reusing an existing Ref."""
+    candidate = _next_row_no(client)
+    while _row_no_exists(client, candidate):
+        candidate += 1
+    return candidate
+
+
 def _apply_search_filter(query, search: Optional[str], client: Optional[Client] = None):
     if not search or not search.strip():
         return query
@@ -338,6 +357,16 @@ def count_chemical_master_data(
     return response.count or 0
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "duplicate key" in msg
+        or "unique constraint" in msg
+        or "23505" in msg
+        or "already exists" in msg
+    )
+
+
 def _is_missing_column_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return (
@@ -408,49 +437,33 @@ def _update_master_row(client: Client, chemical_id: int, payload: Dict[str, Any]
 
 def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullData:
     client = _master_client()
-    payload = api_to_db(body.model_dump(exclude_unset=True), assign_uuid_if_missing=True)
-    if "Row_No" not in payload or payload.get("Row_No") is None:
-        payload["Row_No"] = _next_row_no(client)
+    dump = body.model_dump(exclude_unset=True)
+    dump.pop("id", None)  # Ref (Row_No) is always server-assigned for uniqueness
+    payload = api_to_db(dump, assign_uuid_if_missing=True)
+    payload.pop("Row_No", None)
 
-    # Avoid duplicate rows when the same product+supplier is submitted twice quickly.
-    product_name = (payload.get("Product_Name") or "").strip()
-    supplier = (payload.get("Supplier_Name") or "").strip()
-    category = (payload.get("Category") or "").strip()
-    packing = (payload.get("Packaging") or "").strip()
-    if product_name and supplier:
-        probe = (
-            client.table(TABLE)
-            .select("Row_No, Product_Name, Category, Packaging")
-            .ilike("Product_Name", product_name)
-            .ilike("Supplier_Name", supplier)
-            .order("Row_No", desc=True)
-            .limit(5)
-            .execute()
-        )
-        for row in probe.data or []:
-            if (
-                (row.get("Product_Name") or "").strip().lower() == product_name.lower()
-                and (row.get("Category") or "").strip().lower() == category.lower()
-                and (row.get("Packaging") or "").strip().lower() == packing.lower()
-            ):
-                existing_id = row.get("Row_No")
-                if existing_id is not None:
-                    existing = get_chemical_master_data_by_id(int(existing_id))
-                    if existing:
-                        logger.info(
-                            "Reusing existing Chemical_Master_Data Row_No=%s (duplicate create)",
-                            existing_id,
-                        )
-                        from app.services.catalog_sync_service import (
-                            enrich_chemical_with_tds_document,
-                        )
+    response = None
+    last_exc: Optional[Exception] = None
+    for _ in range(10):
+        payload["Row_No"] = _allocate_unique_row_no(client)
+        try:
+            response = _insert_master_row(client, payload)
+            if response.data:
+                break
+            raise RuntimeError("Failed to create Chemical_Master_Data record")
+        except Exception as exc:
+            last_exc = exc
+            if _is_unique_violation(exc):
+                payload.pop("Row_No", None)
+                continue
+            raise
 
-                        return enrich_chemical_with_tds_document(existing)
+    if not response or not response.data:
+        raise last_exc or RuntimeError("Failed to create Chemical_Master_Data record")
 
-    response = _insert_master_row(client, payload)
-    if not response.data:
-        raise RuntimeError("Failed to create Chemical_Master_Data record")
     created = row_to_api(response.data[0])
+    if created.id is None:
+        raise RuntimeError("Created chemical is missing a reference number (Row_No)")
     if created.id is not None:
         from app.services.catalog_sync_service import refresh_catalog_row
 

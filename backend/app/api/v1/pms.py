@@ -1130,6 +1130,8 @@ async def create_chemical_full_data_endpoint(body: ChemicalFullDataCreate):
     """Create a new chemical_full_data record."""
     try:
         return create_chemical_full_data(body)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating chemical_full_data: {str(e)}")
 

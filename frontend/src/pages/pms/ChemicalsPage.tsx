@@ -58,8 +58,7 @@ import {
   type ChemicalMasterColumnKey,
 } from "../../utils/chemicalMasterColumns";
 
-const EMPTY_CHEMICAL_FORM: ChemicalFullDataCreate & { id: number } = {
-  id: 0,
+const EMPTY_CHEMICAL_FORM: ChemicalFullDataCreate = {
   sector: "",
   industry: "",
   partner_id: null,
@@ -130,7 +129,7 @@ export function ChemicalsPage() {
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [formData, setFormData] = useState<ChemicalFullDataCreate & { id: number }>({
+  const [formData, setFormData] = useState<ChemicalFullDataCreate>({
     ...EMPTY_CHEMICAL_FORM,
   });
 
@@ -492,13 +491,16 @@ export function ChemicalsPage() {
     try {
       setCreating(true);
       const createData = formDataToCreatePayload(formData);
-      const created = await createChemicalFullData({ ...createData, id: 0 });
+      const created = await createChemicalFullData(createData);
       await refreshCatalog();
       setShowCreateForm(false);
       setShowCreateNameSuggestions(false);
       setFormData({ ...EMPTY_CHEMICAL_FORM });
       await loadChemicals({ offset: 0, search: created.product_name || created.generic_name || "" });
       await selectChemical(created);
+      if (created.id != null) {
+        alert(`Chemical created with Ref #${created.id}.`);
+      }
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create chemical");
@@ -970,6 +972,7 @@ export function ChemicalsPage() {
             <h2 className="text-xl font-bold text-slate-900 mb-1">Create New Chemical</h2>
             <p className="text-sm text-slate-500 mb-4">
               Type supplier, generic name, or product name — matching catalog rows fill the form.
+              A unique Ref # is assigned automatically when you save.
             </p>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -641,7 +641,7 @@ export async function fetchSharedCatalog(params?: {
   return res.data;
 }
 
-export async function createChemicalFullData(data: ChemicalFullDataCreate & { id: number }) {
+export async function createChemicalFullData(data: ChemicalFullDataCreate) {
   const res = await api.post<ChemicalFullData>("/pms/chemical-full-data", data);
   const { notifyCatalogUpdated, notifyCatalogProductUpserted } = await import(
     "../lib/catalogEvents"

@@ -213,7 +213,7 @@ export function masterSuggestionToChemicalForm(
 }
 
 export function formDataToCreatePayload(
-  form: ChemicalFullDataCreate & { id?: number },
+  form: ChemicalFullDataCreate,
 ): ChemicalFullDataCreate {
   const text = (v: string | null | undefined) => {
     const t = (v ?? "").trim();
