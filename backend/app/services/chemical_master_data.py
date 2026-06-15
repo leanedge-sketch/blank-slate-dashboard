@@ -442,10 +442,10 @@ def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullDat
                             existing_id,
                         )
                         from app.services.catalog_sync_service import (
-                            enrich_chemical_with_tds_fields,
+                            enrich_chemical_with_tds_document,
                         )
 
-                        return enrich_chemical_with_tds_fields(existing)
+                        return enrich_chemical_with_tds_document(existing)
 
     response = _insert_master_row(client, payload)
     if not response.data:

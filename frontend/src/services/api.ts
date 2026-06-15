@@ -570,9 +570,8 @@ export interface ChemicalFullData {
   product_type?: string | null;
   country_of_origin?: string | null;
   partner_id?: string | null;
-  /** Linked TDS row — read-only, populated by API. */
-  tds_brand?: string | null;
-  tds_grade?: string | null;
+  /** Linked TDS PDF URL — read-only, populated by API. */
+  tds_document?: string | null;
 }
 
 export interface ChemicalFullDataListResponse {

@@ -459,8 +459,7 @@ class ChemicalFullDataUpdate(BaseModel):
 class ChemicalFullData(ChemicalFullDataBase):
     id: int
     uuid_id: Optional[UUID] = None
-    tds_brand: Optional[str] = None
-    tds_grade: Optional[str] = None
+    tds_document: Optional[str] = None
 
 
 class ChemicalFullDataListResponse(BaseModel):

@@ -268,58 +268,66 @@ def refresh_catalog_row(chemical_id: int) -> Optional[ChemicalFullData]:
     return get_chemical_full_data_by_id(chemical_id)
 
 
-def _build_catalog_tds_lookup() -> tuple[
-    Dict[int, tuple[Optional[str], Optional[str]]],
-    Dict[str, tuple[Optional[str], Optional[str]]],
+def _build_catalog_tds_document_lookup() -> tuple[
+    Dict[int, str],
+    Dict[str, str],
 ]:
-    """Map catalog Row_No and uuid_id -> (tds brand, tds grade)."""
+    """Map catalog Row_No and uuid_id -> linked TDS document URL."""
+    from app.services.file_service import resolve_tds_document_url
     from app.services.pms_service import list_tds
 
-    by_row_no: Dict[int, tuple[Optional[str], Optional[str]]] = {}
-    by_uuid: Dict[str, tuple[Optional[str], Optional[str]]] = {}
+    by_row_no: Dict[int, str] = {}
+    by_uuid: Dict[str, str] = {}
     for row in list_tds(limit=10000, offset=0):
-        pair = (row.brand, row.grade)
         meta = row.metadata if isinstance(row.metadata, dict) else {}
+        url = resolve_tds_document_url(meta)
+        if not url:
+            continue
         raw_id = meta.get("chemical_full_data_id")
         if raw_id is not None:
             try:
                 cid = int(raw_id)
                 if cid not in by_row_no:
-                    by_row_no[cid] = pair
+                    by_row_no[cid] = url
             except (TypeError, ValueError):
                 pass
         if row.chemical_id:
             uid = str(row.chemical_id)
             if uid not in by_uuid:
-                by_uuid[uid] = pair
+                by_uuid[uid] = url
     return by_row_no, by_uuid
 
 
-def enrich_chemical_with_tds_fields(chem: ChemicalFullData) -> ChemicalFullData:
-    """Attach linked TDS brand/grade for display on master data screens."""
+def enrich_chemical_with_tds_document(chem: ChemicalFullData) -> ChemicalFullData:
+    """Attach linked TDS document URL for display on master data screens."""
+    from app.services.file_service import resolve_tds_document_url
+
     tds = _find_tds_for_catalog(chem)
     if not tds:
         return chem
-    return chem.model_copy(update={"tds_brand": tds.brand, "tds_grade": tds.grade})
+    url = resolve_tds_document_url(
+        tds.metadata if isinstance(tds.metadata, dict) else None
+    )
+    if not url:
+        return chem
+    return chem.model_copy(update={"tds_document": url})
 
 
-def enrich_chemicals_with_tds_fields(
+def enrich_chemicals_with_tds_document(
     chemicals: List[ChemicalFullData],
 ) -> List[ChemicalFullData]:
     if not chemicals:
         return chemicals
-    by_row_no, by_uuid = _build_catalog_tds_lookup()
+    by_row_no, by_uuid = _build_catalog_tds_document_lookup()
     enriched: List[ChemicalFullData] = []
     for chem in chemicals:
-        pair = None
+        url = None
         if chem.id is not None:
-            pair = by_row_no.get(int(chem.id))
-        if pair is None and chem.uuid_id:
-            pair = by_uuid.get(str(chem.uuid_id))
-        if pair:
-            enriched.append(
-                chem.model_copy(update={"tds_brand": pair[0], "tds_grade": pair[1]})
-            )
+            url = by_row_no.get(int(chem.id))
+        if url is None and chem.uuid_id:
+            url = by_uuid.get(str(chem.uuid_id))
+        if url:
+            enriched.append(chem.model_copy(update={"tds_document": url}))
         else:
             enriched.append(chem)
     return enriched

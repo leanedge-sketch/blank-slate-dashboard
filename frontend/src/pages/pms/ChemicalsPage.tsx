@@ -779,16 +779,30 @@ export function ChemicalsPage() {
     }
 
     if (!editable) {
+      if (col.key === "tds_document" && chemical.tds_document?.trim()) {
+        return (
+          <a
+            href={chemical.tds_document}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-blue-600 hover:text-blue-800 hover:underline"
+            title={chemical.tds_document}
+          >
+            View document
+          </a>
+        );
+      }
       const readOnlyHint =
         col.key === "current_price"
           ? "Synced from Pricing & Costing"
-          : col.key === "tds_brand" || col.key === "tds_grade"
+          : col.key === "tds_document"
             ? "From linked TDS record"
             : display;
       return (
         <span
           className={
-            col.key === "current_price" || col.key === "tds_brand" || col.key === "tds_grade"
+            col.key === "current_price" || col.key === "tds_document"
               ? "text-slate-500"
               : ""
           }
@@ -1467,8 +1481,8 @@ export function ChemicalsPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
                 Click any editable cell to update that field only. Scroll horizontally for all
-                columns — current price syncs from Pricing &amp; Costing; TDS brand/grade from
-                linked TDS.
+                columns — current price syncs from Pricing &amp; Costing; TDS document from linked
+                TDS PDF.
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1600px]">

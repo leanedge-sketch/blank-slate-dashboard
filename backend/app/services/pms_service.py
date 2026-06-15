@@ -1816,9 +1816,9 @@ def list_chemical_full_data(
         search=search,
     )
     rows = ensure_catalog_list_has_uuid_ids(rows)
-    from app.services.catalog_sync_service import enrich_chemicals_with_tds_fields
+    from app.services.catalog_sync_service import enrich_chemicals_with_tds_document
 
-    return enrich_chemicals_with_tds_fields(rows)
+    return enrich_chemicals_with_tds_document(rows)
 
 
 def count_chemical_full_data(
@@ -1852,12 +1852,12 @@ def create_chemical_full_data(body: ChemicalFullDataCreate) -> ChemicalFullData:
 def get_chemical_full_data_by_id(chemical_id: int) -> Optional[ChemicalFullData]:
     """Get a single Chemical_Master_Data row by Row_No."""
     from app.services.chemical_master_data import get_chemical_master_data_by_id
-    from app.services.catalog_sync_service import enrich_chemical_with_tds_fields
+    from app.services.catalog_sync_service import enrich_chemical_with_tds_document
 
     row = get_chemical_master_data_by_id(chemical_id)
     if not row:
         return None
-    return enrich_chemical_with_tds_fields(row)
+    return enrich_chemical_with_tds_document(row)
 
 
 def update_chemical_full_data(chemical_id: int, body: ChemicalFullDataUpdate) -> ChemicalFullData:
