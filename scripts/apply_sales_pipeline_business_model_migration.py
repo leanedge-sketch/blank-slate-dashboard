@@ -21,7 +21,7 @@ def main() -> None:
     db_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if not db_url:
         print(
-            "Set DATABASE_URL (Supabase → Project Settings → Database → Connection string)\n"
+            "Set DATABASE_URL (Supabase -> Project Settings -> Database -> Connection string)\n"
             f"or run in Supabase SQL Editor:\n  {SQL_PATH}\n"
         )
         sys.exit(1)
