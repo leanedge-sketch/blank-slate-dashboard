@@ -8,7 +8,8 @@ import {
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelinePricingSelect } from "./PipelinePricingSelect";
-import type { PipelineDealFormValues, dealFormText } from "../../utils/pipelineProduct";
+import type { PipelineDealFormValues } from "../../utils/pipelineProduct";
+import { dealFormText } from "../../utils/pipelineProduct";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500";
@@ -26,6 +27,8 @@ export function PipelineDealFields({
   requiredLevel = "none",
   showAmount = true,
   fieldsMode = "all",
+  showPricingSelect = true,
+  chemicals: chemicalsProp,
 }: {
   form: PipelineDealFormValues;
   onChange: (form: PipelineDealFormValues) => void;
@@ -34,8 +37,13 @@ export function PipelineDealFields({
   showAmount?: boolean;
   /** When product_amount, only product, unit, and quantity are shown. */
   fieldsMode?: "all" | "product_amount";
+  /** PMS pricing picker — off in Edit Pipeline to avoid API stalls. */
+  showPricingSelect?: boolean;
+  chemicals?: import("../../services/api").ChemicalFullData[];
 }) {
-  const { chemicals: chemicalFullData } = useProductCatalog();
+  const { chemicals: catalogChemicals } = useProductCatalog();
+  const chemicalFullData =
+    chemicalsProp && chemicalsProp.length > 0 ? chemicalsProp : catalogChemicals;
   const [businessModels, setBusinessModels] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [vendors, setVendors] = useState<string[]>([]);
@@ -268,7 +276,7 @@ export function PipelineDealFields({
         </div>
       )}
 
-      {showAllFields && customerId && form.chemical_type_id ? (
+      {showAllFields && showPricingSelect && customerId && form.chemical_type_id ? (
         <PipelinePricingSelect
           customerId={customerId}
           productId={form.chemical_type_id}

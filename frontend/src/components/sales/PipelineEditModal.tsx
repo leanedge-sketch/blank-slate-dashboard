@@ -6,24 +6,20 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  SalesPipeline,
-  updateSalesPipeline,
-} from "../../services/api";
+import { SalesPipeline, updateSalesPipeline } from "../../services/api";
 import { Edit2, Loader2, X, CheckCircle } from "lucide-react";
 import { PipelineDealFields } from "./PipelineDealFields";
-import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
   buildInPlacePipelineUpdatePayload,
-  dealFormText,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
   STAGES_REQUIRING_FULL_COMMERCIAL,
   validateDealFormForInPlaceEdit,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
+import type { ChemicalFullData } from "../../services/api";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500";
@@ -46,9 +42,9 @@ class EditModalErrorBoundary extends Component<
   render() {
     if (this.state.error) {
       return (
-        <div className="p-6 text-center space-y-4">
+        <div className="p-6 text-center space-y-4 bg-white rounded-xl max-w-lg mx-auto mt-24">
           <p className="text-red-600 font-semibold">Could not open Edit Pipeline</p>
-          <p className="text-sm text-slate-600">{this.state.error.message}</p>
+          <p className="text-sm text-slate-600 break-words">{this.state.error.message}</p>
           <button
             type="button"
             onClick={this.props.onClose}
@@ -65,14 +61,15 @@ class EditModalErrorBoundary extends Component<
 
 export function PipelineEditModal({
   pipeline,
+  chemicals,
   onClose,
   onSaved,
 }: {
   pipeline: SalesPipeline;
+  chemicals: ChemicalFullData[];
   onClose: () => void;
   onSaved: (updated: SalesPipeline) => void;
 }) {
-  const { chemicals, loading: catalogLoading } = useProductCatalog();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<PipelineDealFormValues>(() =>
     pipelineToDealFormValues(pipeline, chemicals),
@@ -80,11 +77,9 @@ export function PipelineEditModal({
   const [amountReason, setAmountReason] = useState("");
 
   useEffect(() => {
-    if (!catalogLoading || chemicals.length > 0) {
-      setForm(pipelineToDealFormValues(pipeline, chemicals));
-      setAmountReason("");
-    }
-  }, [pipeline.id, catalogLoading, chemicals.length]);
+    setForm(pipelineToDealFormValues(pipeline, chemicals));
+    setAmountReason("");
+  }, [pipeline.id, chemicals]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,10 +109,7 @@ export function PipelineEditModal({
       amountReason: amountReason.trim() || undefined,
     });
 
-    if (
-      !amountChanged &&
-      Object.keys(updateData).length === 0
-    ) {
+    if (!amountChanged && Object.keys(updateData).length === 0) {
       alert("No changes to save.");
       return;
     }
@@ -141,17 +133,18 @@ export function PipelineEditModal({
     amountChanged && amountChangeReasonRequired(pipeline.stage, amountVal);
 
   const modal = (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pipeline-edit-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <EditModalErrorBoundary onClose={onClose}>
+    <EditModalErrorBoundary onClose={onClose}>
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pipeline-edit-title"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center justify-between">
               <h2
@@ -183,10 +176,10 @@ export function PipelineEditModal({
               <span className="font-semibold text-slate-900">{pipeline.stage}</span>
             </div>
 
-            {!catalogLoading || chemicals.length > 0 ? (
             <PipelineDealFields
               form={form}
               onChange={setForm}
+              chemicals={chemicals}
               customerId={
                 pipeline.customer_id ? String(pipeline.customer_id) : undefined
               }
@@ -200,13 +193,8 @@ export function PipelineEditModal({
                     : "none"
               }
               fieldsMode="all"
+              showPricingSelect={false}
             />
-          ) : (
-            <div className="flex items-center justify-center gap-2 py-12 text-slate-600">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Loading product catalog…
-            </div>
-          )}
 
             {showAmountReason && (
               <div>
@@ -251,9 +239,9 @@ export function PipelineEditModal({
               </button>
             </div>
           </form>
-        </EditModalErrorBoundary>
+        </div>
       </div>
-    </div>
+    </EditModalErrorBoundary>
   );
 
   if (typeof document === "undefined") return null;

@@ -1609,6 +1609,7 @@ export function PipelineDetailPage() {
       {showEditForm && selectedPipeline && (
         <PipelineEditModal
           pipeline={currentPipeline ?? selectedPipeline}
+          chemicals={chemicalFullData}
           onClose={() => setShowEditForm(false)}
           onSaved={(updated) => {
             setSelectedPipeline(updated);
