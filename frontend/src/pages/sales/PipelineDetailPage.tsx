@@ -1604,10 +1604,13 @@ export function PipelineDetailPage() {
 
       {showEditForm && selectedPipeline && (
         <PipelineEditModal
-          pipeline={selectedPipeline}
+          pipeline={currentPipeline ?? selectedPipeline}
           onClose={() => setShowEditForm(false)}
           onSaved={(updated) => {
             setSelectedPipeline(updated);
+            if (updated.id && String(updated.id) !== String(pipelineId)) {
+              navigate(`/sales/pipeline/${updated.id}`, { replace: true });
+            }
             void loadPipelineDetails();
           }}
         />

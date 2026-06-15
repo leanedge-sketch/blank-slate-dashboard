@@ -607,6 +607,76 @@ def _vendor_from_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
+def _numeric_values_differ(a: Any, b: Any) -> bool:
+    if a is None and b is None:
+        return False
+    if a is None or b is None:
+        return True
+    try:
+        return float(a) != float(b)
+    except (TypeError, ValueError):
+        return a != b
+
+
+def _pipeline_db_error_message(exc: Exception) -> Optional[str]:
+    msg = str(exc)
+    low = msg.lower()
+    if "sales_pipeline_business_model_check" in msg or (
+        "business_model" in low and "check constraint" in low
+    ):
+        return (
+            "Business model is not allowed by the database. "
+            "Run docs/0012_sales_pipeline_business_model.sql in Supabase, then retry."
+        )
+    return None
+
+
+def _apply_pipeline_row_update(
+    supabase: Client,
+    target_id: str,
+    update_data: dict,
+) -> SalesPipeline:
+    """Persist an in-place pipeline update and return the saved row."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    def _run_update(payload: dict):
+        return (
+            supabase.table("sales_pipeline")
+            .update(payload)
+            .eq("id", target_id)
+            .select("*")
+            .execute()
+        )
+
+    try:
+        response = _run_update(update_data)
+    except Exception as exc:
+        mapped = _pipeline_db_error_message(exc)
+        if mapped:
+            raise ValueError(mapped) from exc
+        error_str = str(exc).lower()
+        if "amount" in error_str and (
+            "column" in error_str or "does not exist" in error_str
+        ):
+            logger.warning("Column 'amount' not found, trying 'deal_value_usd' instead")
+            if "amount" in update_data:
+                update_data["deal_value_usd"] = update_data.pop("amount")
+            response = _run_update(update_data)
+        else:
+            raise
+
+    if response.data:
+        row = normalize_pipeline_row_from_db(response.data[0])
+        return SalesPipeline(**row)
+
+    refreshed = get_sales_pipeline_by_id(target_id)
+    if refreshed:
+        return refreshed
+    raise RuntimeError("Failed to update sales pipeline record")
+
+
 def validate_pipeline_stage_requirements(
     *,
     stage: str,
@@ -843,6 +913,7 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     current_in_chain = _get_current_pipeline_in_chain(supabase, root_id)
     # Branch from the chain's current version so stale detail-page URLs stay safe.
     base = current_in_chain if current_in_chain else existing
+    target_id = str(base.id)
     
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
@@ -850,7 +921,9 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     
     # Check if stage or amount changed (relative to the current version in chain)
     stage_changed = "stage" in update_data and update_data["stage"] != base.stage
-    amount_changed = "amount" in update_data and update_data.get("amount") != base.amount
+    amount_changed = "amount" in update_data and _numeric_values_differ(
+        update_data.get("amount"), base.amount
+    )
     
     # Validate stage progression if stage changed
     if stage_changed:
@@ -893,6 +966,13 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         from app.services.business_model_service import validate_pipeline_business_model
 
         validate_pipeline_business_model(merged_business_model)
+
+    if not stage_changed and not amount_changed and "business_model" in update_data:
+        from app.services.business_model_service import validate_pipeline_business_model
+
+        validate_pipeline_business_model(
+            update_data.get("business_model", base.business_model)
+        )
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
     if amount_changed:
@@ -961,6 +1041,9 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         try:
             response = supabase.table("sales_pipeline").insert(new_pipeline_data).execute()
         except Exception as e:
+            mapped = _pipeline_db_error_message(e)
+            if mapped:
+                raise ValueError(mapped) from e
             error_str = str(e).lower()
             if "business_model" in error_str and "required" in error_str:
                 merged_stage = new_pipeline_data.get("stage", base.stage)
@@ -1035,40 +1118,19 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             )
         return new_pipeline
     
-    # Regular update (no stage/amount change) - just update existing record
-    update_data = convert_uuids(normalize_pipeline_payload_to_db(update_data))
-    
+    # Regular update (no stage/amount change) — update the current chain head
     import logging
+
     logger = logging.getLogger(__name__)
-    logger.info(f"Updating pipeline {pipeline_id} with data: {update_data}")
-    
-    try:
-        response = (
-            supabase.table("sales_pipeline")
-            .update(update_data)
-            .eq("id", pipeline_id)
-            .execute()
+    if str(pipeline_id) != target_id:
+        logger.warning(
+            "Pipeline edit targeted stale id %s; applying to current version %s",
+            pipeline_id,
+            target_id,
         )
-    except Exception as e:
-        error_str = str(e).lower()
-        if "amount" in error_str and ("column" in error_str or "does not exist" in error_str):
-            logger.warning(f"Column 'amount' not found, trying 'deal_value_usd' instead")
-            if "amount" in update_data:
-                update_data["deal_value_usd"] = update_data.pop("amount")
-            response = (
-                supabase.table("sales_pipeline")
-                .update(update_data)
-                .eq("id", pipeline_id)
-                .execute()
-            )
-        else:
-            raise
-    
-    if not response.data:
-        raise RuntimeError("Failed to update sales pipeline record")
-    
-    row = normalize_pipeline_row_from_db(response.data[0])
-    return SalesPipeline(**row)
+    db_update = convert_uuids(normalize_pipeline_payload_to_db(update_data))
+    logger.info("Updating pipeline %s with data: %s", target_id, db_update)
+    return _apply_pipeline_row_update(supabase, target_id, db_update)
 
 
 def delete_sales_pipeline(pipeline_id: str) -> bool:

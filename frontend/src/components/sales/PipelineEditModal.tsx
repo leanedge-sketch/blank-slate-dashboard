@@ -10,7 +10,8 @@ import {
   amountChangeReasonRequired,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
-  validateDealFormForProductAndAmount,
+  STAGES_REQUIRING_FULL_COMMERCIAL,
+  validateDealFormForTargetStage,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
 
@@ -35,15 +36,10 @@ export function PipelineEditModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (pipelineStageRequiresProductAndAmount(pipeline.stage)) {
-      const productError = validateDealFormForProductAndAmount(
-        form,
-        pipeline.stage,
-      );
-      if (productError) {
-        alert(productError);
-        return;
-      }
+    const validationError = validateDealFormForTargetStage(form, pipeline.stage);
+    if (validationError) {
+      alert(validationError);
+      return;
     }
     const amountVal =
       form.amount === "" || form.amount === null ? null : Number(form.amount);
@@ -70,10 +66,9 @@ export function PipelineEditModal({
       expected_close_date: form.expected_close_date || null,
       lead_source: form.lead_source.trim() || null,
       contact_per_lead: form.contact_per_lead.trim() || null,
-      business_model: form.business_model || null,
+      business_model: form.business_model.trim() || null,
       business_unit: (form.business_unit as SalesPipelineUpdate["business_unit"]) || null,
       unit: form.unit || null,
-      amount: amountVal,
       unit_price:
         form.unit_price === "" || form.unit_price === null
           ? null
@@ -82,8 +77,11 @@ export function PipelineEditModal({
       forex: (form.forex as SalesPipelineUpdate["forex"]) || null,
       incoterm: (form.incoterm as SalesPipelineUpdate["incoterm"]) || null,
       metadata,
-      reason_for_amount_change: amountChanged ? amountReason : null,
     };
+    if (amountChanged) {
+      updateData.amount = amountVal;
+      updateData.reason_for_amount_change = amountReason.trim() || null;
+    }
 
     try {
       setSaving(true);
@@ -144,15 +142,15 @@ export function PipelineEditModal({
             onChange={setForm}
             customerId={pipeline.customer_id ? String(pipeline.customer_id) : undefined}
             requiredLevel={
-              pipelineStageRequiresProductAndAmount(pipeline.stage)
-                ? "product_amount"
-                : "none"
+              (STAGES_REQUIRING_FULL_COMMERCIAL as readonly string[]).includes(
+                pipeline.stage,
+              )
+                ? "full"
+                : pipelineStageRequiresProductAndAmount(pipeline.stage)
+                  ? "product_amount"
+                  : "none"
             }
-            fieldsMode={
-              pipelineStageRequiresProductAndAmount(pipeline.stage)
-                ? "product_amount"
-                : "all"
-            }
+            fieldsMode="all"
           />
 
           {showAmountReason && (
