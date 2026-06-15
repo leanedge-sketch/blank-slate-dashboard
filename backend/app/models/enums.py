@@ -145,10 +145,24 @@ class Unit(_BaseStrEnum):
     UNIT  = "unit"
 
 
-class BusinessModel(_BaseStrEnum):
-    """Shared between Sales Pipeline and Nairobi-Partner stock flows."""
+class StockBusinessModel(_BaseStrEnum):
+    """Nairobi-partner stock movement business models."""
     STOCK            = "Stock"
     DIRECT_DELIVERY  = "Direct Delivery"
+
+
+# Back-compat alias used by stock validators and models.
+BusinessModel = StockBusinessModel
+
+
+class SalesPipelineBusinessModel(_BaseStrEnum):
+    """Fallback sales pipeline models when Business_Model lookup is empty."""
+    SEZ_IMPORT    = "SEZ Import"
+    LOCAL_STOCK   = "Local Stock"
+    MANUFACTURER  = "Manufacturer"
+    DISTRIBUTOR   = "Distributor"
+    TRADER        = "Trader"
+    AGENCY        = "Agency"
 
 
 # =============================================================================
@@ -174,18 +188,20 @@ INCOTERM_OPTIONS                  = Incoterm.values()
 LOCATIONS                         = StockLocation.values()
 TRANSACTION_TYPES                 = TransactionType.values()
 UNITS                             = Unit.values()
-BUSINESS_MODEL_TYPES              = BusinessModel.values()
+BUSINESS_MODEL_TYPES              = StockBusinessModel.values()
+SALES_PIPELINE_BUSINESS_MODEL_TYPES = SalesPipelineBusinessModel.values()
 QUOTE_FORMATS                     = QuoteFormat.values()
 
 
 __all__ = [
     # Enums
     "PipelineStage", "Currency", "ForexBearer", "BusinessUnit", "Incoterm",
-    "StockLocation", "TransactionType", "Unit", "BusinessModel", "QuoteFormat",
+    "StockLocation", "TransactionType", "Unit", "BusinessModel", "StockBusinessModel",
+    "SalesPipelineBusinessModel", "QuoteFormat",
     # Composite rules
     "STAGES_REQUIRING_BUSINESS_DETAILS",
     # Back-compat lists
     "PIPELINE_STAGES", "CURRENCIES", "FOREX_OPTIONS", "BUSINESS_UNIT_OPTIONS",
     "INCOTERM_OPTIONS", "LOCATIONS", "TRANSACTION_TYPES", "UNITS",
-    "BUSINESS_MODEL_TYPES", "QUOTE_FORMATS",
+    "BUSINESS_MODEL_TYPES", "SALES_PIPELINE_BUSINESS_MODEL_TYPES", "QUOTE_FORMATS",
 ]

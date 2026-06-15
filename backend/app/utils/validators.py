@@ -54,6 +54,7 @@ from uuid import UUID
 
 from backend.app.models.enums import (
     BusinessModel,
+    StockBusinessModel,
     BusinessUnit,
     Currency,
     ForexBearer,
@@ -180,7 +181,15 @@ def validate_sales_pipeline_row(row: Mapping[str, Any]) -> Dict[str, str]:
     _check_enum(errors, "forex",          row.get("forex"),          ForexBearer.values(),  required=False)
     _check_enum(errors, "business_unit",  row.get("business_unit"),  BusinessUnit.values(), required=False)
     _check_enum(errors, "incoterm",       row.get("incoterm"),       Incoterm.values(),     required=False)
-    _check_enum(errors, "business_model", row.get("business_model"), BusinessModel.values(),required=False)
+    from app.services.business_model_service import allowed_sales_pipeline_business_models
+
+    _check_enum(
+        errors,
+        "business_model",
+        row.get("business_model"),
+        allowed_sales_pipeline_business_models(),
+        required=False,
+    )
 
     _check_non_negative(errors, "amount",     row.get("amount"))
     _check_non_negative(errors, "unit_price", row.get("unit_price"))
@@ -275,7 +284,7 @@ def validate_stock_movement_row(row: Mapping[str, Any]) -> Dict[str, str]:
     _check_enum(errors, "location",         row.get("location"),         StockLocation.values())
     _check_enum(errors, "transaction_type", row.get("transaction_type"), TransactionType.values())
     _check_enum(errors, "unit",             row.get("unit"),             Unit.values(), required=False)
-    _check_enum(errors, "business_model",   row.get("business_model"),   BusinessModel.values(), required=False)
+    _check_enum(errors, "business_model",   row.get("business_model"),   StockBusinessModel.values(), required=False)
 
     for f in _QUANTITY_FIELDS:
         _check_non_negative(errors, f, row.get(f))

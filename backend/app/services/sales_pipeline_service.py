@@ -535,13 +535,31 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
         if not payload.get("contact_per_lead") and lead_info.get("contact_per_lead"):
             payload["contact_per_lead"] = lead_info["contact_per_lead"]
     
+    validate_pipeline_stage_requirements(
+        stage=payload.get("stage") or "Lead ID",
+        business_model=payload.get("business_model"),
+        unit=payload.get("unit"),
+        unit_price=payload.get("unit_price"),
+        close_reason=payload.get("close_reason"),
+        currency=payload.get("currency"),
+        forex=payload.get("forex"),
+        business_unit=payload.get("business_unit"),
+        incoterm=payload.get("incoterm"),
+        chemical_type_id=str(payload.get("chemical_type_id"))
+        if payload.get("chemical_type_id")
+        else None,
+        expected_close_date=payload.get("expected_close_date"),
+        amount=payload.get("amount"),
+        metadata=meta if isinstance(meta, dict) else None,
+    )
+
+    from app.services.business_model_service import validate_pipeline_business_model
+
+    validate_pipeline_business_model(payload.get("business_model"))
+
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)
-    
-    # Map 'amount' to database column name
-    # The database might have 'amount', 'deal_value', or 'deal_value_usd'
-    # Since user said they changed it to 'amount', we'll try that first
-    # But to be safe, we'll also check for the other column names
+
     db_payload = normalize_pipeline_payload_to_db(payload)
     
     # Log the payload for debugging
@@ -872,6 +890,9 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             amount=update_data.get("amount", base.amount),
             metadata=merged_metadata,
         )
+        from app.services.business_model_service import validate_pipeline_business_model
+
+        validate_pipeline_business_model(merged_business_model)
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
     if amount_changed:

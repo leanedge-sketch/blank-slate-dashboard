@@ -55,54 +55,10 @@ class PipelineChatRequest(BaseModel):
 
 
 def get_business_models() -> List[str]:
-    """Fetch business model names from Business_Model table.
-    
-    Tries different variations of table and column names to handle case sensitivity.
-    The table is created as public."Business_Model" with column "Name" (both quoted).
-    """
-    from app.database.connection import get_supabase_client
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    try:
-        supabase = get_supabase_client()
-        
-        # Try different table/column name combinations
-        # Since table is created as "Business_Model" (quoted), try exact case first
-        table_variations = [
-            ("Business_Model", "Name"),  # Exact case as created
-            ("Business_Model", "name"),
-            ("business_model", "Name"),
-            ("business_model", "name"),
-        ]
-        
-        for table_name, column_name in table_variations:
-            try:
-                logger.debug(f"Trying table '{table_name}' column '{column_name}'")
-                response = supabase.table(table_name).select(column_name).execute()
-                if response.data:
-                    models = []
-                    for row in response.data:
-                        # Try different column name variations (case-sensitive in PostgreSQL)
-                        # The column is created as "Name" (quoted), so try exact match first
-                        value = row.get("Name") or row.get(column_name) or row.get("name")
-                        if value and str(value).strip():
-                            models.append(str(value).strip())
-                    
-                    if models:
-                        logger.info(f"Found {len(models)} business models from table '{table_name}'")
-                        return models
-                    else:
-                        logger.debug(f"Table '{table_name}' returned data but no valid Name values")
-            except Exception as e:
-                logger.debug(f"Table '{table_name}' column '{column_name}' not accessible: {str(e)}")
-                continue
-        
-        logger.warning("Could not find Business_Model table or it has no data")
-        return []
-    except Exception as e:
-        logger.error(f"Error in get_business_models: {str(e)}", exc_info=True)
-        return []
+    """Fetch business model names from Business_Model table."""
+    from app.services.business_model_service import list_sales_pipeline_business_models
+
+    return list_sales_pipeline_business_models()
 
 
 # =============================
@@ -269,6 +225,17 @@ async def get_pipeline_versions_endpoint(
         raise HTTPException(status_code=500, detail=f"Error fetching pipeline versions: {str(e)}")
 
 
+def _pipeline_error_detail(exc: Exception) -> str:
+    msg = str(exc)
+    if "sales_pipeline_business_model_check" in msg:
+        return (
+            "Business model is not allowed by the database yet. "
+            "Run docs/0012_sales_pipeline_business_model.sql in Supabase SQL Editor "
+            "(or scripts/apply_sales_pipeline_business_model_migration.py), then retry."
+        )
+    return msg
+
+
 @router.post("/sales-pipeline", response_model=SalesPipeline, status_code=201)
 async def create_pipeline(
     body: SalesPipelineCreate,
@@ -280,7 +247,7 @@ async def create_pipeline(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating pipeline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating pipeline: {_pipeline_error_detail(e)}")
 
 
 @router.put("/sales-pipeline/{pipeline_id}", response_model=SalesPipeline)
@@ -295,7 +262,7 @@ async def update_pipeline(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating pipeline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating pipeline: {_pipeline_error_detail(e)}")
 
 
 @router.delete("/sales-pipeline/{pipeline_id}", status_code=204)
