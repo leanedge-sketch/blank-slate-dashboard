@@ -790,6 +790,9 @@ export function SalesPipelinePage() {
       ? (meta.contacts_per_lead as string[]).filter(Boolean)
       : [];
 
+    const vendor =
+      (meta.vendor as string) || (meta.vendor_name as string) || "";
+
     setFormData({
       customer_id: pipeline.customer_id,
       tds_id: pipeline.tds_id || null,
@@ -807,6 +810,7 @@ export function SalesPipelinePage() {
       forex: pipeline.forex || null,
       business_unit: pipeline.business_unit || null,
       incoterm: pipeline.incoterm || null,
+      vendor_name: vendor || null,
       metadata: pipeline.metadata || null,
     });
     setLeadSourceEntries(

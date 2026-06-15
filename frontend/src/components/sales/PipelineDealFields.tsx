@@ -8,7 +8,7 @@ import {
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelinePricingSelect } from "./PipelinePricingSelect";
-import type { PipelineDealFormValues } from "../../utils/pipelineProduct";
+import type { PipelineDealFormValues, dealFormText } from "../../utils/pipelineProduct";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500";
@@ -63,8 +63,11 @@ export function PipelineDealFields({
   function vendorOptions(): string[] {
     const set = new Set<string>();
     vendors.forEach((v) => set.add(v));
+    const productId = dealFormText(form.chemical_type_id);
     const product = chemicalFullData.find(
-      (c) => c.uuid_id === form.chemical_type_id,
+      (c) =>
+        (c.uuid_id && dealFormText(c.uuid_id) === productId) ||
+        dealFormText(c.id) === productId,
     );
     if (product?.vendor) set.add(product.vendor);
     if (product?.partner_id) {
@@ -102,7 +105,7 @@ export function PipelineDealFields({
             .map((c) => {
               const value = c.uuid_id ? String(c.uuid_id) : String(c.id);
               return (
-                <option key={value} value={value}>
+                <option key={`${c.id}-${value}`} value={value}>
                   {c.product_name}
                   {c.vendor ? ` (${c.vendor})` : ""}
                 </option>

@@ -8,7 +8,6 @@ import {
 import { createPortal } from "react-dom";
 import {
   SalesPipeline,
-  SalesPipelineUpdate,
   updateSalesPipeline,
 } from "../../services/api";
 import { Edit2, Loader2, X, CheckCircle } from "lucide-react";
@@ -17,6 +16,7 @@ import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
+  buildInPlacePipelineUpdatePayload,
   dealFormText,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
@@ -72,7 +72,7 @@ export function PipelineEditModal({
   onClose: () => void;
   onSaved: (updated: SalesPipeline) => void;
 }) {
-  const { chemicals } = useProductCatalog();
+  const { chemicals, loading: catalogLoading } = useProductCatalog();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<PipelineDealFormValues>(() =>
     pipelineToDealFormValues(pipeline, chemicals),
@@ -80,9 +80,11 @@ export function PipelineEditModal({
   const [amountReason, setAmountReason] = useState("");
 
   useEffect(() => {
-    setForm(pipelineToDealFormValues(pipeline, chemicals));
-    setAmountReason("");
-  }, [pipeline.id]);
+    if (!catalogLoading || chemicals.length > 0) {
+      setForm(pipelineToDealFormValues(pipeline, chemicals));
+      setAmountReason("");
+    }
+  }, [pipeline.id, catalogLoading, chemicals.length]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -106,35 +108,18 @@ export function PipelineEditModal({
       return;
     }
 
-    const metadata: Record<string, unknown> = {
-      ...(pipeline.metadata || {}),
-    };
-    const vendor = dealFormText(form.vendor_name);
-    if (vendor) metadata.vendor = vendor;
+    const updateData = buildInPlacePipelineUpdatePayload(pipeline, form, {
+      amountChanged,
+      amountVal,
+      amountReason: amountReason.trim() || undefined,
+    });
 
-    const updateData: SalesPipelineUpdate = {
-      chemical_type_id: dealFormText(form.chemical_type_id) || null,
-      expected_close_date: dealFormText(form.expected_close_date) || null,
-      lead_source: dealFormText(form.lead_source) || null,
-      contact_per_lead: dealFormText(form.contact_per_lead) || null,
-      business_model: dealFormText(form.business_model) || null,
-      business_unit: (dealFormText(form.business_unit) ||
-        null) as SalesPipelineUpdate["business_unit"],
-      unit: dealFormText(form.unit) || null,
-      unit_price:
-        form.unit_price === "" || form.unit_price === null
-          ? null
-          : Number(form.unit_price),
-      currency: (dealFormText(form.currency) ||
-        null) as SalesPipelineUpdate["currency"],
-      forex: (dealFormText(form.forex) || null) as SalesPipelineUpdate["forex"],
-      incoterm: (dealFormText(form.incoterm) ||
-        null) as SalesPipelineUpdate["incoterm"],
-      metadata,
-    };
-    if (amountChanged) {
-      updateData.amount = amountVal;
-      updateData.reason_for_amount_change = amountReason.trim() || null;
+    if (
+      !amountChanged &&
+      Object.keys(updateData).length === 0
+    ) {
+      alert("No changes to save.");
+      return;
     }
 
     try {
@@ -161,6 +146,9 @@ export function PipelineEditModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="pipeline-edit-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <EditModalErrorBoundary onClose={onClose}>
@@ -195,6 +183,7 @@ export function PipelineEditModal({
               <span className="font-semibold text-slate-900">{pipeline.stage}</span>
             </div>
 
+            {!catalogLoading || chemicals.length > 0 ? (
             <PipelineDealFields
               form={form}
               onChange={setForm}
@@ -212,6 +201,12 @@ export function PipelineEditModal({
               }
               fieldsMode="all"
             />
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-12 text-slate-600">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading product catalog…
+            </div>
+          )}
 
             {showAmountReason && (
               <div>

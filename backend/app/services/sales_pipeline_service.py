@@ -677,6 +677,26 @@ def _apply_pipeline_row_update(
     raise RuntimeError("Failed to update sales pipeline record")
 
 
+
+def _merged_inplace_pipeline_state(
+    base: SalesPipeline,
+    update_data: dict,
+) -> dict:
+    """Merge an in-place update onto the current deal for validation."""
+    merged = base.model_dump()
+    for key, value in update_data.items():
+        if key in ("reason_for_stage_change", "reason_for_amount_change"):
+            continue
+        if key == "metadata" and isinstance(value, dict):
+            existing = merged.get("metadata") or {}
+            if not isinstance(existing, dict):
+                existing = {}
+            merged["metadata"] = {**existing, **value}
+        elif value is not None:
+            merged[key] = value
+    return merged
+
+
 def validate_pipeline_stage_requirements(
     *,
     stage: str,
@@ -967,37 +987,29 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         validate_pipeline_business_model(merged_business_model)
 
     if not stage_changed and not amount_changed:
-        merged_metadata = (
-            update_data["metadata"]
-            if "metadata" in update_data
-            else base.metadata
-        )
-        resolved_chem = _resolve_chemical_type_id(
-            update_data.get("chemical_type_id", base.chemical_type_id)
-        )
+        merged = _merged_inplace_pipeline_state(base, update_data)
+        merged_metadata = merged.get("metadata")
+        resolved_chem = _resolve_chemical_type_id(merged.get("chemical_type_id"))
         validate_pipeline_stage_requirements(
             stage=base.stage,
-            business_model=update_data.get("business_model", base.business_model),
-            unit=update_data.get("unit", base.unit),
-            unit_price=update_data.get("unit_price", base.unit_price),
-            close_reason=update_data.get("close_reason", base.close_reason),
-            currency=update_data.get("currency", base.currency),
-            forex=update_data.get("forex", base.forex),
-            business_unit=update_data.get("business_unit", base.business_unit),
-            incoterm=update_data.get("incoterm", base.incoterm),
+            business_model=merged.get("business_model"),
+            unit=merged.get("unit"),
+            unit_price=merged.get("unit_price"),
+            close_reason=merged.get("close_reason"),
+            currency=merged.get("currency"),
+            forex=merged.get("forex"),
+            business_unit=merged.get("business_unit"),
+            incoterm=merged.get("incoterm"),
             chemical_type_id=resolved_chem,
-            expected_close_date=update_data.get(
-                "expected_close_date", base.expected_close_date
-            ),
-            amount=update_data.get("amount", base.amount),
-            metadata=merged_metadata,
+            expected_close_date=merged.get("expected_close_date"),
+            amount=merged.get("amount"),
+            metadata=merged_metadata if isinstance(merged_metadata, dict) else None,
         )
-        if "business_model" in update_data or base.business_model:
+        business_model = merged.get("business_model")
+        if business_model:
             from app.services.business_model_service import validate_pipeline_business_model
 
-            validate_pipeline_business_model(
-                update_data.get("business_model", base.business_model)
-            )
+            validate_pipeline_business_model(business_model)
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
     if amount_changed:

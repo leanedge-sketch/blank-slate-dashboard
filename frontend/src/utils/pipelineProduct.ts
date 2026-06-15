@@ -1,4 +1,10 @@
-import type { ChemicalFullData, ChemicalType, SalesPipeline, Tds } from "../services/api";
+import type {
+  ChemicalFullData,
+  ChemicalType,
+  SalesPipeline,
+  SalesPipelineUpdate,
+  Tds,
+} from "../services/api";
 
 /** Display label for a deal's product (chemical catalog or TDS). */
 export function getPipelineProductLabel(
@@ -280,6 +286,130 @@ export function validateDealFormForInPlaceEdit(
     return validateDealFormForProposal(form);
   }
   return null;
+}
+
+function formAmountValue(amount: PipelineDealFormValues["amount"]): number | null {
+  if (amount === "" || amount === null || amount === undefined) return null;
+  return Number(amount);
+}
+
+function amountsEqual(
+  a: PipelineDealFormValues["amount"],
+  b: PipelineDealFormValues["amount"],
+): boolean {
+  return formAmountValue(a) === formAmountValue(b);
+}
+
+function unitPricesEqual(
+  a: PipelineDealFormValues["unit_price"],
+  b: PipelineDealFormValues["unit_price"],
+): boolean {
+  const norm = (v: PipelineDealFormValues["unit_price"]) =>
+    v === "" || v === null || v === undefined ? null : Number(v);
+  return norm(a) === norm(b);
+}
+
+/** Build a partial update body for in-place edits (only changed fields). */
+export function buildInPlacePipelineUpdatePayload(
+  pipeline: SalesPipeline,
+  form: PipelineDealFormValues,
+  options: {
+    amountChanged?: boolean;
+    amountVal?: number | null;
+    amountReason?: string;
+  } = {},
+): SalesPipelineUpdate {
+  const original = pipelineToDealFormValues(pipeline);
+  const update: SalesPipelineUpdate = {};
+
+  const setIfChanged = (
+    key: keyof SalesPipelineUpdate,
+    next: string | null,
+    prev: string,
+  ) => {
+    const normalizedNext = next ?? "";
+    const normalizedPrev = prev ?? "";
+    if (normalizedNext !== normalizedPrev) {
+      (update as Record<string, unknown>)[key] = next;
+    }
+  };
+
+  setIfChanged(
+    "chemical_type_id",
+    dealFormText(form.chemical_type_id) || null,
+    original.chemical_type_id,
+  );
+  setIfChanged(
+    "expected_close_date",
+    dealFormText(form.expected_close_date) || null,
+    original.expected_close_date,
+  );
+  setIfChanged(
+    "lead_source",
+    dealFormText(form.lead_source) || null,
+    original.lead_source,
+  );
+  setIfChanged(
+    "contact_per_lead",
+    dealFormText(form.contact_per_lead) || null,
+    original.contact_per_lead,
+  );
+  setIfChanged(
+    "business_model",
+    dealFormText(form.business_model) || null,
+    original.business_model,
+  );
+  setIfChanged(
+    "business_unit",
+    dealFormText(form.business_unit) || null,
+    original.business_unit,
+  );
+  setIfChanged("unit", dealFormText(form.unit) || null, original.unit);
+  setIfChanged(
+    "currency",
+    dealFormText(form.currency) || null,
+    original.currency,
+  );
+  setIfChanged("forex", dealFormText(form.forex) || null, original.forex);
+  setIfChanged(
+    "incoterm",
+    dealFormText(form.incoterm) || null,
+    original.incoterm,
+  );
+
+  if (!unitPricesEqual(form.unit_price, original.unit_price)) {
+    update.unit_price =
+      form.unit_price === "" || form.unit_price === null
+        ? null
+        : Number(form.unit_price);
+  }
+
+  const vendor = dealFormText(form.vendor_name);
+  const origVendor = dealFormText(original.vendor_name);
+  const pricingId = dealFormText(form.pricing_record_id);
+  const origPricingId = dealFormText(original.pricing_record_id);
+  if (vendor !== origVendor || pricingId !== origPricingId) {
+    const metadata: Record<string, unknown> = {
+      ...((pipeline.metadata || {}) as Record<string, unknown>),
+    };
+    if (vendor) metadata.vendor = vendor;
+    else delete metadata.vendor;
+    if (pricingId) {
+      metadata.pricing_record_id = pricingId;
+      metadata.pricing_locked = true;
+    } else {
+      delete metadata.pricing_record_id;
+      delete metadata.pricing_locked;
+    }
+    update.metadata = metadata;
+  }
+
+  if (options.amountChanged) {
+    update.amount = options.amountVal ?? null;
+    update.reason_for_amount_change = options.amountReason?.trim() || null;
+  }
+
+  return update;
 }
 
 export function buildPipelineProductAmountPayload(
