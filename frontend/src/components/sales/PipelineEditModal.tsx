@@ -6,12 +6,13 @@ import {
 } from "../../services/api";
 import { Edit2, Loader2, X, CheckCircle } from "lucide-react";
 import { PipelineDealFields } from "./PipelineDealFields";
+import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
   STAGES_REQUIRING_FULL_COMMERCIAL,
-  validateDealFormForTargetStage,
+  validateDealFormForInPlaceEdit,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
 
@@ -36,7 +37,7 @@ export function PipelineEditModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const validationError = validateDealFormForTargetStage(form, pipeline.stage);
+    const validationError = validateDealFormForInPlaceEdit(form, pipeline.stage);
     if (validationError) {
       alert(validationError);
       return;
@@ -89,12 +90,7 @@ export function PipelineEditModal({
       onSaved(updated);
       onClose();
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ||
-        (err as Error)?.message ||
-        "Failed to save";
-      alert(String(message));
+      alert(formatApiErrorDetail(err, "Failed to save pipeline edits"));
     } finally {
       setSaving(false);
     }

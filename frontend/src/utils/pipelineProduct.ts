@@ -240,6 +240,24 @@ export function validateDealFormForTargetStage(
   return validateDealFormForProposal(form);
 }
 
+/** Validate in-place edits against the deal's current stage (not a stage move). */
+export function validateDealFormForInPlaceEdit(
+  form: PipelineDealFormValues,
+  currentStage: string,
+): string | null {
+  const productAmountError = validateDealFormForProductAndAmount(
+    form,
+    currentStage,
+  );
+  if (productAmountError) {
+    return productAmountError;
+  }
+  if (pipelineTargetRequiresFullCommercial(currentStage)) {
+    return validateDealFormForProposal(form);
+  }
+  return null;
+}
+
 export function buildPipelineProductAmountPayload(
   dealForm: PipelineDealFormValues,
 ): Record<string, unknown> {

@@ -564,7 +564,7 @@ export function PipelineDetailPage() {
           : undefined,
       };
 
-      const updated = await updateSalesPipeline(selectedPipeline.id, updateData);
+      const updated = await updateSalesPipeline(currentPipeline.id, updateData);
       setShowUpdateForm(false);
       setUpdateFormData({});
       setUpdateDealForm(null);

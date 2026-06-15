@@ -9,10 +9,29 @@ They are thin "contracts" between the FastAPI layer and the outside world.
 """
 
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _coerce_chemical_type_id(value: Any) -> Optional[UUID]:
+    """
+    Accept catalog uuid_id or legacy chemical_full_data row id from the UI.
+  """
+    if value is None or value == "":
+        return None
+    from app.services.catalog_sync_service import resolve_catalog_product_uuid
+
+    resolved = resolve_catalog_product_uuid(value)
+    if resolved:
+        return UUID(resolved)
+    try:
+        return UUID(str(value))
+    except ValueError as exc:
+        raise ValueError(
+            "chemical_type_id must be a catalog product UUID (or legacy row id)"
+        ) from exc
 
 
 # =============================
@@ -77,6 +96,18 @@ class SalesPipelineBase(BaseModel):
     business_unit: Optional[str] = Field(None, description="Business Unit: Hayat, Alhadi, Bet-chem, Barracoda, or Nyumb-Chem")
     incoterm: Optional[str] = Field(None, description="Incoterm: Import of Record, Agency, Direct Import, or Stock – Addis Ababa")
     metadata: Optional[Dict[str, Any]] = None
+
+    @field_validator("chemical_type_id", mode="before")
+    @classmethod
+    def normalize_chemical_type_id(cls, v: Any) -> Optional[UUID]:
+        return _coerce_chemical_type_id(v)
+
+    @field_validator("expected_close_date", mode="before")
+    @classmethod
+    def normalize_expected_close_date(cls, v: Union[str, date, None]) -> Optional[date]:
+        if v is None or v == "":
+            return None
+        return v
 
     @field_validator("stage")
     @classmethod
@@ -214,6 +245,18 @@ class SalesPipelineUpdate(BaseModel):
     ai_interactions: Optional[List[Dict[str, Any]]] = None
     reason_for_stage_change: Optional[str] = Field(None, description="Required when stage changes")
     reason_for_amount_change: Optional[str] = Field(None, description="Required when amount changes")
+
+    @field_validator("chemical_type_id", mode="before")
+    @classmethod
+    def normalize_chemical_type_id(cls, v: Any) -> Optional[UUID]:
+        return _coerce_chemical_type_id(v)
+
+    @field_validator("expected_close_date", mode="before")
+    @classmethod
+    def normalize_expected_close_date(cls, v: Union[str, date, None]) -> Optional[date]:
+        if v is None or v == "":
+            return None
+        return v
 
     @field_validator("stage")
     @classmethod
