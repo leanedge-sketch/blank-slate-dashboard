@@ -570,6 +570,9 @@ export interface ChemicalFullData {
   product_type?: string | null;
   country_of_origin?: string | null;
   partner_id?: string | null;
+  /** Linked TDS row — read-only, populated by API. */
+  tds_brand?: string | null;
+  tds_grade?: string | null;
 }
 
 export interface ChemicalFullDataListResponse {
@@ -611,6 +614,11 @@ export async function fetchChemicalFullData(params?: {
     params,
     timeout: 90_000,
   });
+  return res.data;
+}
+
+export async function fetchChemicalFullDataById(id: number): Promise<ChemicalFullData> {
+  const res = await api.get<ChemicalFullData>(`/pms/chemical-full-data/${id}`);
   return res.data;
 }
 
@@ -889,6 +897,7 @@ export interface MasterDataProductSuggestion {
   product_name?: string | null;
   generic_name?: string | null;
   product_type?: string | null;
+  industry?: string | null;
   sector?: string | null;
   vendor?: string | null;
   product_category?: string | null;

@@ -260,18 +260,9 @@ def _apply_search_filter(query, search: Optional[str], client: Optional[Client] 
     columns = [
         "Product_Name",
         "Generic_Name",
-        "Product_Type",
-        "HS_Code",
         "Supplier_Name",
-        "Category",
-        "Sub_Category",
-        "Packaging",
-        "Sector",
+        "HS_Code",
     ]
-    probe_client = client or _read_client()
-    optional = _probe_live_optional_columns(probe_client)
-    if "Industry" in optional:
-        columns.append("Industry")
     parts = [f"{col}.ilike.{pattern}" for col in columns]
     return query.or_(",".join(parts))
 
@@ -450,7 +441,11 @@ def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullDat
                             "Reusing existing Chemical_Master_Data Row_No=%s (duplicate create)",
                             existing_id,
                         )
-                        return existing
+                        from app.services.catalog_sync_service import (
+                            enrich_chemical_with_tds_fields,
+                        )
+
+                        return enrich_chemical_with_tds_fields(existing)
 
     response = _insert_master_row(client, payload)
     if not response.data:

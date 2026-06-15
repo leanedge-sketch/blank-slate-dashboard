@@ -14,6 +14,7 @@ import {
   fetchSubCategoriesFullData,
   fetchProductNames,
   fetchMasterDataProductSuggestions,
+  fetchChemicalFullDataById,
   type MasterDataProductSuggestion,
 } from "../../services/api";
 import { ChemicalDetailCard } from "../../components/pms/ChemicalDetailCard";
@@ -48,9 +49,32 @@ import {
   PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
   sortChemicalsBySupplier,
+  masterSuggestionToChemicalForm,
+  formDataToCreatePayload,
+  chemicalSearchPrimaryLabel,
+  chemicalSearchSecondaryLabel,
+  mergeChemicalIntoList,
   type ChemicalMasterColumn,
   type ChemicalMasterColumnKey,
 } from "../../utils/chemicalMasterColumns";
+
+const EMPTY_CHEMICAL_FORM: ChemicalFullDataCreate & { id: number } = {
+  id: 0,
+  sector: "",
+  industry: "",
+  partner_id: null,
+  vendor: "",
+  product_category: "",
+  sub_category: "",
+  product_name: "",
+  packing: "",
+  typical_application: "",
+  product_description: "",
+  hs_code: "",
+  generic_name: "",
+  product_type: "",
+  country_of_origin: "",
+};
 
 function dedupeChemicalsById(rows: ChemicalFullData[]): ChemicalFullData[] {
   const seen = new Set<number>();
@@ -107,22 +131,7 @@ export function ChemicalsPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState<ChemicalFullDataCreate & { id: number }>({
-    id: 0,
-    sector: "",
-    industry: "",
-    partner_id: null,
-    vendor: "",
-    product_category: "",
-    sub_category: "",
-    product_name: "",
-    packing: "",
-    typical_application: "",
-    product_description: "",
-    hs_code: "",
-    price: null,
-    generic_name: "",
-    product_type: "",
-    country_of_origin: "",
+    ...EMPTY_CHEMICAL_FORM,
   });
 
   // Inline cell edit (click a column to edit only that field)
@@ -327,31 +336,39 @@ export function ChemicalsPage() {
     return () => window.clearTimeout(timer);
   }, [search, selectedChemical, loadSearchSuggestions]);
 
+  const createSearchTerm = useMemo(() => {
+    return (
+      formData.product_name?.trim() ||
+      formData.generic_name?.trim() ||
+      formData.vendor?.trim() ||
+      ""
+    );
+  }, [formData.product_name, formData.generic_name, formData.vendor]);
+
   useEffect(() => {
     if (!showCreateForm) return;
-    const term = formData.product_name?.trim() || "";
-    if (term.length < 2) {
+    if (createSearchTerm.length < 2) {
       setCreateNameSuggestions([]);
       setMasterCreateSuggestions([]);
       return;
     }
-    const lower = term.toLowerCase();
+    const lower = createSearchTerm.toLowerCase();
     setCreateNameSuggestions(
       productNames.filter((n) => n.toLowerCase().includes(lower)).slice(0, 8),
     );
     const timer = window.setTimeout(async () => {
       try {
         setLoadingCreateSuggestions(true);
-        const res = await fetchMasterDataProductSuggestions(term, 6);
+        const res = await fetchMasterDataProductSuggestions(createSearchTerm, 8);
         setMasterCreateSuggestions(res);
       } catch {
         setMasterCreateSuggestions([]);
       } finally {
         setLoadingCreateSuggestions(false);
       }
-    }, 400);
+    }, 350);
     return () => window.clearTimeout(timer);
-  }, [showCreateForm, formData.product_name, productNames]);
+  }, [showCreateForm, createSearchTerm, productNames]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -373,25 +390,76 @@ export function ChemicalsPage() {
     setOffset(0);
     setShowSearchDropdown(false);
     if (searchSuggestions.length === 1) {
-      selectChemical(searchSuggestions[0]);
+      await selectChemical(searchSuggestions[0]);
       return;
     }
     const exact = searchSuggestions.find(
-      (c) => c.product_name?.toLowerCase() === search.trim().toLowerCase(),
+      (c) => {
+        const q = search.trim().toLowerCase();
+        return (
+          c.product_name?.toLowerCase() === q ||
+          c.generic_name?.toLowerCase() === q ||
+          c.vendor?.toLowerCase() === q ||
+          c.hs_code?.toLowerCase() === q
+        );
+      },
     );
     if (exact) {
-      selectChemical(exact);
+      await selectChemical(exact);
       return;
     }
     await loadChemicals({ offset: 0, search });
   }
 
-  function selectChemical(chemical: ChemicalFullData) {
-    setSelectedChemical(chemical);
-    setSearch(chemical.product_name || "");
+  async function selectChemical(chemical: ChemicalFullData) {
+    cancelCellEdit();
     setShowSearchDropdown(false);
     setSearchSuggestions([]);
-    cancelCellEdit();
+    try {
+      const full =
+        chemical.id != null ? await fetchChemicalFullDataById(chemical.id) : chemical;
+      setSelectedChemical(full);
+      setSearch(
+        [full.product_name, full.generic_name, full.vendor].filter(Boolean).join(" ") || "",
+      );
+      setChemicals((prev) => {
+        const idx = prev.findIndex((c) => c.id === full.id);
+        if (idx >= 0) {
+          return mergeChemicalIntoList(prev, full);
+        }
+        return sortChemicalsBySupplier(dedupeChemicalsById([full, ...prev]));
+      });
+    } catch {
+      setSelectedChemical(chemical);
+      setSearch(chemical.product_name || chemical.generic_name || "");
+    }
+  }
+
+  function applySuggestionToCreateForm(suggestion: MasterDataProductSuggestion) {
+    const partial = masterSuggestionToChemicalForm(suggestion);
+    const matchedVendor = vendors.find(
+      (v) =>
+        v.vendor?.trim().toLowerCase() === (suggestion.vendor || "").trim().toLowerCase(),
+    );
+    setFormData((prev) => ({
+      ...prev,
+      ...partial,
+      partner_id: matchedVendor?.id ?? prev.partner_id,
+      vendor: partial.vendor ?? prev.vendor,
+    }));
+    setShowCreateNameSuggestions(false);
+  }
+
+  async function openExistingFromSuggestion(masterRowNo: number) {
+    try {
+      const full = await fetchChemicalFullDataById(masterRowNo);
+      setShowCreateForm(false);
+      setShowCreateNameSuggestions(false);
+      await selectChemical(full);
+    } catch (err: unknown) {
+      console.error(err);
+      alert("Could not open that catalog row.");
+    }
   }
 
   function clearSelectedChemical() {
@@ -423,41 +491,14 @@ export function ChemicalsPage() {
     creatingRef.current = true;
     try {
       setCreating(true);
-      // Row_No is assigned by the backend (_next_row_no) — do not guess from the current page.
-      const createData: ChemicalFullDataCreate = {
-        sector: formData.sector || null,
-        industry: formData.industry || null,
-        partner_id: formData.partner_id,
-        vendor: formData.vendor || null,
-        product_category: formData.product_category || null,
-        sub_category: formData.sub_category || null,
-        product_name: formData.product_name || null,
-        packing: formData.packing || null,
-        typical_application: formData.typical_application || null,
-        product_description: formData.product_description || null,
-        hs_code: formData.hs_code || null,
-        price: formData.price,
-      };
-      const created = await createChemicalFullData(createData);
+      const createData = formDataToCreatePayload(formData);
+      const created = await createChemicalFullData({ ...createData, id: 0 });
       await refreshCatalog();
       setShowCreateForm(false);
       setShowCreateNameSuggestions(false);
-      setFormData({
-        id: 0,
-        sector: "",
-        industry: "",
-        partner_id: null,
-        vendor: "",
-        product_category: "",
-        sub_category: "",
-        product_name: "",
-        packing: "",
-        typical_application: "",
-        product_description: "",
-        hs_code: "",
-        price: null,
-      });
-      selectChemical(created);
+      setFormData({ ...EMPTY_CHEMICAL_FORM });
+      await loadChemicals({ offset: 0, search: created.product_name || created.generic_name || "" });
+      await selectChemical(created);
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.detail ?? err?.message ?? "Failed to create chemical");
@@ -481,15 +522,12 @@ export function ChemicalsPage() {
 
   function buildCellPatch(key: ChemicalMasterColumnKey): ChemicalFullDataUpdate {
     const patch: ChemicalFullDataUpdate = {};
-    if (key === "price") {
-      patch.price = cellEditValue.trim() ? parseFloat(cellEditValue) : null;
-      return patch;
-    }
     const textKeys: Array<keyof ChemicalFullDataUpdate> = [
       "vendor",
       "sector",
       "industry",
       "product_category",
+      "sub_category",
       "product_name",
       "generic_name",
       "product_type",
@@ -518,13 +556,12 @@ export function ChemicalsPage() {
   async function handleUpdate(id: number, patch: ChemicalFullDataUpdate) {
     try {
       setUpdating(true);
-      const updated = await updateChemicalFullData(id, patch);
+      await updateChemicalFullData(id, patch);
       await refreshCatalog();
-      setChemicals((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, ...updated } : c)),
-      );
+      const full = await fetchChemicalFullDataById(id);
+      setChemicals((prev) => mergeChemicalIntoList(prev, full));
       if (selectedChemical?.id === id) {
-        setSelectedChemical((prev) => (prev ? { ...prev, ...updated } : null));
+        setSelectedChemical(full);
       }
       await loadChemicals({ search });
     } catch (err: any) {
@@ -688,21 +725,22 @@ export function ChemicalsPage() {
           </div>
         );
       }
-      if (col.key === "price") {
+      if (col.key === "sub_category") {
         return (
-          <div className="min-w-[100px]">
-            <input
+          <div className="min-w-[140px]">
+            <select
               autoFocus
-              type="number"
-              step="0.01"
               value={cellEditValue}
               onChange={(e) => setCellEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void saveCellEdit(chemical);
-                if (e.key === "Escape") cancelCellEdit();
-              }}
               className={inputClass}
-            />
+            >
+              <option value="">—</option>
+              {subCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             {saveCancel}
           </div>
         );
@@ -741,14 +779,20 @@ export function ChemicalsPage() {
     }
 
     if (!editable) {
+      const readOnlyHint =
+        col.key === "current_price"
+          ? "Synced from Pricing & Costing"
+          : col.key === "tds_brand" || col.key === "tds_grade"
+            ? "From linked TDS record"
+            : display;
       return (
         <span
-          className={col.key === "current_price" || col.key === "current_cost" ? "text-slate-500" : ""}
-          title={
-            col.key === "current_price" || col.key === "current_cost"
-              ? "Synced from Pricing & Costing"
-              : display
+          className={
+            col.key === "current_price" || col.key === "tds_brand" || col.key === "tds_grade"
+              ? "text-slate-500"
+              : ""
           }
+          title={readOnlyHint}
         >
           {display}
         </span>
@@ -909,9 +953,68 @@ export function ChemicalsPage() {
         {/* Create Form */}
         {showCreateForm && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h2 className="text-xl font-bold text-slate-900 mb-4">Create New Chemical</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-1">Create New Chemical</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Type supplier, generic name, or product name — matching catalog rows fill the form.
+            </p>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Supplier / Vendor {vendors.length > 0 && `(${vendors.length})`}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      list="vendor-suggestions"
+                      value={formData.vendor || ""}
+                      onChange={(e) => {
+                        const vendor = e.target.value;
+                        const matched = vendors.find(
+                          (v) => v.vendor?.toLowerCase() === vendor.trim().toLowerCase(),
+                        );
+                        setFormData({
+                          ...formData,
+                          vendor,
+                          partner_id: matched?.id ?? formData.partner_id,
+                        });
+                        setShowCreateNameSuggestions(true);
+                      }}
+                      onFocus={() => setShowCreateNameSuggestions(true)}
+                      placeholder="Type or pick supplier…"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <datalist id="vendor-suggestions">
+                      {vendors.map((v) => (
+                        <option key={v.id} value={v.vendor} />
+                      ))}
+                    </datalist>
+                    <button
+                      type="button"
+                      onClick={() => openAddOption("vendor")}
+                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors shrink-0"
+                      title="Add new vendor"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Generic Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.generic_name || ""}
+                    onChange={(e) => {
+                      setFormData({ ...formData, generic_name: e.target.value });
+                      setShowCreateNameSuggestions(true);
+                    }}
+                    onFocus={() => setShowCreateNameSuggestions(true)}
+                    placeholder="e.g. SBR, Titanium dioxide"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Sector
@@ -952,46 +1055,6 @@ export function ChemicalsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Vendor {vendors.length > 0 && `(${vendors.length})`}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.partner_id || ""}
-                      onChange={(e) => {
-                        const selectedPartnerId = e.target.value;
-                        const selectedVendor = vendors.find((v) => v.id === selectedPartnerId);
-                        console.log("Vendor changed to:", selectedVendor?.vendor, "ID:", selectedPartnerId);
-                        setFormData({
-                          ...formData,
-                          partner_id: selectedPartnerId || null,
-                          vendor: selectedVendor?.vendor || "",
-                        });
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Vendor...</option>
-                      {vendors.length > 0 ? (
-                        vendors.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.vendor}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No vendors available</option>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("vendor")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new vendor"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Product Category {productCategories.length > 0 && `(${productCategories.length})`}
                   </label>
                   <div className="flex items-center gap-2">
@@ -1025,7 +1088,36 @@ export function ChemicalsPage() {
                     </button>
                   </div>
                 </div>
-                <div className="relative md:col-span-2">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Sub Category {subCategories.length > 0 && `(${subCategories.length})`}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={formData.sub_category || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, sub_category: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Sub Category...</option>
+                      {subCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => openAddOption("sub_category")}
+                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+                      title="Add new sub category"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="relative md:col-span-2 lg:col-span-3">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Product Name <span className="text-rose-500">*</span>
                   </label>
@@ -1060,8 +1152,16 @@ export function ChemicalsPage() {
                               key={name}
                               type="button"
                               onClick={() => {
-                                setFormData({ ...formData, product_name: name });
-                                setShowCreateNameSuggestions(false);
+                                const match = masterCreateSuggestions.find(
+                                  (s) =>
+                                    s.product_name?.toLowerCase() === name.toLowerCase(),
+                                );
+                                if (match) {
+                                  applySuggestionToCreateForm(match);
+                                } else {
+                                  setFormData({ ...formData, product_name: name });
+                                  setShowCreateNameSuggestions(false);
+                                }
                               }}
                               className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 hover:bg-blue-50"
                             >
@@ -1079,38 +1179,51 @@ export function ChemicalsPage() {
                           {masterCreateSuggestions.map((s, i) => (
                             <div
                               key={`${s.master_row_no}-${i}`}
-                              className="rounded-lg px-3 py-2 text-sm text-slate-600"
+                              className="flex items-start justify-between gap-2 rounded-lg px-3 py-2 hover:bg-amber-50"
                             >
-                              <span className="font-medium text-slate-900">
-                                {s.match_label || s.product_name}
-                              </span>
-                              {s.vendor ? (
-                                <span className="ml-2 text-xs text-slate-500">{s.vendor}</span>
-                              ) : null}
-                              {s.master_row_no != null ? (
-                                <span className="ml-2 text-xs text-amber-700">
-                                  Ref #{s.master_row_no}
-                                </span>
-                              ) : null}
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-slate-900 truncate">
+                                  {s.match_label || s.product_name}
+                                </p>
+                                <p className="text-xs text-slate-500 truncate">
+                                  {[
+                                    s.generic_name &&
+                                    s.generic_name !== s.product_name
+                                      ? s.generic_name
+                                      : null,
+                                    s.vendor,
+                                    s.product_category,
+                                    s.packing,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                  {s.master_row_no != null ? ` · Ref #${s.master_row_no}` : ""}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => applySuggestionToCreateForm(s)}
+                                  className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                                >
+                                  Fill form
+                                </button>
+                                {s.master_row_no != null ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openExistingFromSuggestion(s.master_row_no!)}
+                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                  >
+                                    Open
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>
                       ) : null}
                     </div>
                   ) : null}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Generic Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.generic_name || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, generic_name: e.target.value })
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1156,19 +1269,6 @@ export function ChemicalsPage() {
                       setFormData({ ...formData, country_of_origin: e.target.value })
                     }
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.price || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, price: parseFloat(e.target.value) || null })
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="0.00"
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -1220,21 +1320,8 @@ export function ChemicalsPage() {
                   type="button"
                   onClick={() => {
                     setShowCreateForm(false);
-                    setFormData({
-                      id: 0,
-                      sector: "",
-                      industry: "",
-                      partner_id: null,
-                      vendor: "",
-                      product_category: "",
-                      sub_category: "",
-                      product_name: "",
-                      packing: "",
-                      typical_application: "",
-                      product_description: "",
-                      hs_code: "",
-                      price: null,
-                    });
+                    setShowCreateNameSuggestions(false);
+                    setFormData({ ...EMPTY_CHEMICAL_FORM });
                   }}
                   className="px-6 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
                 >
@@ -1260,7 +1347,7 @@ export function ChemicalsPage() {
                 }}
                 onFocus={() => setShowSearchDropdown(true)}
                 autoComplete="off"
-                placeholder="Search product, supplier, category, HS code…"
+                placeholder="Search product name, generic name, supplier, or HS code…"
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               {showSearchDropdown && search.trim().length >= 2 ? (
@@ -1276,16 +1363,14 @@ export function ChemicalsPage() {
                         <li key={c.id}>
                           <button
                             type="button"
-                            onClick={() => selectChemical(c)}
+                            onClick={() => void selectChemical(c)}
                             className="flex w-full flex-col gap-0.5 px-4 py-3 text-left hover:bg-blue-50 transition-colors"
                           >
                             <span className="font-medium text-slate-900">
-                              {c.product_name || "Unnamed"}
+                              {chemicalSearchPrimaryLabel(c)}
                             </span>
                             <span className="text-xs text-slate-500">
-                              {[c.vendor, c.product_category, c.sector]
-                                .filter(Boolean)
-                                .join(" · ")}
+                              {chemicalSearchSecondaryLabel(c)}
                               {c.id != null ? ` · Ref #${c.id}` : ""}
                             </span>
                           </button>
@@ -1382,7 +1467,8 @@ export function ChemicalsPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
                 Click any editable cell to update that field only. Scroll horizontally for all
-                columns — current price/cost sync from Pricing &amp; Costing.
+                columns — current price syncs from Pricing &amp; Costing; TDS brand/grade from
+                linked TDS.
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1600px]">

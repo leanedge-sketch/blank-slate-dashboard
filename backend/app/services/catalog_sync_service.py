@@ -266,3 +266,60 @@ def refresh_catalog_row(chemical_id: int) -> Optional[ChemicalFullData]:
 
     sync_catalog_product_links(chemical_id)
     return get_chemical_full_data_by_id(chemical_id)
+
+
+def _build_catalog_tds_lookup() -> tuple[
+    Dict[int, tuple[Optional[str], Optional[str]]],
+    Dict[str, tuple[Optional[str], Optional[str]]],
+]:
+    """Map catalog Row_No and uuid_id -> (tds brand, tds grade)."""
+    from app.services.pms_service import list_tds
+
+    by_row_no: Dict[int, tuple[Optional[str], Optional[str]]] = {}
+    by_uuid: Dict[str, tuple[Optional[str], Optional[str]]] = {}
+    for row in list_tds(limit=10000, offset=0):
+        pair = (row.brand, row.grade)
+        meta = row.metadata if isinstance(row.metadata, dict) else {}
+        raw_id = meta.get("chemical_full_data_id")
+        if raw_id is not None:
+            try:
+                cid = int(raw_id)
+                if cid not in by_row_no:
+                    by_row_no[cid] = pair
+            except (TypeError, ValueError):
+                pass
+        if row.chemical_id:
+            uid = str(row.chemical_id)
+            if uid not in by_uuid:
+                by_uuid[uid] = pair
+    return by_row_no, by_uuid
+
+
+def enrich_chemical_with_tds_fields(chem: ChemicalFullData) -> ChemicalFullData:
+    """Attach linked TDS brand/grade for display on master data screens."""
+    tds = _find_tds_for_catalog(chem)
+    if not tds:
+        return chem
+    return chem.model_copy(update={"tds_brand": tds.brand, "tds_grade": tds.grade})
+
+
+def enrich_chemicals_with_tds_fields(
+    chemicals: List[ChemicalFullData],
+) -> List[ChemicalFullData]:
+    if not chemicals:
+        return chemicals
+    by_row_no, by_uuid = _build_catalog_tds_lookup()
+    enriched: List[ChemicalFullData] = []
+    for chem in chemicals:
+        pair = None
+        if chem.id is not None:
+            pair = by_row_no.get(int(chem.id))
+        if pair is None and chem.uuid_id:
+            pair = by_uuid.get(str(chem.uuid_id))
+        if pair:
+            enriched.append(
+                chem.model_copy(update={"tds_brand": pair[0], "tds_grade": pair[1]})
+            )
+        else:
+            enriched.append(chem)
+    return enriched
