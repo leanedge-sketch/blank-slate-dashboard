@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelinePricingUpdateBanner } from "../../components/sales/PipelinePricingUpdateBanner";
+import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
 import { StockIntegrationPanel } from "../../components/sales/StockIntegrationPanel";
 import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
