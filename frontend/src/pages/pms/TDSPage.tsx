@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
   fetchTDS,
   createTDS,
-  fetchChemicalTypes,
+  fetchChemicalFullData,
   generateTdsDescription,
   Tds,
   TdsCreate,
-  ChemicalType,
+  ChemicalFullData,
 } from "../../services/api";
 import {
   FileText,
@@ -19,22 +19,61 @@ import {
   Upload,
   Sparkles,
   Table2,
+  Search,
 } from "lucide-react";
 import { TDS_MASTER_COLUMNS } from "../../utils/tdsMasterColumns";
 import { resolveTdsDocumentUrl } from "../../utils/tdsDocument";
 import { getTdsProductDescription } from "../../utils/tdsDescription";
+import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import {
+  catalogProductValue,
+  findCatalogProduct,
+} from "../../utils/catalogProducts";
+import {
+  chemicalSearchPrimaryLabel,
+  chemicalSearchSecondaryLabel,
+} from "../../utils/chemicalMasterColumns";
 
 type TdsTab = "catalog" | "add";
 
+function resolveProductForTds(
+  tds: Tds,
+  chemicals: ChemicalFullData[],
+): ChemicalFullData | undefined {
+  const ref = tds.chemical_type_id || (tds as Tds & { chemical_id?: string }).chemical_id;
+  if (ref) {
+    const found = findCatalogProduct(ref, chemicals);
+    if (found) return found;
+  }
+  const catalogId = tds.metadata?.chemical_full_data_id;
+  if (catalogId != null) {
+    return chemicals.find((c) => String(c.id) === String(catalogId));
+  }
+  return undefined;
+}
+
+function matchCatalogProduct(
+  query: string,
+  chemicals: ChemicalFullData[],
+): ChemicalFullData | undefined {
+  const q = query.trim().toLowerCase();
+  if (!q) return undefined;
+  return chemicals.find((c) => {
+    const fields = [c.product_name, c.generic_name, c.vendor]
+      .filter(Boolean)
+      .map((s) => String(s).toLowerCase());
+    return fields.some((f) => f.includes(q) || q.includes(f));
+  });
+}
+
 export function TDSPage() {
+  const { chemicals: catalogChemicals } = useProductCatalog();
   const [activeTab, setActiveTab] = useState<TdsTab>("catalog");
 
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [chemicalTypes, setChemicalTypes] = useState<ChemicalType[]>([]);
 
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState<TdsCreate>({
@@ -45,39 +84,19 @@ export function TDSPage() {
     source: "",
   });
 
+  const [selectedProduct, setSelectedProduct] = useState<ChemicalFullData | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [productSuggestions, setProductSuggestions] = useState<ChemicalFullData[]>([]);
+  const [loadingProductSearch, setLoadingProductSearch] = useState(false);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const productSearchRef = useRef<HTMLDivElement>(null);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<Record<string, unknown> | null>(null);
   const [productDescription, setProductDescription] = useState("");
   const [generatingDescription, setGeneratingDescription] = useState(false);
   const [aiDescriptionSnapshot, setAiDescriptionSnapshot] = useState("");
-
-  function catalogUuid(ct: ChemicalType): string | null {
-    const meta = ct.metadata as { uuid_id?: string } | null | undefined;
-    return meta?.uuid_id ? String(meta.uuid_id) : null;
-  }
-
-  function resolveChemicalTypeForTds(tds: Tds): ChemicalType | undefined {
-    const ref = tds.chemical_type_id || (tds as Tds & { chemical_id?: string }).chemical_id;
-    if (ref) {
-      const byUuid = chemicalTypes.find((ct) => catalogUuid(ct) === ref);
-      if (byUuid) return byUuid;
-    }
-    const catalogId = tds.metadata?.chemical_full_data_id;
-    if (catalogId != null) {
-      return chemicalTypes.find((ct) => String(ct.id) === String(catalogId));
-    }
-    return undefined;
-  }
-
-  async function loadChemicalTypes() {
-    try {
-      const res = await fetchChemicalTypes({ limit: 500 });
-      setChemicalTypes(res.chemicals);
-    } catch (err) {
-      console.error("Failed to load chemical types:", err);
-    }
-  }
 
   async function loadTDS() {
     try {
@@ -97,8 +116,39 @@ export function TDSPage() {
     }
   }
 
+  const loadProductSuggestions = useCallback(async (term: string) => {
+    const q = term.trim();
+    if (q.length < 2) {
+      setProductSuggestions([]);
+      return;
+    }
+    try {
+      setLoadingProductSearch(true);
+      const res = await fetchChemicalFullData({ search: q, limit: 12 });
+      setProductSuggestions(res.chemicals);
+    } catch {
+      setProductSuggestions([]);
+    } finally {
+      setLoadingProductSearch(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void loadChemicalTypes();
+    if (selectedProduct) return;
+    const timer = window.setTimeout(() => {
+      void loadProductSuggestions(productSearch);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [productSearch, selectedProduct, loadProductSuggestions]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (productSearchRef.current && !productSearchRef.current.contains(e.target as Node)) {
+        setShowProductDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
   useEffect(() => {
@@ -106,6 +156,24 @@ export function TDSPage() {
       void loadTDS();
     }
   }, [activeTab]);
+
+  function selectProduct(chemical: ChemicalFullData) {
+    setSelectedProduct(chemical);
+    setFormData((prev) => ({
+      ...prev,
+      chemical_type_id: catalogProductValue(chemical),
+    }));
+    setProductSearch(chemicalSearchPrimaryLabel(chemical));
+    setProductSuggestions([]);
+    setShowProductDropdown(false);
+  }
+
+  function clearSelectedProduct() {
+    setSelectedProduct(null);
+    setProductSearch("");
+    setProductSuggestions([]);
+    setFormData((prev) => ({ ...prev, chemical_type_id: null }));
+  }
 
   function resetAddForm() {
     setFormData({
@@ -115,6 +183,7 @@ export function TDSPage() {
       owner: "",
       source: "",
     });
+    clearSelectedProduct();
     setSelectedFile(null);
     setExtractedData(null);
     setProductDescription("");
@@ -133,19 +202,19 @@ export function TDSPage() {
     setExtractedData(null);
   }
 
-  function chemicalTypeNameForForm(): string {
+  function productNameForForm(): string {
+    if (selectedProduct?.product_name) return selectedProduct.product_name;
+    if (selectedProduct?.generic_name) return selectedProduct.generic_name;
     const ref = formData.chemical_type_id;
     if (!ref) return "";
-    const match = chemicalTypes.find(
-      (ct) => catalogUuid(ct) === ref || String(ct.id) === ref,
-    );
-    return match?.name || "";
+    const match = findCatalogProduct(ref, catalogChemicals);
+    return match?.product_name || match?.generic_name || "";
   }
 
   async function handleGenerateDescription() {
-    const chemicalTypeName = chemicalTypeNameForForm();
-    if (!formData.brand?.trim() && !chemicalTypeName) {
-      alert("Enter a brand or select a chemical type to generate a description.");
+    const productName = productNameForForm();
+    if (!formData.brand?.trim() && !productName) {
+      alert("Enter a brand or select a product to generate a description.");
       return;
     }
     try {
@@ -154,7 +223,7 @@ export function TDSPage() {
         brand: formData.brand || null,
         grade: formData.grade || null,
         owner: formData.owner || null,
-        chemical_type_name: chemicalTypeName || null,
+        chemical_type_name: productName || null,
         use_web: true,
       });
       const desc = result.product_description || result.ai_product_description || "";
@@ -205,18 +274,21 @@ export function TDSPage() {
       }));
 
       const genericName = String(data.generic_product_name || "");
-      if (genericName && chemicalTypes.length > 0) {
-        const matched = chemicalTypes.find(
-          (ct) =>
-            ct.name.toLowerCase().includes(genericName.toLowerCase()) ||
-            genericName.toLowerCase().includes(ct.name.toLowerCase()),
-        );
+      const supplierName = String(data.supplier_name || data.owner || "");
+      const searchTerms = [genericName, supplierName].filter(Boolean);
+      for (const term of searchTerms) {
+        let matched = matchCatalogProduct(term, catalogChemicals);
+        if (!matched && term.length >= 2) {
+          try {
+            const res = await fetchChemicalFullData({ search: term, limit: 5 });
+            matched = matchCatalogProduct(term, res.chemicals);
+          } catch {
+            /* ignore */
+          }
+        }
         if (matched) {
-          const uuid = catalogUuid(matched);
-          setFormData((prev) => ({
-            ...prev,
-            chemical_type_id: uuid || String(matched.id),
-          }));
+          selectProduct(matched);
+          break;
         }
       }
     } catch (err: unknown) {
@@ -239,13 +311,14 @@ export function TDSPage() {
         extractedData || selectedFile ? { ...(extractedData || {}) } : {};
 
       const metadata =
-        trimmedDescription || Object.keys(metadataBase).length > 0
+        trimmedDescription || Object.keys(metadataBase).length > 0 || selectedProduct
           ? {
               ...metadataBase,
               file_url: extractedData?.file_url,
               file_name: extractedData?.file_name || selectedFile?.name,
               file_type: extractedData?.file_type || extractedData?.file_content_type,
               temp_file_key: extractedData?.temp_file_key,
+              chemical_full_data_id: selectedProduct?.id ?? undefined,
               product_description: trimmedDescription || undefined,
               ai_product_description:
                 aiDescriptionSnapshot ||
@@ -388,7 +461,7 @@ export function TDSPage() {
                       </tr>
                     ) : (
                       tdsList.map((tds) => {
-                        const chemicalType = resolveChemicalTypeForTds(tds);
+                        const product = resolveProductForTds(tds, catalogChemicals);
                         const meta =
                           tds.metadata && typeof tds.metadata === "object"
                             ? (tds.metadata as Record<string, unknown>)
@@ -401,7 +474,10 @@ export function TDSPage() {
                               {tds.brand || "—"}
                             </td>
                             <td className="px-4 py-3 text-slate-700">
-                              {chemicalType?.name || "—"}
+                              {product?.product_name || product?.generic_name || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {product?.vendor || "—"}
                             </td>
                             <td className="px-4 py-3 text-slate-700">{tds.grade || "—"}</td>
                             <td className="px-4 py-3 text-slate-700">{tds.owner || "—"}</td>
@@ -504,30 +580,81 @@ export function TDSPage() {
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="block space-y-1">
-                  <span className="text-sm font-medium text-slate-700">Chemical type</span>
-                  <select
-                    value={formData.chemical_type_id || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        chemical_type_id: e.target.value || null,
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2"
-                  >
-                    <option value="">Select chemical type…</option>
-                    {chemicalTypes.map((ct) => {
-                      const uuid = catalogUuid(ct);
-                      return (
-                        <option key={ct.id} value={uuid || String(ct.id)}>
-                          {ct.name}
-                          {ct.category ? ` (${ct.category})` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
+                <div className="block space-y-1 md:col-span-2" ref={productSearchRef}>
+                  <span className="text-sm font-medium text-slate-700">
+                    Product (search by name or supplier)
+                  </span>
+                  <div className="relative">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={productSearch}
+                          onChange={(e) => {
+                            setProductSearch(e.target.value);
+                            if (selectedProduct) {
+                              setSelectedProduct(null);
+                              setFormData((prev) => ({ ...prev, chemical_type_id: null }));
+                            }
+                            setShowProductDropdown(true);
+                          }}
+                          onFocus={() => setShowProductDropdown(true)}
+                          placeholder="Type product name or vendor/supplier…"
+                          className="w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 py-2"
+                        />
+                      </div>
+                      {(selectedProduct || productSearch) && (
+                        <button
+                          type="button"
+                          onClick={clearSelectedProduct}
+                          className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                          title="Clear product"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {selectedProduct && (
+                      <p className="mt-1.5 text-xs text-emerald-700">
+                        Linked: {chemicalSearchPrimaryLabel(selectedProduct)}
+                        {selectedProduct.vendor ? ` · ${selectedProduct.vendor}` : ""}
+                      </p>
+                    )}
+                    {showProductDropdown && !selectedProduct && productSearch.trim().length >= 2 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+                        {loadingProductSearch ? (
+                          <p className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
+                            <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
+                            Searching…
+                          </p>
+                        ) : productSuggestions.length > 0 ? (
+                          <ul className="max-h-72 overflow-y-auto py-1">
+                            {productSuggestions.map((c) => (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => selectProduct(c)}
+                                  className="flex w-full flex-col gap-0.5 px-4 py-3 text-left hover:bg-emerald-50 transition-colors"
+                                >
+                                  <span className="font-medium text-slate-900">
+                                    {chemicalSearchPrimaryLabel(c)}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {chemicalSearchSecondaryLabel(c)}
+                                    {c.id != null ? ` · Ref #${c.id}` : ""}
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="px-4 py-3 text-sm text-slate-500">No matching products.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <label className="block space-y-1">
                   <span className="text-sm font-medium text-slate-700">Brand</span>
                   <input

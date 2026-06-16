@@ -1,7 +1,8 @@
 /** TDS Master Data table columns — structure only until rows are added manually. */
 export const TDS_MASTER_COLUMNS = [
   { key: "brand", label: "Brand" },
-  { key: "chemical_type", label: "Chemical Type" },
+  { key: "product", label: "Product" },
+  { key: "supplier", label: "Supplier" },
   { key: "grade", label: "Grade" },
   { key: "owner", label: "Owner" },
   { key: "source", label: "Source" },
