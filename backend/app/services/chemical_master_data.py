@@ -40,6 +40,102 @@ PMS_INDUSTRY_OPTIONS = [
     "Pharmaceutical",
 ]
 
+
+def _normalize_pms_industry_value(
+    industry: Optional[str],
+    product_type: Optional[str],
+    product_category: Optional[str] = None,
+    sub_category: Optional[str] = None,
+    sector: Optional[str] = None,
+) -> str:
+    """
+    Normalize legacy Industry / Product_Type / Sector into one of the eight
+    canonical PMS_INDUSTRY_OPTIONS values.
+    """
+
+    def _exact_match(val: Optional[str]) -> Optional[str]:
+        if not val or not val.strip():
+            return None
+        trimmed = val.strip()
+        for opt in PMS_INDUSTRY_OPTIONS:
+            if opt.lower() == trimmed.lower():
+                return opt
+        return None
+
+    # 1) Exact matches
+    for candidate in (industry, product_type):
+        matched = _exact_match(candidate)
+        if matched:
+            return matched
+
+    combined = " ".join(
+        v for v in (industry, product_type, product_category, sub_category, sector) if v
+    ).lower()
+    sector_l = (sector or "").lower()
+
+    def has_any(*needles: str) -> bool:
+        return any(n.lower() in combined for n in needles)
+
+    # 2) Construction
+    if has_any("dry mix", "dry-mix", "mortar", "cement"):
+        return "Dry Mix mortar"
+    if has_any("concrete", "admixture", "concerte", "admiture"):
+        return "Concrete admixture"
+    if "concerte admiture" in combined:
+        return "Concrete admixture"
+
+    # 3) Broad material keywords (goal: "always fit into the 8-value list")
+    if has_any(
+        "paint",
+        "coating",
+        "acrylic",
+        "epoxy",
+        "resin",
+        "pigment",
+        "latex",
+        "emulsion",
+        "binder",
+        "lacquer",
+        "vinyl",
+        "styrene",
+        "polyester",
+        "titanium dioxide",
+        "tio2",
+    ):
+        return "Paint and Coating"
+
+    # 4) Sector fallbacks
+    if "construction" in sector_l:
+        if any(k in combined for k in ("dry", "mortar", "cement", "dry mix")):
+            return "Dry Mix mortar"
+        return "Concrete admixture"
+    if "coating" in sector_l or "paint" in sector_l:
+        return "Paint and Coating"
+    if "clean" in sector_l or "personal" in sector_l:
+        return "Detergent"
+    if "foam" in sector_l:
+        return "Foam"
+    if "plastic" in sector_l or "polymer" in combined:
+        return "Plastic"
+    if any(k in sector_l for k in ("pharma", "pharmaceutical", "medicine", "drug", "medical")):
+        return "Pharmaceutical"
+    if "food" in sector_l:
+        return "Food"
+
+    # 5) Last-resort keyword buckets (should eliminate "unknown industry")
+    if has_any("foam", "urethane", "isocyanate"):
+        return "Foam"
+    if has_any("plastic", "polymer", "polyvinyl", "polyamide"):
+        return "Plastic"
+    if has_any("detergent", "soap", "surfactant", "clean", "cleaner"):
+        return "Detergent"
+    if has_any("food", "edible", "starch", "sugar"):
+        return "Food"
+    if has_any("pharmaceutical", "pharma", "medicine", "drug", "medical"):
+        return "Pharmaceutical"
+
+    return "Paint and Coating"
+
 # Columns present on the live Chemical_Master_Data table (before optional migration).
 _BASE_DB_COLUMNS = frozenset(
     {
@@ -159,13 +255,82 @@ def _postgrest_ilike_pattern(term: str) -> str:
 def _apply_industry_filter(query, industry: Optional[str], client: Client):
     if not industry or not industry.strip():
         return query
-    pattern = _postgrest_ilike_pattern(industry)
-    if not pattern:
-        return query
+    canonical = _normalize_pms_industry_value(industry, product_type=industry)
+
+    # Filter using the same keyword+sector logic that we use when normalizing.
+    # This keeps filtering working even when legacy DB rows have non-canonical
+    # Industry / Product_Type values.
     optional = _probe_live_optional_columns(client)
-    if "Industry" in optional:
-        return query.or_(f"Industry.ilike.{pattern},Product_Type.ilike.{pattern}")
-    return query.ilike("Product_Type", pattern.strip())
+    include_industry_col = "Industry" in optional
+
+    def _or_conditions(conds: List[str]):
+        if not conds:
+            return query
+        return query.or_(",".join(conds))
+
+    def _add_col_keyword_conds(col: str, keywords: List[str], out: List[str]):
+        for kw in keywords:
+            pattern = _postgrest_ilike_pattern(kw)
+            if pattern:
+                out.append(f"{col}.ilike.{pattern}")
+
+    conds: List[str] = []
+
+    if canonical == "Dry Mix mortar":
+        dry_keywords = ["dry mix", "dry-mix", "mortar", "cement"]
+        _add_col_keyword_conds("Product_Type", dry_keywords, conds)
+        _add_col_keyword_conds("Sector", ["construction"], conds)
+    elif canonical == "Concrete admixture":
+        concrete_keywords = ["concrete", "admixture", "admiture", "concerte", "concerte admiture"]
+        _add_col_keyword_conds("Product_Type", concrete_keywords, conds)
+        _add_col_keyword_conds("Sector", ["construction"], conds)
+    elif canonical == "Paint and Coating":
+        paint_keywords = [
+            "paint",
+            "coating",
+            "acrylic",
+            "epoxy",
+            "resin",
+            "pigment",
+            "latex",
+            "emulsion",
+            "binder",
+            "lacquer",
+            "vinyl",
+            "styrene",
+            "polyester",
+            "titanium dioxide",
+            "tio2",
+        ]
+        _add_col_keyword_conds("Product_Type", paint_keywords, conds)
+        _add_col_keyword_conds("Sector", ["coating", "paint"], conds)
+    elif canonical == "Plastic":
+        plastic_keywords = ["plastic", "polymer", "polyvinyl", "polyamide", "polyethylene", "polypropylene"]
+        _add_col_keyword_conds("Product_Type", plastic_keywords, conds)
+        _add_col_keyword_conds("Sector", ["plastic"], conds)
+    elif canonical == "Foam":
+        foam_keywords = ["foam", "foaming", "urethane foam", "polyurethane", "isocyanate"]
+        _add_col_keyword_conds("Product_Type", foam_keywords, conds)
+        _add_col_keyword_conds("Sector", ["foam"], conds)
+    elif canonical == "Detergent":
+        detergent_keywords = ["detergent", "soap", "surfactant", "clean", "cleaner", "personal"]
+        _add_col_keyword_conds("Product_Type", detergent_keywords, conds)
+        _add_col_keyword_conds("Sector", ["clean", "personal"], conds)
+    elif canonical == "Food":
+        food_keywords = ["food", "edible", "starch", "sugar"]
+        _add_col_keyword_conds("Product_Type", food_keywords, conds)
+        _add_col_keyword_conds("Sector", ["food"], conds)
+    elif canonical == "Pharmaceutical":
+        pharma_keywords = ["pharmaceutical", "pharma", "medicine", "drug", "medical"]
+        _add_col_keyword_conds("Product_Type", pharma_keywords, conds)
+        _add_col_keyword_conds("Sector", ["pharma", "pharmaceutical", "medicine", "drug", "medical"], conds)
+
+    if include_industry_col:
+        pattern = _postgrest_ilike_pattern(canonical)
+        if pattern:
+            conds.insert(0, f"Industry.ilike.{pattern}")
+
+    return _or_conditions(conds)
 
 
 def _convert_uuids(value: Any) -> Any:
@@ -185,11 +350,13 @@ def row_to_api(row: Dict[str, Any]) -> ChemicalFullData:
             data[api_col] = row[db_col]
     if data.get("id") is None and row.get("Row_No") is not None:
         data["id"] = row["Row_No"]
-    if not data.get("industry"):
-        if row.get("Industry"):
-            data["industry"] = row["Industry"]
-        elif row.get("Product_Type"):
-            data["industry"] = row["Product_Type"]
+    data["industry"] = _normalize_pms_industry_value(
+        row.get("Industry"),
+        row.get("Product_Type"),
+        product_category=row.get("Category"),
+        sub_category=row.get("Sub_Category"),
+        sector=row.get("Sector"),
+    )
     # Support PascalCase or lowercase pricing snapshot columns.
     for pascal, snake, api_key in (
         ("Current_Price", "current_price", "current_price"),

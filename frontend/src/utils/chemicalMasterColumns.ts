@@ -28,6 +28,9 @@ export type PmsIndustry = (typeof PMS_INDUSTRY_OPTIONS)[number];
 export function resolveChemicalIndustry(row: {
   industry?: string | null;
   product_type?: string | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  sector?: string | null;
 }): string {
   const candidates = [row.industry, row.product_type].filter(Boolean) as string[];
   for (const raw of candidates) {
@@ -38,7 +41,78 @@ export function resolveChemicalIndustry(row: {
     );
     if (match) return match;
   }
-  return candidates[0]?.trim() ?? "";
+
+  const combined = [
+    row.industry,
+    row.product_type,
+    row.product_category,
+    row.sub_category,
+    row.sector,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const hasAny = (...needles: string[]) => needles.some((n) => combined.includes(n));
+
+  // 1) Construction
+  if (hasAny("dry mix", "dry-mix", "mortar", "cement")) return "Dry Mix mortar";
+  if (
+    hasAny("concrete", "admixture", "concerte", "admiture") ||
+    combined.includes("concerte admiture")
+  )
+    return "Concrete admixture";
+
+  // 2) Product keywords (broad but pragmatic; goal is "always fit")
+  if (
+    hasAny(
+      "paint",
+      "coating",
+      "acrylic",
+      "epoxy",
+      "resin",
+      "pigment",
+      "latex",
+      "emulsion",
+      "binder",
+      "lacquer",
+      "vinyl",
+      "styrene",
+      "polyester",
+      "titanium dioxide",
+      "tio2",
+    )
+  )
+    return "Paint and Coating";
+
+  // 3) Sector fallbacks to eliminate “unknown industry” values
+  const sector = (row.sector || "").toLowerCase();
+  if (sector.includes("construction")) {
+    if (hasAny("dry", "mortar", "cement", "dry mix")) return "Dry Mix mortar";
+    return "Concrete admixture";
+  }
+  if (sector.includes("coating") || sector.includes("paint")) return "Paint and Coating";
+  if (sector.includes("clean") || sector.includes("personal")) return "Detergent";
+  if (sector.includes("foam")) return "Foam";
+  if (sector.includes("plastic") || sector.includes("polymer")) return "Plastic";
+  if (
+    sector.includes("pharma") ||
+    sector.includes("pharmaceutical") ||
+    sector.includes("medicine") ||
+    sector.includes("drug") ||
+    sector.includes("medical")
+  )
+    return "Pharmaceutical";
+  if (sector.includes("food")) return "Food";
+
+  // 4) Last-resort keyword bucket to ensure everything fits the 8-value list
+  if (hasAny("foam", "urethane", "isocyanate")) return "Foam";
+  if (hasAny("plastic", "polymer", "polyvinyl", "polyamide")) return "Plastic";
+  if (hasAny("detergent", "soap", "surfactant", "clean", "cleaner")) return "Detergent";
+  if (hasAny("food", "edible", "starch", "sugar")) return "Food";
+  if (hasAny("pharmaceutical", "pharma", "medicine", "drug", "medical")) return "Pharmaceutical";
+
+  return "Paint and Coating";
 }
 
 export function isKnownPmsIndustry(value: string | null | undefined): boolean {
