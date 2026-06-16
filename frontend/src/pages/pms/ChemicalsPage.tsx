@@ -11,10 +11,7 @@ import {
   fetchPartners,
   createPartner,
   fetchProductCategoriesFullData,
-  fetchProductNames,
-  fetchMasterDataProductSuggestions,
   fetchChemicalFullDataById,
-  type MasterDataProductSuggestion,
 } from "../../services/api";
 import { ChemicalDetailCard } from "../../components/pms/ChemicalDetailCard";
 import {
@@ -36,7 +33,6 @@ import {
   Box,
   FileText,
   Hash,
-  Sparkles,
 } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
@@ -50,7 +46,6 @@ import {
   resolveChemicalIndustry,
   isKnownPmsIndustry,
   sortChemicalsBySupplier,
-  masterSuggestionToChemicalForm,
   formDataToCreatePayload,
   chemicalSearchPrimaryLabel,
   chemicalSearchSecondaryLabel,
@@ -107,13 +102,10 @@ export function ChemicalsPage() {
   const [loadingSearchSuggestions, setLoadingSearchSuggestions] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
-  const [productNames, setProductNames] = useState<string[]>([]);
-  const [createNameSuggestions, setCreateNameSuggestions] = useState<string[]>([]);
-  const [showCreateNameSuggestions, setShowCreateNameSuggestions] = useState(false);
-  const [masterCreateSuggestions, setMasterCreateSuggestions] = useState<
-    MasterDataProductSuggestion[]
-  >([]);
-  const [loadingCreateSuggestions, setLoadingCreateSuggestions] = useState(false);
+  const [vendorProducts, setVendorProducts] = useState<ChemicalFullData[]>([]);
+  const [loadingVendorProducts, setLoadingVendorProducts] = useState(false);
+  const [selectedVendorProductId, setSelectedVendorProductId] = useState("");
+  const [createNewProductMode, setCreateNewProductMode] = useState(false);
   const [filterSector, setFilterSector] = useState("");
   const [filterIndustry, setFilterIndustry] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
@@ -185,6 +177,7 @@ export function ChemicalsPage() {
           vendor: newPartner.partner || value,
           partner_id: newPartner.id,
         }));
+        void loadVendorProducts(newPartner.partner || value);
       } catch (err: unknown) {
         const message =
           (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -285,11 +278,83 @@ export function ChemicalsPage() {
   useEffect(() => {
     if (showCreateForm) {
       loadOptions();
-      fetchProductNames()
-        .then(setProductNames)
-        .catch(() => setProductNames([]));
     }
   }, [showCreateForm]);
+
+  const loadVendorProducts = useCallback(async (vendor: string) => {
+    const trimmed = vendor.trim();
+    if (!trimmed) {
+      setVendorProducts([]);
+      return;
+    }
+    try {
+      setLoadingVendorProducts(true);
+      const res = await fetchChemicalFullData({ vendor: trimmed, limit: 500 });
+      setVendorProducts(
+        sortChemicalsBySupplier(dedupeChemicalsById(res.chemicals)),
+      );
+    } catch {
+      setVendorProducts([]);
+    } finally {
+      setLoadingVendorProducts(false);
+    }
+  }, []);
+
+  function resetCreateProductSelection() {
+    setSelectedVendorProductId("");
+    setCreateNewProductMode(false);
+    setVendorProducts([]);
+  }
+
+  function handleVendorChange(vendor: string) {
+    const matched = vendors.find(
+      (v) => v.vendor?.toLowerCase() === vendor.trim().toLowerCase(),
+    );
+    setFormData((prev) => ({
+      ...prev,
+      vendor,
+      partner_id: matched?.id ?? null,
+      product_name: "",
+      generic_name: "",
+      sector: "",
+      industry: "",
+      product_category: "",
+      product_type: "",
+      packing: "",
+      hs_code: "",
+      country_of_origin: "",
+      typical_application: "",
+      product_description: "",
+    }));
+    setSelectedVendorProductId("");
+    setCreateNewProductMode(false);
+    void loadVendorProducts(vendor);
+  }
+
+  function applyVendorProductToCreateForm(product: ChemicalFullData) {
+    const matchedVendor = vendors.find(
+      (v) =>
+        v.vendor?.trim().toLowerCase() === (product.vendor || "").trim().toLowerCase(),
+    );
+    setFormData((prev) => ({
+      ...prev,
+      vendor: product.vendor || prev.vendor,
+      partner_id: matchedVendor?.id ?? prev.partner_id,
+      sector: product.sector || "",
+      industry: resolveChemicalIndustry(product) || "",
+      product_category: product.product_category || "",
+      product_name: product.product_name || "",
+      generic_name: product.generic_name || "",
+      product_type: product.product_type || "",
+      packing: product.packing || "",
+      hs_code: product.hs_code || "",
+      country_of_origin: product.country_of_origin || "",
+      typical_application: product.typical_application || "",
+      product_description: product.product_description || "",
+    }));
+    setCreateNewProductMode(false);
+    setSelectedVendorProductId(product.id != null ? String(product.id) : "");
+  }
 
   const loadSearchSuggestions = useCallback(async (term: string) => {
     const q = term.trim();
@@ -315,40 +380,6 @@ export function ChemicalsPage() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [search, selectedChemical, loadSearchSuggestions]);
-
-  const createSearchTerm = useMemo(() => {
-    return (
-      formData.product_name?.trim() ||
-      formData.generic_name?.trim() ||
-      formData.vendor?.trim() ||
-      ""
-    );
-  }, [formData.product_name, formData.generic_name, formData.vendor]);
-
-  useEffect(() => {
-    if (!showCreateForm) return;
-    if (createSearchTerm.length < 2) {
-      setCreateNameSuggestions([]);
-      setMasterCreateSuggestions([]);
-      return;
-    }
-    const lower = createSearchTerm.toLowerCase();
-    setCreateNameSuggestions(
-      productNames.filter((n) => n.toLowerCase().includes(lower)).slice(0, 8),
-    );
-    const timer = window.setTimeout(async () => {
-      try {
-        setLoadingCreateSuggestions(true);
-        const res = await fetchMasterDataProductSuggestions(createSearchTerm, 8);
-        setMasterCreateSuggestions(res);
-      } catch {
-        setMasterCreateSuggestions([]);
-      } finally {
-        setLoadingCreateSuggestions(false);
-      }
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [showCreateForm, createSearchTerm, productNames]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -415,33 +446,6 @@ export function ChemicalsPage() {
     }
   }
 
-  function applySuggestionToCreateForm(suggestion: MasterDataProductSuggestion) {
-    const partial = masterSuggestionToChemicalForm(suggestion);
-    const matchedVendor = vendors.find(
-      (v) =>
-        v.vendor?.trim().toLowerCase() === (suggestion.vendor || "").trim().toLowerCase(),
-    );
-    setFormData((prev) => ({
-      ...prev,
-      ...partial,
-      partner_id: matchedVendor?.id ?? prev.partner_id,
-      vendor: partial.vendor ?? prev.vendor,
-    }));
-    setShowCreateNameSuggestions(false);
-  }
-
-  async function openExistingFromSuggestion(masterRowNo: number) {
-    try {
-      const full = await fetchChemicalFullDataById(masterRowNo);
-      setShowCreateForm(false);
-      setShowCreateNameSuggestions(false);
-      await selectChemical(full);
-    } catch (err: unknown) {
-      console.error(err);
-      alert("Could not open that catalog row.");
-    }
-  }
-
   function clearSelectedChemical() {
     setSelectedChemical(null);
     setSearch("");
@@ -463,6 +467,10 @@ export function ChemicalsPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (creatingRef.current) return;
+    if (!formData.vendor?.trim()) {
+      alert("Supplier / vendor is required");
+      return;
+    }
     if (!formData.product_name?.trim()) {
       alert("Product name is required");
       return;
@@ -479,8 +487,8 @@ export function ChemicalsPage() {
       const created = await createChemicalFullData(createData);
       await refreshCatalog();
       setShowCreateForm(false);
-      setShowCreateNameSuggestions(false);
       setFormData({ ...EMPTY_CHEMICAL_FORM });
+      resetCreateProductSelection();
       await loadChemicals({ offset: 0, search: created.product_name || created.generic_name || "" });
       await selectChemical(created);
       if (created.id != null) {
@@ -957,7 +965,7 @@ export function ChemicalsPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-xl font-bold text-slate-900 mb-1">Create New Chemical</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Type supplier, generic name, or product name — matching catalog rows fill the form.
+              Select a supplier first, then pick one of their products or enter a new product name.
               A unique Ref # is assigned automatically when you save.
             </p>
             <form onSubmit={handleCreate} className="space-y-4">
@@ -967,31 +975,18 @@ export function ChemicalsPage() {
                     Supplier / Vendor {vendors.length > 0 && `(${vendors.length})`}
                   </label>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      list="vendor-suggestions"
+                    <select
                       value={formData.vendor || ""}
-                      onChange={(e) => {
-                        const vendor = e.target.value;
-                        const matched = vendors.find(
-                          (v) => v.vendor?.toLowerCase() === vendor.trim().toLowerCase(),
-                        );
-                        setFormData({
-                          ...formData,
-                          vendor,
-                          partner_id: matched?.id ?? formData.partner_id,
-                        });
-                        setShowCreateNameSuggestions(true);
-                      }}
-                      onFocus={() => setShowCreateNameSuggestions(true)}
-                      placeholder="Type or pick supplier…"
+                      onChange={(e) => handleVendorChange(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <datalist id="vendor-suggestions">
+                    >
+                      <option value="">Select supplier…</option>
                       {vendors.map((v) => (
-                        <option key={v.id} value={v.vendor} />
+                        <option key={v.id} value={v.vendor}>
+                          {v.vendor}
+                        </option>
                       ))}
-                    </datalist>
+                    </select>
                     <button
                       type="button"
                       onClick={() => openAddOption("vendor")}
@@ -1004,19 +999,96 @@ export function ChemicalsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Generic Name
+                    Product <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={formData.generic_name || ""}
+                  <select
+                    value={createNewProductMode ? "__new__" : selectedVendorProductId}
                     onChange={(e) => {
-                      setFormData({ ...formData, generic_name: e.target.value });
-                      setShowCreateNameSuggestions(true);
+                      const value = e.target.value;
+                      if (value === "__new__") {
+                        setCreateNewProductMode(true);
+                        setSelectedVendorProductId("");
+                        setFormData((prev) => ({
+                          ...prev,
+                          product_name: "",
+                          sector: "",
+                          industry: "",
+                          product_category: "",
+                          product_type: "",
+                          packing: "",
+                          hs_code: "",
+                          country_of_origin: "",
+                          typical_application: "",
+                          product_description: "",
+                          generic_name: "",
+                        }));
+                        return;
+                      }
+                      if (!value) {
+                        setCreateNewProductMode(false);
+                        setSelectedVendorProductId("");
+                        setFormData((prev) => ({
+                          ...prev,
+                          product_name: "",
+                          sector: "",
+                          industry: "",
+                          product_category: "",
+                          product_type: "",
+                          packing: "",
+                          hs_code: "",
+                          country_of_origin: "",
+                          typical_application: "",
+                          product_description: "",
+                          generic_name: "",
+                        }));
+                        return;
+                      }
+                      const product = vendorProducts.find((p) => String(p.id) === value);
+                      if (product) applyVendorProductToCreateForm(product);
                     }}
-                    onFocus={() => setShowCreateNameSuggestions(true)}
-                    placeholder="e.g. SBR, Titanium dioxide"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                    disabled={!formData.vendor?.trim() || loadingVendorProducts}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+                  >
+                    <option value="">
+                      {!formData.vendor?.trim()
+                        ? "Select supplier first…"
+                        : loadingVendorProducts
+                          ? "Loading products…"
+                          : vendorProducts.length > 0
+                            ? "Select product…"
+                            : "No products for this supplier yet"}
+                    </option>
+                    {vendorProducts.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.product_name || "Unnamed"}
+                        {p.packing ? ` · ${p.packing}` : ""}
+                        {p.id != null ? ` (Ref #${p.id})` : ""}
+                      </option>
+                    ))}
+                    {formData.vendor?.trim() ? (
+                      <option value="__new__">+ Enter new product name…</option>
+                    ) : null}
+                  </select>
+                  {createNewProductMode ? (
+                    <input
+                      type="text"
+                      value={formData.product_name || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, product_name: e.target.value })
+                      }
+                      placeholder="New product name"
+                      autoComplete="off"
+                      className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  ) : null}
+                  {formData.vendor?.trim() && !loadingVendorProducts ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {vendorProducts.length > 0
+                        ? `${vendorProducts.length} product(s) for this supplier. Pick one to pre-fill, or add a new name.`
+                        : "No existing products for this supplier — use “Enter new product name”."}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1094,114 +1166,6 @@ export function ChemicalsPage() {
                       <Plus size={16} />
                     </button>
                   </div>
-                </div>
-                <div className="relative md:col-span-2 lg:col-span-3">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Product Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.product_name || ""}
-                    onChange={(e) => {
-                      setFormData({ ...formData, product_name: e.target.value });
-                      setShowCreateNameSuggestions(true);
-                    }}
-                    onFocus={() => setShowCreateNameSuggestions(true)}
-                    autoComplete="off"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  {showCreateNameSuggestions &&
-                  (createNameSuggestions.length > 0 || masterCreateSuggestions.length > 0) ? (
-                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-                      {loadingCreateSuggestions ? (
-                        <p className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Finding similar products…
-                        </p>
-                      ) : null}
-                      {createNameSuggestions.length > 0 ? (
-                        <div className="border-b border-slate-100 px-2 py-1.5">
-                          <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                            Existing names
-                          </p>
-                          {createNameSuggestions.map((name) => (
-                            <button
-                              key={name}
-                              type="button"
-                              onClick={() => {
-                                const match = masterCreateSuggestions.find(
-                                  (s) =>
-                                    s.product_name?.toLowerCase() === name.toLowerCase(),
-                                );
-                                if (match) {
-                                  applySuggestionToCreateForm(match);
-                                } else {
-                                  setFormData({ ...formData, product_name: name });
-                                  setShowCreateNameSuggestions(false);
-                                }
-                              }}
-                              className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 hover:bg-blue-50"
-                            >
-                              {name}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      {masterCreateSuggestions.length > 0 ? (
-                        <div className="px-2 py-1.5">
-                          <p className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                            <Sparkles className="h-3 w-3" />
-                            Already in master data
-                          </p>
-                          {masterCreateSuggestions.map((s, i) => (
-                            <div
-                              key={`${s.master_row_no}-${i}`}
-                              className="flex items-start justify-between gap-2 rounded-lg px-3 py-2 hover:bg-amber-50"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="font-medium text-slate-900 truncate">
-                                  {s.match_label || s.product_name}
-                                </p>
-                                <p className="text-xs text-slate-500 truncate">
-                                  {[
-                                    s.generic_name &&
-                                    s.generic_name !== s.product_name
-                                      ? s.generic_name
-                                      : null,
-                                    s.vendor,
-                                    s.product_category,
-                                    s.packing,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                  {s.master_row_no != null ? ` · Ref #${s.master_row_no}` : ""}
-                                </p>
-                              </div>
-                              <div className="flex shrink-0 gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => applySuggestionToCreateForm(s)}
-                                  className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
-                                >
-                                  Fill form
-                                </button>
-                                {s.master_row_no != null ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void openExistingFromSuggestion(s.master_row_no!)}
-                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                                  >
-                                    Open
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1298,8 +1262,8 @@ export function ChemicalsPage() {
                   type="button"
                   onClick={() => {
                     setShowCreateForm(false);
-                    setShowCreateNameSuggestions(false);
                     setFormData({ ...EMPTY_CHEMICAL_FORM });
+                    resetCreateProductSelection();
                   }}
                   className="px-6 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
                 >
