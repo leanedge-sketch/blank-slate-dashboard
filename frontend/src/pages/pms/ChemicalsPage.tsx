@@ -11,7 +11,6 @@ import {
   fetchPartners,
   createPartner,
   fetchProductCategoriesFullData,
-  fetchSubCategoriesFullData,
   fetchProductNames,
   fetchMasterDataProductSuggestions,
   fetchChemicalFullDataById,
@@ -48,6 +47,8 @@ import {
   isChemicalColumnEditable,
   PMS_INDUSTRY_OPTIONS,
   PMS_SECTOR_OPTIONS,
+  resolveChemicalIndustry,
+  isKnownPmsIndustry,
   sortChemicalsBySupplier,
   masterSuggestionToChemicalForm,
   formDataToCreatePayload,
@@ -64,7 +65,6 @@ const EMPTY_CHEMICAL_FORM: ChemicalFullDataCreate = {
   partner_id: null,
   vendor: "",
   product_category: "",
-  sub_category: "",
   product_name: "",
   packing: "",
   typical_application: "",
@@ -118,13 +118,11 @@ export function ChemicalsPage() {
   const [filterIndustry, setFilterIndustry] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
   const [filterProductCategory, setFilterProductCategory] = useState("");
-  const [filterSubCategory, setFilterSubCategory] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   // Options for dropdowns
   const [vendors, setVendors] = useState<Array<{ id: string; vendor: string }>>([]);
   const [productCategories, setProductCategories] = useState<string[]>([]);
-  const [subCategories, setSubCategories] = useState<string[]>([]);
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -145,7 +143,7 @@ export function ChemicalsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const creatingRef = useRef(false);
 
-  type AddOptionType = "vendor" | "product_category" | "sub_category";
+  type AddOptionType = "vendor" | "product_category";
 
   const [addOptionType, setAddOptionType] = useState<AddOptionType | null>(null);
   const [newOptionValue, setNewOptionValue] = useState("");
@@ -173,12 +171,6 @@ export function ChemicalsPage() {
         return [...prev, value].sort((a, b) => a.localeCompare(b));
       });
       setFormData((prev) => ({ ...prev, product_category: value }));
-    } else if (addOptionType === "sub_category") {
-      setSubCategories((prev) => {
-        if (prev.some((s) => normalize(s) === normalize(value))) return prev;
-        return [...prev, value].sort((a, b) => a.localeCompare(b));
-      });
-      setFormData((prev) => ({ ...prev, sub_category: value }));
     } else if (addOptionType === "vendor") {
       try {
         const newPartner = await createPartner({ partner: value });
@@ -212,7 +204,6 @@ export function ChemicalsPage() {
       const options = {
         vendors: [] as Array<{ id: string; vendor: string }>,
         categories: [] as string[],
-        subCategories: [] as string[],
       };
 
       try {
@@ -235,24 +226,14 @@ export function ChemicalsPage() {
         console.error("Error details:", err?.response?.data || err?.message);
       }
 
-      try {
-        const subCategoriesRes = await fetchSubCategoriesFullData();
-        options.subCategories = Array.isArray(subCategoriesRes) ? subCategoriesRes : [];
-        console.log("Loaded sub categories:", options.subCategories.length);
-      } catch (err: any) {
-        console.error("Failed to load sub categories:", err);
-        console.error("Error details:", err?.response?.data || err?.message);
-      }
-
       setVendors(options.vendors);
       setProductCategories(options.categories);
-      setSubCategories(options.subCategories);
 
       console.log("All options loaded:", {
         sectors: PMS_SECTOR_OPTIONS.length,
+        industries: PMS_INDUSTRY_OPTIONS.length,
         vendors: options.vendors.length,
         categories: options.categories.length,
-        subCategories: options.subCategories.length,
       });
     } catch (err) {
       console.error("Failed to load options:", err);
@@ -486,6 +467,10 @@ export function ChemicalsPage() {
       alert("Product name is required");
       return;
     }
+    if (!formData.industry?.trim()) {
+      alert("Industry is required — choose one of the eight industry options.");
+      return;
+    }
 
     creatingRef.current = true;
     try {
@@ -513,6 +498,10 @@ export function ChemicalsPage() {
   function startCellEdit(chemical: ChemicalFullData, key: ChemicalMasterColumnKey) {
     if (!isChemicalColumnEditable(key)) return;
     setEditingCell({ id: chemical.id, key });
+    if (key === "industry") {
+      setCellEditValue(resolveChemicalIndustry(chemical));
+      return;
+    }
     const raw = chemical[key as keyof ChemicalFullData];
     setCellEditValue(raw != null && raw !== "" ? String(raw) : "");
   }
@@ -529,7 +518,6 @@ export function ChemicalsPage() {
       "sector",
       "industry",
       "product_category",
-      "sub_category",
       "product_name",
       "generic_name",
       "product_type",
@@ -549,6 +537,10 @@ export function ChemicalsPage() {
     if (!editingCell || editingCell.id !== chemical.id) return;
     if (editingCell.key === "product_name" && !cellEditValue.trim()) {
       alert("Product name is required");
+      return;
+    }
+    if (editingCell.key === "industry" && !cellEditValue.trim()) {
+      alert("Industry is required — choose one of the eight industry options.");
       return;
     }
     await handleUpdate(chemical.id, buildCellPatch(editingCell.key));
@@ -676,7 +668,7 @@ export function ChemicalsPage() {
               onChange={(e) => setCellEditValue(e.target.value)}
               className={inputClass}
             >
-              <option value="">—</option>
+              <option value="">Select industry…</option>
               {PMS_INDUSTRY_OPTIONS.map((i) => (
                 <option key={i} value={i}>
                   {i}
@@ -718,26 +710,6 @@ export function ChemicalsPage() {
             >
               <option value="">—</option>
               {productCategories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            {saveCancel}
-          </div>
-        );
-      }
-      if (col.key === "sub_category") {
-        return (
-          <div className="min-w-[140px]">
-            <select
-              autoFocus
-              value={cellEditValue}
-              onChange={(e) => setCellEditValue(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">—</option>
-              {subCategories.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -823,9 +795,21 @@ export function ChemicalsPage() {
           startCellEdit(chemical, col.key);
         }}
         className="group/cell flex w-full items-center gap-1 text-left hover:text-blue-700"
-        title={`Click to edit ${col.label}`}
+        title={
+          col.key === "industry" && display !== "—" && !isKnownPmsIndustry(display)
+            ? "Click to assign one of the eight industry options"
+            : `Click to edit ${col.label}`
+        }
       >
-        <span className="truncate">{display}</span>
+        <span
+          className={`truncate ${
+            col.key === "industry" && display !== "—" && !isKnownPmsIndustry(display)
+              ? "text-amber-700 font-medium"
+              : ""
+          }`}
+        >
+          {display}
+        </span>
         <Edit2 className="h-3 w-3 shrink-0 opacity-0 group-hover/cell:opacity-60" />
       </button>
     );
@@ -916,13 +900,15 @@ export function ChemicalsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Industry</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Industry
+                </label>
                 <select
                   value={filterIndustry}
                   onChange={(e) => setFilterIndustry(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">All Industries</option>
+                  <option value="">All industries ({PMS_INDUSTRY_OPTIONS.length})</option>
                   {PMS_INDUSTRY_OPTIONS.map((i) => (
                     <option key={i} value={i}>
                       {i}
@@ -1053,22 +1039,26 @@ export function ChemicalsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Industry
+                    Industry <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={formData.industry || ""}
                     onChange={(e) =>
                       setFormData({ ...formData, industry: e.target.value })
                     }
+                    required
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Select Industry...</option>
+                    <option value="">Select industry…</option>
                     {PMS_INDUSTRY_OPTIONS.map((i) => (
                       <option key={i} value={i}>
                         {i}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Every product belongs to one of {PMS_INDUSTRY_OPTIONS.length} industries.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1100,35 +1090,6 @@ export function ChemicalsPage() {
                       onClick={() => openAddOption("product_category")}
                       className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
                       title="Add new product category"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Sub Category {subCategories.length > 0 && `(${subCategories.length})`}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.sub_category || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, sub_category: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Sub Category...</option>
-                      {subCategories.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("sub_category")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new sub category"
                     >
                       <Plus size={16} />
                     </button>
@@ -1630,11 +1591,7 @@ export function ChemicalsPage() {
             <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">
                 Add new{" "}
-                {addOptionType === "product_category"
-                  ? "product category"
-                  : addOptionType === "sub_category"
-                    ? "sub category"
-                    : addOptionType}
+                {addOptionType === "product_category" ? "product category" : "vendor"}
               </h3>
               <button
                 type="button"

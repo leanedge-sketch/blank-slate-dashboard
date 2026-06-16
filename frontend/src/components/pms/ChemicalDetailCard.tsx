@@ -17,6 +17,7 @@ import {
   CHEMICAL_MASTER_COLUMNS,
   chemicalCellValue,
   isChemicalColumnEditable,
+  resolveChemicalIndustry,
   type ChemicalMasterColumn,
   type ChemicalMasterColumnKey,
 } from "../../utils/chemicalMasterColumns";
@@ -29,7 +30,7 @@ const DETAIL_SECTIONS: Array<{
   {
     title: "Product identity",
     icon: Tag,
-    keys: ["product_name", "generic_name", "product_type", "product_category", "sub_category"],
+    keys: ["product_name", "generic_name", "product_type", "product_category"],
   },
   {
     title: "Supplier & classification",
@@ -80,6 +81,7 @@ export function ChemicalDetailCard({
   onBack,
 }: ChemicalDetailCardProps) {
   const colByKey = new Map(CHEMICAL_MASTER_COLUMNS.map((c) => [c.key, c]));
+  const industryLabel = resolveChemicalIndustry(chemical);
 
   function renderField(col: ChemicalMasterColumn) {
     const isEditing = editingCell?.id === chemical.id && editingCell.key === col.key;
@@ -173,7 +175,7 @@ export function ChemicalDetailCard({
                 </span>
               ) : null}
               {chemical.generic_name ? <span>· {chemical.generic_name}</span> : null}
-              {chemical.sub_category ? <span>· {chemical.sub_category}</span> : null}
+              {industryLabel ? <span>· {industryLabel}</span> : null}
               {chemical.sector ? <span>· {chemical.sector}</span> : null}
             </p>
           </div>

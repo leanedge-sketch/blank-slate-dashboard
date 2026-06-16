@@ -10,7 +10,7 @@ export const PMS_SECTOR_OPTIONS = [
   "Food and Pharmaceutical",
 ] as const;
 
-/** Fixed industry dropdown for Chemical Master Data. */
+/** Fixed industry dropdown — every chemical maps to one of these eight values. */
 export const PMS_INDUSTRY_OPTIONS = [
   "Dry Mix mortar",
   "Concrete admixture",
@@ -21,6 +21,32 @@ export const PMS_INDUSTRY_OPTIONS = [
   "Food",
   "Pharmaceutical",
 ] as const;
+
+export type PmsIndustry = (typeof PMS_INDUSTRY_OPTIONS)[number];
+
+/** Resolve stored industry / legacy product_type to a canonical dropdown value. */
+export function resolveChemicalIndustry(row: {
+  industry?: string | null;
+  product_type?: string | null;
+}): string {
+  const candidates = [row.industry, row.product_type].filter(Boolean) as string[];
+  for (const raw of candidates) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const match = PMS_INDUSTRY_OPTIONS.find(
+      (o) => o.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (match) return match;
+  }
+  return candidates[0]?.trim() ?? "";
+}
+
+export function isKnownPmsIndustry(value: string | null | undefined): boolean {
+  if (!value?.trim()) return false;
+  return PMS_INDUSTRY_OPTIONS.some(
+    (o) => o.toLowerCase() === value.trim().toLowerCase(),
+  );
+}
 
 export type ChemicalMasterColumnKey =
   | keyof ChemicalFullData
@@ -63,9 +89,8 @@ export const CHEMICAL_MASTER_COLUMNS: ChemicalMasterColumn[] = [
   { key: "id", label: "Ref", numeric: true },
   { key: "vendor", label: "Supplier" },
   { key: "sector", label: "Sector" },
-  { key: "industry", label: "Industry" },
+  { key: "industry", label: "Industry", format: (row) => resolveChemicalIndustry(row) || "—" },
   { key: "product_category", label: "Category" },
-  { key: "sub_category", label: "Sub Category" },
   { key: "product_name", label: "Product Name" },
   { key: "generic_name", label: "Generic Name" },
   { key: "product_type", label: "Product Type" },
@@ -89,7 +114,6 @@ export const CHEMICAL_EDITABLE_COLUMN_KEYS = new Set<ChemicalMasterColumnKey>([
   "sector",
   "industry",
   "product_category",
-  "sub_category",
   "product_name",
   "generic_name",
   "product_type",
@@ -151,7 +175,6 @@ export const CHEMICAL_MASTER_FORM_FIELDS: Array<{
   { key: "sector", label: "Sector" },
   { key: "industry", label: "Industry" },
   { key: "product_category", label: "Product Category" },
-  { key: "sub_category", label: "Sub Category" },
   { key: "product_name", label: "Product Name", required: true },
   { key: "generic_name", label: "Generic Name" },
   { key: "product_type", label: "Product Type" },
@@ -185,27 +208,18 @@ export function sortChemicalsBySupplier(
 export function masterSuggestionToChemicalForm(
   suggestion: MasterDataProductSuggestion,
 ): Partial<ChemicalFullDataCreate> {
-  const industry =
-    suggestion.industry &&
-    PMS_INDUSTRY_OPTIONS.includes(
-      suggestion.industry as (typeof PMS_INDUSTRY_OPTIONS)[number],
-    )
-      ? suggestion.industry
-      : suggestion.product_type &&
-          PMS_INDUSTRY_OPTIONS.includes(
-            suggestion.product_type as (typeof PMS_INDUSTRY_OPTIONS)[number],
-          )
-        ? suggestion.product_type
-        : suggestion.industry || null;
+  const industry = resolveChemicalIndustry({
+    industry: suggestion.industry,
+    product_type: suggestion.product_type,
+  });
   return {
     sector: suggestion.sector || null,
     vendor: suggestion.vendor || null,
     product_category: suggestion.product_category || null,
-    sub_category: suggestion.sub_category || null,
     product_name: suggestion.product_name || null,
     generic_name: suggestion.generic_name || null,
     product_type: suggestion.product_type || null,
-    industry,
+    industry: industry || null,
     packing: suggestion.packing || null,
     hs_code: suggestion.hs_code || null,
     country_of_origin: suggestion.country_of_origin || null,
@@ -225,7 +239,6 @@ export function formDataToCreatePayload(
     partner_id: form.partner_id || null,
     vendor: text(form.vendor),
     product_category: text(form.product_category),
-    sub_category: text(form.sub_category),
     product_name: text(form.product_name),
     generic_name: text(form.generic_name),
     product_type: text(form.product_type),
@@ -242,11 +255,12 @@ export function chemicalSearchPrimaryLabel(row: ChemicalFullData): string {
 }
 
 export function chemicalSearchSecondaryLabel(row: ChemicalFullData): string {
+  const industry = resolveChemicalIndustry(row);
   return [
     row.generic_name && row.generic_name !== row.product_name ? row.generic_name : null,
     row.vendor,
+    industry || null,
     row.hs_code,
-    row.sub_category,
     row.product_category,
   ]
     .filter(Boolean)
