@@ -149,7 +149,9 @@ export function pipelineToDealFormValues(
     unit: dealFormText(pipeline.unit),
     amount: pipeline.amount ?? ("" as number | ""),
     unit_price: pipeline.unit_price ?? ("" as number | ""),
-    currency: dealFormText(pipeline.currency),
+    currency:
+      dealFormText(pipeline.currency) ||
+      (pipelineTargetRequiresFullCommercial(pipeline.stage) ? "ETB" : ""),
     forex: dealFormText(pipeline.forex),
     incoterm: dealFormText(pipeline.incoterm),
     pricing_record_id: dealFormText(meta.pricing_record_id),
@@ -293,6 +295,43 @@ function formAmountValue(amount: PipelineDealFormValues["amount"]): number | nul
   return Number(amount);
 }
 
+/** Compare deal quantities from API vs form (handles string/number/null). */
+export function pipelineAmountsDiffer(
+  next: number | "" | null | undefined,
+  prev: number | null | undefined,
+): boolean {
+  const norm = (v: number | "" | null | undefined) => {
+    if (v === "" || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const n = norm(next);
+  const p = norm(prev);
+  if (n === null && p === null) return false;
+  return n !== p;
+}
+
+export function validateInPlacePipelineSave(
+  form: PipelineDealFormValues,
+  pipeline: SalesPipeline,
+  options?: { amountReason?: string },
+): string | null {
+  const stageError = validateDealFormForInPlaceEdit(form, pipeline.stage);
+  if (stageError) return stageError;
+
+  const amountVal = formAmountValue(form.amount);
+  const amountChanged = pipelineAmountsDiffer(amountVal, pipeline.amount);
+
+  if (
+    amountChanged &&
+    amountChangeReasonRequired(pipeline.stage, amountVal) &&
+    !options?.amountReason?.trim()
+  ) {
+    return "Reason for amount change is required when quantity changes.";
+  }
+  return null;
+}
+
 function amountsEqual(
   a: PipelineDealFormValues["amount"],
   b: PipelineDealFormValues["amount"],
@@ -406,7 +445,23 @@ export function buildInPlacePipelineUpdatePayload(
 
   if (options.amountChanged) {
     update.amount = options.amountVal ?? null;
-    update.reason_for_amount_change = options.amountReason?.trim() || null;
+    const reason = options.amountReason?.trim();
+    if (reason) {
+      update.reason_for_amount_change = reason;
+    }
+    // Amount changes create a new version — send full commercial snapshot at Proposal+
+    // so backend validation sees currency/forex/etc. from the form, not stale base rows.
+    if (pipelineTargetRequiresFullCommercial(pipeline.stage)) {
+      const commercial = buildPipelineCommercialUpdatePayload(
+        form,
+        (pipeline.metadata || {}) as Record<string, unknown>,
+      ) as SalesPipelineUpdate;
+      Object.assign(update, commercial);
+      update.amount = options.amountVal ?? null;
+      if (reason) {
+        update.reason_for_amount_change = reason;
+      }
+    }
   }
 
   return update;

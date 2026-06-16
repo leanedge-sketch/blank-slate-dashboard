@@ -68,6 +68,7 @@ import {
   getNextPipelineStage,
   getUpdateStageOptions,
   pipelineUpdateShowsCommercialForm,
+  pipelineAmountsDiffer,
   pipelineToDealFormValues,
   PIPELINE_STAGE_COLORS,
   SEVEN_PIPELINE_STAGES,
@@ -479,9 +480,10 @@ export function PipelineDetailPage() {
         ? null
         : Number(dealForm.amount);
     const effectiveAmount = showCommercial ? dealAmount : updateFormData.amount;
-    const effectiveAmountChanged =
-      effectiveAmount !== undefined &&
-      effectiveAmount !== currentPipeline.amount;
+    const effectiveAmountChanged = pipelineAmountsDiffer(
+      effectiveAmount,
+      currentPipeline.amount,
+    );
 
     const needsStageReason =
       stageChanged &&
@@ -513,6 +515,15 @@ export function PipelineDetailPage() {
     }
 
     if (stageChanged) {
+      const commercialError = validateDealFormForTargetStage(
+        dealForm,
+        targetStage,
+      );
+      if (commercialError) {
+        alert(commercialError);
+        return;
+      }
+    } else if (showCommercial) {
       const commercialError = validateDealFormForTargetStage(
         dealForm,
         targetStage,
@@ -1698,11 +1709,13 @@ export function PipelineDetailPage() {
                     : Number(updateDealForm.amount)
                   : updateFormData.amount;
                 const showAmountReason =
-                  effectiveAmountForReason !== undefined &&
-                  effectiveAmountForReason !== currentPipeline.amount &&
+                  pipelineAmountsDiffer(
+                    effectiveAmountForReason,
+                    currentPipeline.amount,
+                  ) &&
                   amountChangeReasonRequired(
                     currentPipeline.stage,
-                    effectiveAmountForReason,
+                    effectiveAmountForReason ?? null,
                   );
                 const needsStageReason =
                   willAdvanceStage &&

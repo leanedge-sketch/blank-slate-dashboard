@@ -1,6 +1,7 @@
 import {
   Component,
   useEffect,
+  useRef,
   useState,
   type ErrorInfo,
   type ReactNode,
@@ -13,10 +14,11 @@ import { formatApiErrorDetail } from "../../utils/apiErrors";
 import {
   amountChangeReasonRequired,
   buildInPlacePipelineUpdatePayload,
+  pipelineAmountsDiffer,
   pipelineStageRequiresProductAndAmount,
   pipelineToDealFormValues,
   STAGES_REQUIRING_FULL_COMMERCIAL,
-  validateDealFormForInPlaceEdit,
+  validateInPlacePipelineSave,
   type PipelineDealFormValues,
 } from "../../utils/pipelineProduct";
 import type { ChemicalFullData } from "../../services/api";
@@ -75,33 +77,34 @@ export function PipelineEditModal({
     pipelineToDealFormValues(pipeline, chemicals),
   );
   const [amountReason, setAmountReason] = useState("");
+  const amountReasonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setForm(pipelineToDealFormValues(pipeline, chemicals));
     setAmountReason("");
-  }, [pipeline.id, chemicals]);
+  }, [pipeline.id, pipeline.stage, chemicals]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const validationError = validateDealFormForInPlaceEdit(form, pipeline.stage);
+    const validationError = validateInPlacePipelineSave(form, pipeline, {
+      amountReason,
+    });
     if (validationError) {
       alert(validationError);
+      if (
+        validationError.includes("Reason for amount change") &&
+        amountReasonRef.current
+      ) {
+        amountReasonRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
       return;
     }
     const amountVal =
       form.amount === "" || form.amount === null ? null : Number(form.amount);
-    const amountChanged =
-      amountVal !== pipeline.amount &&
-      !(amountVal == null && pipeline.amount == null);
-
-    if (
-      amountChanged &&
-      amountChangeReasonRequired(pipeline.stage, amountVal) &&
-      !amountReason.trim()
-    ) {
-      alert("Reason for amount change is required when quantity changes.");
-      return;
-    }
+    const amountChanged = pipelineAmountsDiffer(amountVal, pipeline.amount);
 
     const updateData = buildInPlacePipelineUpdatePayload(pipeline, form, {
       amountChanged,
@@ -128,9 +131,15 @@ export function PipelineEditModal({
 
   const amountVal =
     form.amount === "" || form.amount === null ? null : Number(form.amount);
-  const amountChanged = amountVal !== pipeline.amount;
+  const amountChanged = pipelineAmountsDiffer(amountVal, pipeline.amount);
   const showAmountReason =
     amountChanged && amountChangeReasonRequired(pipeline.stage, amountVal);
+
+  useEffect(() => {
+    if (showAmountReason && amountReasonRef.current) {
+      amountReasonRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [showAmountReason]);
 
   const modal = (
     <EditModalErrorBoundary onClose={onClose}>
@@ -197,7 +206,10 @@ export function PipelineEditModal({
             />
 
             {showAmountReason && (
-              <div>
+              <div
+                ref={amountReasonRef}
+                className="rounded-lg border border-amber-200 bg-amber-50/80 p-4"
+              >
                 <label className={labelClass}>
                   Reason for amount change <span className="text-red-500">*</span>
                 </label>
