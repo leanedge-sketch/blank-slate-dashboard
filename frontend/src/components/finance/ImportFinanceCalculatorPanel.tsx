@@ -4,7 +4,6 @@ import {
   ShieldCheck,
   Sparkles,
   TrendingUp,
-  Truck,
   Warehouse,
 } from "lucide-react";
 import {
@@ -39,312 +38,281 @@ type ImportFinanceCalculatorPanelProps = {
 
 type Accent = "cyan" | "amber" | "emerald" | "purple";
 
-const accentStyles: Record<
-  Accent,
-  { icon: string; title: string; glow: string; badge: string }
-> = {
-  cyan: {
-    icon: "text-cyan-400 bg-cyan-500/10 border-cyan-500/30",
-    title: "text-cyan-300",
-    glow: "shadow-[0_0_24px_rgba(6,182,212,0.12)]",
-    badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/25",
-  },
-  amber: {
-    icon: "text-amber-400 bg-amber-500/10 border-amber-500/30",
-    title: "text-amber-300",
-    glow: "shadow-[0_0_24px_rgba(245,158,11,0.1)]",
-    badge: "bg-amber-500/15 text-amber-300 border-amber-500/25",
-  },
-  emerald: {
-    icon: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
-    title: "text-emerald-300",
-    glow: "shadow-[0_0_28px_rgba(16,185,129,0.18)]",
-    badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
-  },
-  purple: {
-    icon: "text-purple-400 bg-purple-500/10 border-purple-500/30",
-    title: "text-purple-300",
-    glow: "shadow-[0_0_24px_rgba(168,85,247,0.12)]",
-    badge: "bg-purple-500/15 text-purple-300 border-purple-500/25",
-  },
+const accentRing: Record<Accent, string> = {
+  cyan: "hover:border-cyan-500/25",
+  amber: "hover:border-amber-500/25",
+  emerald: "hover:border-emerald-500/25",
+  purple: "hover:border-purple-500/25",
 };
 
-function MetricRow({
-  label,
-  value,
-  sub,
-  highlight,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-  accent?: Accent;
-}) {
-  return (
-    <div
-      className={`flex items-baseline justify-between gap-4 py-2.5 border-b border-white/5 last:border-0 ${
-        highlight ? "text-slate-100" : "text-slate-400"
-      }`}
-    >
-      <div className="min-w-0">
-        <span className={`text-sm ${highlight ? "font-medium text-slate-200" : ""}`}>
-          {label}
-        </span>
-        {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
-      </div>
-      <span
-        className={`text-sm tabular-nums text-right shrink-0 ${
-          highlight && accent ? accentStyles[accent].title : "text-slate-200"
-        } ${highlight ? "font-semibold" : ""}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
+const accentTitle: Record<Accent, string> = {
+  cyan: "text-cyan-400",
+  amber: "text-amber-400",
+  emerald: "text-emerald-400",
+  purple: "text-purple-400",
+};
 
-function StageCard({
+const accentIcon: Record<Accent, string> = {
+  cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+};
+
+function BentoCard({
   stage,
   title,
-  location,
   icon,
-  children,
   accent,
-  isLast,
+  children,
+  kpi,
 }: {
   stage: number;
   title: string;
-  location: string;
   icon: ReactNode;
-  children: ReactNode;
   accent: Accent;
-  isLast?: boolean;
+  children: ReactNode;
+  kpi: ReactNode;
 }) {
-  const styles = accentStyles[accent];
-
   return (
-    <div className={`relative mb-6 last:mb-0 pl-10 ${!isLast ? "pb-2" : ""}`}>
-      <div
-        className={`absolute left-0 top-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border ${styles.icon}`}
-      >
-        {icon}
-      </div>
-
-      <article
-        className={`bg-white/5 backdrop-blur-md border border-white/10 p-6 rounded-xl relative ${styles.glow}`}
-      >
-        <header className="mb-4">
-          <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ${styles.badge}`}
+    <article
+      className={`bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-xl p-5 flex flex-col justify-between min-h-[220px] hover:border-white/20 transition-all ${accentRing[accent]}`}
+    >
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <div
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${accentIcon[accent]}`}
           >
-            Stage {stage}
-          </span>
-          <h3 className={`text-lg font-bold mt-2 ${styles.title}`}>{title}</h3>
-          <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-            <MapPin className="h-3 w-3 shrink-0" />
-            {location}
-          </p>
-        </header>
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Stage {stage}
+            </p>
+            <h3 className={`text-sm font-bold truncate ${accentTitle[accent]}`}>
+              {title}
+            </h3>
+          </div>
+        </div>
         {children}
-      </article>
+      </div>
+      <div className="mt-3 pt-3 border-t border-white/5">{kpi}</div>
+    </article>
+  );
+}
+
+function CompactLine({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-xs text-slate-500 py-0.5">
+      <span className="truncate">{label}</span>
+      <span className="tabular-nums text-slate-400 shrink-0">{value}</span>
     </div>
   );
 }
 
-function Stage1Output({ result, qty }: { result: ImportFinanceResult; qty: number }) {
+function MoyaleBento({
+  result,
+  qty,
+}: {
+  result: ImportFinanceResult;
+  qty: number;
+}) {
   const { capital } = result;
+  const transportUsd =
+    capital.borderValueUsdPerKg - capital.materialCostUsdPerKg;
+
   return (
-    <>
-      <MetricRow
-        label="Material cost"
-        sub="Base price × (1 + margin %)"
-        value={`${formatUsd(capital.materialCostUsdPerKg)} /kg`}
-      />
-      <MetricRow
-        label="+ Transport to Moyale"
-        value={`${formatUsd(
-          capital.borderValueUsdPerKg - capital.materialCostUsdPerKg,
-        )} /kg`}
-      />
-      <MetricRow
-        label="Border value (USD)"
-        sub="Material + transport"
-        value={`${formatUsd(capital.borderValueUsdPerKg)} /kg`}
-        highlight
-        accent="cyan"
-      />
-      <MetricRow label="× Quantity" value={`${formatNumber(qty, 0)} kg`} />
-      <MetricRow
-        label="× Parallel rate"
-        value={formatUsd(capital.totalCapitalUsd, 2)}
-      />
-      <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/80">
-          Capital outlay (ETB)
-        </p>
-        <p className="text-2xl font-bold tabular-nums text-cyan-300 mt-1">
-          {formatEtb(capital.totalCapitalEtb, 0)}
-        </p>
+    <BentoCard
+      stage={1}
+      title="Moyale Border"
+      accent="cyan"
+      icon={<MapPin className="h-4 w-4" />}
+      kpi={
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500/70 mb-1">
+            Capital outlay (ETB)
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-cyan-300 leading-none">
+            {formatEtb(capital.totalCapitalEtb, 0)}
+          </p>
+        </div>
+      }
+    >
+      <div className="space-y-0.5">
+        <CompactLine
+          label="Material × (1 + margin)"
+          value={`${formatUsd(capital.materialCostUsdPerKg)}/kg`}
+        />
+        <CompactLine
+          label="+ Transport Moyale"
+          value={`${formatUsd(transportUsd)}/kg`}
+        />
+        <CompactLine
+          label="Border value"
+          value={`${formatUsd(capital.borderValueUsdPerKg)}/kg`}
+        />
+        <CompactLine
+          label={`${formatNumber(qty, 0)} kg × parallel`}
+          value={formatUsd(capital.totalCapitalUsd, 2)}
+        />
       </div>
-    </>
+    </BentoCard>
   );
 }
 
-function Stage2Output({
+function CustomsBento({
   result,
   constants,
-  officialRate,
 }: {
   result: ImportFinanceResult;
   constants: FinanceConstants;
-  officialRate: number;
 }) {
   const { customs } = result;
-  const bufferPct = Math.round(constants.freightInsuranceBufferPct * 100);
+  const taxes = [
+    { label: "Duty 5%", value: customs.dutyEtb },
+    { label: "Scan 0.07%", value: customs.scanFeeEtb },
+    { label: "Social 3%", value: customs.socialFeeEtb },
+    { label: "WHT 3%", value: customs.whtEtb },
+    { label: "VAT 15%", value: customs.vatEtb },
+  ];
 
   return (
-    <>
-      <MetricRow
-        label="CIF assessed value (USD)"
-        sub={`Base customs reference × 1.10 (${bufferPct}% buffer)`}
-        value={`${formatUsd(customs.cifAssessedUsdPerKg)} /kg`}
-      />
-      <MetricRow
-        label="× Official rate"
-        sub={`${formatNumber(officialRate, 2)} ETB/USD`}
+    <BentoCard
+      stage={2}
+      title="Customs Clearance"
+      accent="amber"
+      icon={<ShieldCheck className="h-4 w-4" />}
+      kpi={
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/70 mb-1">
+            Total customs paid
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-amber-300 leading-none">
+            {formatEtb(customs.totalCustomsPaidEtb, 0)}
+          </p>
+        </div>
+      }
+    >
+      <CompactLine
+        label={`CIF × ${1 + constants.freightInsuranceBufferPct} assessed`}
         value={formatEtb(customs.cifBaseEtb, 0)}
-        highlight
-        accent="amber"
       />
-      <div className="mt-3 rounded-lg bg-black/20 border border-amber-500/15 px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90 mb-1">
-          Tax waterfall
-        </p>
-        <MetricRow label="Duty (5%)" value={formatEtb(customs.dutyEtb, 0)} />
-        <MetricRow label="Scan (0.07%)" value={formatEtb(customs.scanFeeEtb, 0)} />
-        <MetricRow label="Social (3%)" value={formatEtb(customs.socialFeeEtb, 0)} />
-        <MetricRow label="WHT (3%)" value={formatEtb(customs.whtEtb, 0)} />
-        <MetricRow label="VAT (15%)" value={formatEtb(customs.vatEtb, 0)} />
-      </div>
-      <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">
-          Total customs paid
-        </p>
-        <p className="text-2xl font-bold tabular-nums text-amber-300 mt-1">
-          {formatEtb(customs.totalCustomsPaidEtb, 0)}
-        </p>
-      </div>
-    </>
+      <ul className="mt-2 space-y-0.5">
+        {taxes.map((t) => (
+          <li
+            key={t.label}
+            className="flex justify-between gap-2 text-sm text-slate-400"
+          >
+            <span>{t.label}</span>
+            <span className="tabular-nums">{formatEtb(t.value, 0)}</span>
+          </li>
+        ))}
+      </ul>
+    </BentoCard>
   );
 }
 
-function Stage3Output({ result, qty }: { result: ImportFinanceResult; qty: number }) {
-  const { customs, bottomLine } = result;
+function LandedBento({
+  result,
+  qty,
+}: {
+  result: ImportFinanceResult;
+  qty: number;
+}) {
+  const { bottomLine } = result;
 
   return (
-    <>
-      <MetricRow
-        label="Inland transport"
-        sub={`${qty.toLocaleString()} kg × ${LOCAL_CLEARANCE_PER_KG_ETB} ETB/kg`}
+    <BentoCard
+      stage={3}
+      title="Addis Landed Cost"
+      accent="emerald"
+      icon={<Warehouse className="h-4 w-4" />}
+      kpi={
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 shadow-[0_0_20px_rgba(16,185,129,0.12)]">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">
+            Final landed unit cost (ETB/kg)
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-emerald-300 mt-1 leading-none">
+            {formatNumber(bottomLine.finalUnitCostEtbPerKg, 2)}
+          </p>
+        </div>
+      }
+    >
+      <CompactLine
+        label={`Inland ${qty.toLocaleString()} kg × ${LOCAL_CLEARANCE_PER_KG_ETB}`}
         value={formatEtb(bottomLine.totalLocalClearanceEtb, 0)}
       />
-      <MetricRow
+      <CompactLine
         label="Gross investment"
-        sub="Capital + customs + inland"
         value={formatEtb(bottomLine.grossInvestmentEtb, 0)}
-        highlight
-        accent="emerald"
       />
-      <MetricRow
-        label="− Refundable WHT & VAT"
-        value={formatEtb(customs.whtEtb + customs.vatEtb, 0)}
-      />
-      <MetricRow
-        label="Net landed cost"
+      <CompactLine
+        label="Net landed (excl. WHT/VAT)"
         value={formatEtb(bottomLine.netLandedCostEtb, 0)}
-        highlight
       />
-      <div className="mt-4 rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-5 text-center shadow-[0_0_30px_rgba(16,185,129,0.15)]">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-400">
-          Final landed unit cost (ETB/kg)
-        </p>
-        <p className="text-2xl font-bold tabular-nums text-emerald-300 mt-2">
-          {formatNumber(bottomLine.finalUnitCostEtbPerKg, 2)}
-          <span className="text-base font-semibold text-emerald-400/80 ml-1">
-            ETB/kg
-          </span>
-        </p>
-        <p className="text-xs text-emerald-500/70 mt-1">Addis Ababa warehouse</p>
-      </div>
-    </>
+    </BentoCard>
   );
 }
 
-function Stage4Output({ result }: { result: ImportFinanceResult }) {
+function MarketBento({ result }: { result: ImportFinanceResult }) {
   const { sales, bottomLine } = result;
   const positive = sales.profitPerKgEtb >= 0;
+  const marginColor = positive ? "text-purple-300" : "text-rose-400";
+  const profitColor = positive ? "text-emerald-400" : "text-rose-400";
 
   return (
-    <div
-      className={`rounded-xl border p-4 ${
-        positive
-          ? "border-purple-500/30 bg-purple-500/5"
-          : "border-rose-500/40 bg-rose-500/10"
-      }`}
+    <BentoCard
+      stage={4}
+      title="Market Strategy"
+      accent="purple"
+      icon={<TrendingUp className="h-4 w-4" />}
+      kpi={
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-0.5">
+              Profit / kg
+            </p>
+            <p className={`text-xl font-bold tabular-nums leading-none ${profitColor}`}>
+              {positive ? "+" : ""}
+              {formatNumber(sales.profitPerKgEtb, 2)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-0.5">
+              Gross margin
+            </p>
+            <p className={`text-xl font-bold tabular-nums leading-none ${marginColor}`}>
+              {formatNumber(sales.grossMarginPct, 1)}%
+            </p>
+          </div>
+        </div>
+      }
     >
-      <div className="flex items-center gap-2 mb-3">
-        <Sparkles className={`h-4 w-4 ${positive ? "text-purple-400" : "text-rose-400"}`} />
-        <span
-          className={`text-[10px] font-bold uppercase tracking-wider ${
-            positive ? "text-purple-300" : "text-rose-300"
-          }`}
-        >
-          Market strategy
+      <div className="flex items-center gap-1.5 mb-2">
+        <Sparkles className={`h-3.5 w-3.5 ${positive ? "text-purple-400" : "text-rose-400"}`} />
+        <span className="text-[10px] uppercase tracking-wider text-slate-500">
+          Price vs landed
         </span>
       </div>
-
-      <MetricRow
-        label="Target selling price"
+      <CompactLine
+        label="Target selling"
         value={`${formatNumber(sales.targetSellingPriceEtbPerKg, 2)} ETB/kg`}
       />
-      <MetricRow
-        label="Landed unit cost"
+      <CompactLine
+        label="Landed cost"
         value={`${formatNumber(bottomLine.finalUnitCostEtbPerKg, 2)} ETB/kg`}
       />
-      <MetricRow
-        label="Expected profit per kg"
-        value={`${positive ? "+" : ""}${formatNumber(sales.profitPerKgEtb, 2)} ETB`}
-        highlight
-        accent="purple"
+      <CompactLine
+        label="Expected revenue"
+        value={formatEtb(sales.totalExpectedRevenueEtb, 0)}
       />
-      <MetricRow
-        label="Gross margin %"
-        value={`${formatNumber(sales.grossMarginPct, 1)}%`}
-        highlight
-        accent={positive ? "purple" : undefined}
-      />
-
-      <div
-        className={`mt-4 rounded-xl px-4 py-4 text-center border ${
-          positive
-            ? "border-purple-500/30 bg-purple-600/20"
-            : "border-rose-500/40 bg-rose-600/20"
-        }`}
-      >
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Total expected revenue
-        </p>
-        <p
-          className={`text-2xl font-bold tabular-nums mt-1 ${
-            positive ? "text-purple-200" : "text-rose-300"
-          }`}
-        >
-          {formatEtb(sales.totalExpectedRevenueEtb, 0)}
-        </p>
-      </div>
-    </div>
+    </BentoCard>
   );
 }
 
@@ -364,11 +332,7 @@ function InputField({
   accent?: "cyan" | "purple";
 }) {
   const ring =
-    accent === "purple"
-      ? "focus:ring-purple-500"
-      : accent === "cyan"
-        ? "focus:ring-cyan-500"
-        : "focus:ring-cyan-500";
+    accent === "purple" ? "focus:ring-purple-500" : "focus:ring-cyan-500";
   const labelColor =
     accent === "purple" ? "text-purple-300" : "text-slate-400";
 
@@ -398,6 +362,91 @@ function InputGroup({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+function CommandConsole({
+  inputs,
+  onChange,
+}: {
+  inputs: ImportFinanceInputs;
+  onChange: (patch: Partial<ImportFinanceInputs>) => void;
+}) {
+  return (
+    <aside className="lg:sticky lg:top-4 self-start">
+      <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80 mb-4">
+          Command console
+        </p>
+
+        <div className="space-y-4">
+          <InputGroup title="Shipment">
+            <InputField
+              label="Quantity (kg)"
+              value={inputs.quantityKg}
+              onChange={(v) => onChange({ quantityKg: v })}
+              step="1"
+            />
+          </InputGroup>
+
+          <InputGroup title="Supplier & border">
+            <InputField
+              label="Supplier base price (USD/kg)"
+              value={inputs.supplierBasePriceUsd}
+              onChange={(v) => onChange({ supplierBasePriceUsd: v })}
+              step="0.0001"
+            />
+            <InputField
+              label="Supplier margin (%)"
+              value={inputs.supplierMarginPct}
+              onChange={(v) => onChange({ supplierMarginPct: v })}
+            />
+            <InputField
+              label="Transport to Moyale (USD/kg)"
+              value={inputs.transportToBorderUsdPerKg}
+              onChange={(v) => onChange({ transportToBorderUsdPerKg: v })}
+              step="0.0001"
+            />
+            <InputField
+              label="Base customs reference (USD/kg)"
+              value={inputs.baseCustomsReferenceUsd}
+              onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
+              step="0.0001"
+            />
+          </InputGroup>
+
+          <InputGroup title="Exchange rates">
+            <InputField
+              label="Official rate (ETB/USD)"
+              value={inputs.officialRate}
+              onChange={(v) => onChange({ officialRate: v })}
+              accent="cyan"
+            />
+            <InputField
+              label="Parallel rate (ETB/USD)"
+              value={inputs.parallelRate}
+              onChange={(v) => onChange({ parallelRate: v })}
+              accent="cyan"
+            />
+          </InputGroup>
+
+          <InputGroup title="Market strategy">
+            <InputField
+              label="Target selling price per kg (ETB)"
+              hint="Margin outlook vs landed cost"
+              value={inputs.targetSellingPriceEtbPerKg}
+              onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
+              step="0.01"
+              accent="purple"
+            />
+          </InputGroup>
+        </div>
+
+        <p className="mt-4 text-[10px] text-slate-600 border-t border-white/5 pt-3">
+          Inland haul {LOCAL_CLEARANCE_PER_KG_ETB} ETB/kg · Moyale → Addis
+        </p>
+      </div>
+    </aside>
+  );
+}
+
 export function ImportFinanceCalculatorPanel({
   inputs,
   onChange,
@@ -411,159 +460,30 @@ export function ImportFinanceCalculatorPanel({
 
   const qty = Math.max(inputs.quantityKg, 0);
 
-  return (
-    <div
-      className={`grid gap-8 lg:gap-10 ${
-        compact
-          ? "grid-cols-1"
-          : "grid-cols-1 lg:grid-cols-[minmax(280px,320px)_1fr]"
-      }`}
-    >
-      {/* Command console */}
-      <aside className="lg:sticky lg:top-6 self-start">
-        <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
-            Command console
-          </p>
-          <h3 className="text-base font-bold text-white mt-1">Journey variables</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-5">
-            Origin → Moyale → Addis — updates in real time.
-          </p>
+  const bentoGrid = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <MoyaleBento result={result} qty={qty} />
+      <CustomsBento result={result} constants={constants} />
+      <LandedBento result={result} qty={qty} />
+      <MarketBento result={result} />
+    </div>
+  );
 
-          <div className="space-y-5">
-            <InputGroup title="Shipment">
-              <InputField
-                label="Quantity (kg)"
-                value={inputs.quantityKg}
-                onChange={(v) => onChange({ quantityKg: v })}
-                step="1"
-              />
-            </InputGroup>
-
-            <InputGroup title="Supplier & border">
-              <InputField
-                label="Supplier base price (USD/kg)"
-                value={inputs.supplierBasePriceUsd}
-                onChange={(v) => onChange({ supplierBasePriceUsd: v })}
-                step="0.0001"
-              />
-              <InputField
-                label="Supplier margin (%)"
-                value={inputs.supplierMarginPct}
-                onChange={(v) => onChange({ supplierMarginPct: v })}
-              />
-              <InputField
-                label="Transport to Moyale (USD/kg)"
-                value={inputs.transportToBorderUsdPerKg}
-                onChange={(v) => onChange({ transportToBorderUsdPerKg: v })}
-                step="0.0001"
-              />
-              <InputField
-                label="Base customs reference (USD/kg)"
-                value={inputs.baseCustomsReferenceUsd}
-                onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
-                step="0.0001"
-              />
-            </InputGroup>
-
-            <InputGroup title="Exchange rates">
-              <InputField
-                label="Official rate (ETB/USD)"
-                value={inputs.officialRate}
-                onChange={(v) => onChange({ officialRate: v })}
-                accent="cyan"
-              />
-              <InputField
-                label="Parallel rate (ETB/USD)"
-                value={inputs.parallelRate}
-                onChange={(v) => onChange({ parallelRate: v })}
-                accent="cyan"
-              />
-            </InputGroup>
-
-            <InputGroup title="Market strategy">
-              <InputField
-                label="Target selling price per kg (ETB)"
-                hint="Margin outlook vs landed cost"
-                value={inputs.targetSellingPriceEtbPerKg}
-                onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
-                step="0.01"
-                accent="purple"
-              />
-            </InputGroup>
-          </div>
-
-          <p className="mt-5 text-[11px] text-slate-600 border-t border-white/5 pt-4">
-            Inland haul fixed at {LOCAL_CLEARANCE_PER_KG_ETB} ETB/kg (Moyale →
-            Addis warehouse).
-          </p>
-        </div>
-      </aside>
-
-      {/* Journey timeline */}
-      <div className="min-w-0 relative">
-        <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70">
-            Journey timeline
-          </p>
-          <h2 className="text-xl font-bold text-white mt-1">Procurement pipeline</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Physical movement of goods — all stages visible simultaneously.
-          </p>
-        </div>
-
-        <div className="relative">
-          <div
-            className="absolute left-4 top-4 bottom-4 w-px bg-gradient-to-b from-cyan-500/40 via-amber-500/30 via-emerald-500/30 to-purple-500/40"
-            aria-hidden
-          />
-
-          <StageCard
-            stage={1}
-            title="Arrival at Moyale Border"
-            location="Ethiopia–Kenya corridor"
-            icon={<MapPin className="h-4 w-4" />}
-            accent="cyan"
-          >
-            <Stage1Output result={result} qty={qty} />
-          </StageCard>
-
-          <StageCard
-            stage={2}
-            title="Customs Clearance"
-            location="Moyale customs · assessed duties"
-            icon={<ShieldCheck className="h-4 w-4" />}
-            accent="amber"
-          >
-            <Stage2Output
-              result={result}
-              constants={constants}
-              officialRate={inputs.officialRate}
-            />
-          </StageCard>
-
-          <StageCard
-            stage={3}
-            title="Addis Ababa Warehouse"
-            location="Inland transit complete"
-            icon={<Warehouse className="h-4 w-4" />}
-            accent="emerald"
-          >
-            <Stage3Output result={result} qty={qty} />
-          </StageCard>
-
-          <StageCard
-            stage={4}
-            title="Market Strategy"
-            location="CRM pricing outlook"
-            icon={<TrendingUp className="h-4 w-4" />}
-            accent="purple"
-            isLast
-          >
-            <Stage4Output result={result} />
-          </StageCard>
-        </div>
+  if (compact) {
+    return (
+      <div className="space-y-6">
+        <CommandConsole inputs={inputs} onChange={onChange} />
+        {bentoGrid}
       </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="lg:col-span-3">
+        <CommandConsole inputs={inputs} onChange={onChange} />
+      </div>
+      <div className="lg:col-span-9 min-w-0">{bentoGrid}</div>
     </div>
   );
 }
