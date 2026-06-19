@@ -5,6 +5,7 @@ import type { ImportFinanceProduct, ImportShipmentRow } from "../../services/imp
 import type { FinanceConstants } from "../../utils/importFinanceCalc";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import {
+  calculateTradeTransit,
   legacyShipmentToTradeTransit,
   tradeTransitToLegacyInputs,
   type TradeTransitInputs,
@@ -86,11 +87,11 @@ export function ImportFinanceCalculatorWorkspace({
       return;
     }
     try {
-      const row = await saveDraft(
-        selectedProductId,
-        tradeTransitToLegacyInputs(inputs),
-        constants,
+      const legacyInputs = tradeTransitToLegacyInputs(
+        inputs,
+        calculateTradeTransit(inputs, constants),
       );
+      const row = await saveDraft(selectedProductId, legacyInputs, constants);
       setLoadedShipmentId(row.id);
       alert(
         `Pipeline snapshot saved.\n` +

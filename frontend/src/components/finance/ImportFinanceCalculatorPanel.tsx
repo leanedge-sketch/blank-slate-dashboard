@@ -3,8 +3,10 @@ import {
   ChevronDown,
   Info,
   MapPin,
+  Plus,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   TrendingUp,
   Warehouse,
 } from "lucide-react";
@@ -17,13 +19,17 @@ import {
 } from "../../utils/importFinanceCalc";
 import {
   calculateTradeTransit,
+  createMiscBorderCostLine,
   DEFAULT_TRADE_TRANSIT_INPUTS,
+  type MiscBorderCostLine,
   type TradeTransitInputs,
   type TradeTransitResult,
 } from "../../utils/tradeTransitCalc";
 
 export { DEFAULT_TRADE_TRANSIT_INPUTS };
 export const DEFAULT_IMPORT_FINANCE_INPUTS = DEFAULT_TRADE_TRANSIT_INPUTS;
+
+type StageId = 1 | 2 | 3 | 4;
 
 type ImportFinanceCalculatorPanelProps = {
   inputs: TradeTransitInputs;
@@ -49,19 +55,20 @@ const accentIcon: Record<Accent, string> = {
 };
 
 const accentBorderOpen: Record<Accent, string> = {
-  cyan: "border-cyan-500/30",
-  amber: "border-amber-500/30",
-  emerald: "border-emerald-500/30",
-  purple: "border-purple-500/30",
+  cyan: "border-cyan-500/40 ring-1 ring-cyan-500/20",
+  amber: "border-amber-500/40 ring-1 ring-amber-500/20",
+  emerald: "border-emerald-500/40 ring-1 ring-emerald-500/20",
+  purple: "border-purple-500/40 ring-1 ring-purple-500/20",
 };
 
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+const stageAccent: Record<StageId, Accent> = {
+  1: "cyan",
+  2: "amber",
+  3: "emerald",
+  4: "purple",
+};
+
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5 text-xs">
       <span className="text-slate-500">{label}</span>
@@ -128,10 +135,11 @@ function PipelineAccordion({
   kpiValue,
   kpiSub,
   open,
-  onToggle,
+  active,
+  onSelect,
   children,
 }: {
-  stage: number;
+  stage: StageId;
   title: string;
   icon: ReactNode;
   accent: Accent;
@@ -139,20 +147,23 @@ function PipelineAccordion({
   kpiValue: string;
   kpiSub?: string;
   open: boolean;
-  onToggle: () => void;
+  active: boolean;
+  onSelect: () => void;
   children: ReactNode;
 }) {
   return (
     <div
       className={`rounded-xl border backdrop-blur-md transition-all ${
-        open
-          ? `bg-slate-900/60 ${accentBorderOpen[accent]}`
-          : "bg-slate-900/40 border-white/10 hover:border-white/20"
+        active
+          ? `bg-slate-900/70 ${accentBorderOpen[accent]}`
+          : open
+            ? `bg-slate-900/60 ${accentBorderOpen[accent]}`
+            : "bg-slate-900/40 border-white/10 hover:border-white/20"
       }`}
     >
       <button
         type="button"
-        onClick={onToggle}
+        onClick={onSelect}
         className="w-full flex items-center gap-3 p-3.5 text-left"
         aria-expanded={open}
       >
@@ -164,6 +175,9 @@ function PipelineAccordion({
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Stage {stage}
+            {active && (
+              <span className="ml-2 text-cyan-500/80">· editing</span>
+            )}
           </p>
           <p className={`text-sm font-semibold truncate ${accentTitle[accent]}`}>
             {title}
@@ -173,7 +187,9 @@ function PipelineAccordion({
           <p className="text-[9px] uppercase tracking-wider text-slate-500 truncate">
             {kpiLabel}
           </p>
-          <p className={`text-base sm:text-lg font-bold tabular-nums leading-tight ${accentTitle[accent]}`}>
+          <p
+            className={`text-base sm:text-lg font-bold tabular-nums leading-tight ${accentTitle[accent]}`}
+          >
             {kpiValue}
           </p>
           {kpiSub && (
@@ -185,7 +201,7 @@ function PipelineAccordion({
         />
       </button>
       {open && (
-        <div className="px-4 pb-4 pt-0 border-t border-white/5 mx-3.5 mb-3.5 mt-0 pt-3">
+        <div className="px-4 pb-4 border-t border-white/5 mx-3.5 pt-3">
           {children}
         </div>
       )}
@@ -198,13 +214,17 @@ function PipelineStack({
   inputs,
   constants,
   qty,
+  activeStage,
+  onStageChange,
 }: {
   result: TradeTransitResult;
   inputs: TradeTransitInputs;
   constants: FinanceConstants;
   qty: number;
+  activeStage: StageId;
+  onStageChange: (stage: StageId) => void;
 }) {
-  const [openStage, setOpenStage] = useState<number | null>(null);
+  const [openStage, setOpenStage] = useState<StageId | null>(1);
   const s1 = result.stage1;
   const s2 = result.stage2;
   const s3 = result.stage3;
@@ -225,7 +245,8 @@ function PipelineStack({
     { label: "Excise (0%)", value: s2.exciseEtb },
   ];
 
-  function toggle(stage: number) {
+  function selectStage(stage: StageId) {
+    onStageChange(stage);
     setOpenStage((prev) => (prev === stage ? null : stage));
   }
 
@@ -235,7 +256,7 @@ function PipelineStack({
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70">
           Pipeline ledger
         </p>
-        <p className="text-[10px] text-slate-600">Click to expand audit trail</p>
+        <p className="text-[10px] text-slate-600">Click stage → edit inputs</p>
       </div>
 
       <PipelineAccordion
@@ -247,12 +268,23 @@ function PipelineStack({
         kpiValue={formatEtb(s1.capitalOutlayEtb, 0)}
         kpiSub={`@ ${formatNumber(s1.capitalParallelRate, 0)} ETB/USD`}
         open={openStage === 1}
-        onToggle={() => toggle(1)}
+        active={activeStage === 1}
+        onSelect={() => selectStage(1)}
       >
         <DetailRow label="Material USD/kg" value={formatUsd(s1.materialUsdPerKg)} />
         <DetailRow label="+ Transport USD/kg" value={formatUsd(s1.transportUsdPerKg)} />
+        {s1.miscBorderLines.map((line) => (
+          <DetailRow
+            key={line.id}
+            label={`+ Misc${line.reason ? `: ${line.reason}` : ""}`}
+            value={formatUsd(line.amountUsd, 2)}
+          />
+        ))}
         {s1.miscBorderUsdTotal > 0 && (
-          <DetailRow label="+ Misc border USD" value={formatUsd(s1.miscBorderUsdTotal, 2)} />
+          <DetailRow
+            label="Misc border total"
+            value={formatUsd(s1.miscBorderUsdTotal, 2)}
+          />
         )}
         <DetailRow
           label={`Border × ${formatNumber(qty, 0)} kg`}
@@ -278,7 +310,8 @@ function PipelineStack({
         kpiValue={formatEtb(s2.totalCustomsPaidEtb, 0)}
         kpiSub={`@ ${formatNumber(s2.customsOfficialRate, 0)} ETB/USD`}
         open={openStage === 2}
-        onToggle={() => toggle(2)}
+        active={activeStage === 2}
+        onSelect={() => selectStage(2)}
       >
         <DetailRow label="CIF USD/kg (×1.10)" value={formatUsd(s2.cifUsdPerKg)} />
         <DetailRow label="Total CIF USD" value={formatUsd(s2.totalCifUsd, 2)} />
@@ -309,14 +342,18 @@ function PipelineStack({
         kpiLabel="Landed unit cost"
         kpiValue={`${formatNumber(s3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`}
         open={openStage === 3}
-        onToggle={() => toggle(3)}
+        active={activeStage === 3}
+        onSelect={() => selectStage(3)}
       >
         <DetailRow
           label={`Inland (${qty.toLocaleString()} × ${inputs.inlandClearancePerKgEtb})`}
           value={formatEtb(s3.inlandTransportEtb, 0)}
         />
         <DetailRow label="Gross investment" value={formatEtb(s3.grossInvestmentEtb, 0)} />
-        <DetailRow label="− WHT + VAT (refundable)" value={formatEtb(s3.refundableWhtVatEtb, 0)} />
+        <DetailRow
+          label="− WHT + VAT (refundable)"
+          value={formatEtb(s3.refundableWhtVatEtb, 0)}
+        />
         <DetailRow label="Net landed cost" value={formatEtb(s3.netLandedCostEtb, 0)} />
       </PipelineAccordion>
 
@@ -325,23 +362,32 @@ function PipelineStack({
         title="Market Strategy"
         accent="purple"
         icon={<TrendingUp className="h-4 w-4" />}
-        kpiLabel="Gross margin"
-        kpiValue={`${formatNumber(s4.grossMarginPct, 1)}%`}
-        kpiSub={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB/kg`}
+        kpiLabel={
+          s4.sellingPriceMode === "margin"
+            ? `Selling @ ${s4.targetMarginPct}% margin`
+            : "Gross margin"
+        }
+        kpiValue={
+          s4.sellingPriceMode === "margin"
+            ? `${formatNumber(s4.targetSellingPriceEtbPerKg, 2)} ETB/kg`
+            : `${formatNumber(s4.grossMarginPct, 1)}%`
+        }
+        kpiSub={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB/kg profit`}
         open={openStage === 4}
-        onToggle={() => toggle(4)}
+        active={activeStage === 4}
+        onSelect={() => selectStage(4)}
       >
         <DetailRow
-          label="Landed unit cost"
-          value={`${formatNumber(s3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`}
+          label="Unit cost (landed)"
+          value={`${formatNumber(s4.unitCostEtbPerKg, 4)} ETB/kg`}
         />
         <DetailRow
-          label="Target selling price"
-          value={`${formatNumber(s4.targetSellingPriceEtbPerKg, 2)} ETB/kg`}
+          label="Selling price"
+          value={`${formatNumber(s4.targetSellingPriceEtbPerKg, 4)} ETB/kg`}
         />
         <DetailRow
-          label="Expected profit / kg"
-          value={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB`}
+          label="Profit / kg"
+          value={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 4)} ETB`}
         />
         <DetailRow label="Total revenue" value={formatEtb(s4.totalExpectedRevenueEtb, 0)} />
       </PipelineAccordion>
@@ -357,23 +403,25 @@ function NumberField({
   step = "any",
   accent,
   suffix,
-  compact,
+  readOnly,
 }: {
   label: string;
   hint?: string;
   value: number;
-  onChange: (v: number) => void;
+  onChange?: (v: number) => void;
   step?: string;
-  accent?: "cyan" | "amber" | "purple";
+  accent?: Accent;
   suffix?: string;
-  compact?: boolean;
+  readOnly?: boolean;
 }) {
   const ring =
     accent === "purple"
       ? "focus:ring-purple-500"
       : accent === "amber"
         ? "focus:ring-amber-500"
-        : "focus:ring-cyan-500";
+        : accent === "emerald"
+          ? "focus:ring-emerald-500"
+          : "focus:ring-cyan-500";
 
   return (
     <label className="block space-y-1">
@@ -382,9 +430,10 @@ function NumberField({
         <input
           type="number"
           step={step}
+          readOnly={readOnly}
           value={value}
-          onChange={(e) => onChange(Number.parseFloat(e.target.value) || 0)}
-          className={`w-full rounded-lg bg-slate-950 border border-white/5 text-white transition focus:outline-none focus:ring-2 ${ring} ${compact ? "px-2.5 py-1.5 text-sm" : "px-3 py-2 text-sm"} ${suffix ? "pr-12" : ""}`}
+          onChange={(e) => onChange?.(Number.parseFloat(e.target.value) || 0)}
+          className={`w-full rounded-lg bg-slate-950 border border-white/5 px-3 py-2 text-sm text-white transition focus:outline-none focus:ring-2 ${ring} ${suffix ? "pr-12" : ""} ${readOnly ? "opacity-70 cursor-default" : ""}`}
         />
         {suffix && (
           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500">
@@ -422,142 +471,73 @@ function TextField({
   );
 }
 
-function CollapsibleInputSection({
-  id,
-  title,
-  badge,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  title: string;
-  badge?: string;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-white/5 bg-black/20 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={`section-${id}`}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-white/5 transition"
-      >
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          {title}
-        </span>
-        <div className="flex items-center gap-2">
-          {badge && (
-            <span className="text-[9px] font-semibold text-slate-600 uppercase">{badge}</span>
-          )}
-          <ChevronDown
-            className={`h-3.5 w-3.5 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        </div>
-      </button>
-      {open && (
-        <div id={`section-${id}`} className="px-3 pb-3 pt-0 space-y-2.5 border-t border-white/5">
-          <div className="pt-2.5 space-y-2.5">{children}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InputConsole({
+function StageInputPanel({
+  stage,
   inputs,
+  result,
   onChange,
 }: {
+  stage: StageId;
   inputs: TradeTransitInputs;
+  result: TradeTransitResult;
   onChange: (patch: Partial<TradeTransitInputs>) => void;
 }) {
-  const [openSections, setOpenSections] = useState({
-    origin: false,
-    misc: false,
-    customs: false,
-  });
+  const accent = stageAccent[stage];
   const specialGoods15 = inputs.taxSpecialGoodsPct === 15;
 
-  function toggleSection(key: keyof typeof openSections) {
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  function updateMiscLine(id: string, patch: Partial<MiscBorderCostLine>) {
+    onChange({
+      miscBorderCosts: inputs.miscBorderCosts.map((line) =>
+        line.id === id ? { ...line, ...patch } : line,
+      ),
+    });
   }
 
-  return (
-    <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4 lg:sticky lg:top-4">
-      <div className="flex items-center gap-2 mb-3">
-        <SlidersHorizontal className="h-4 w-4 text-cyan-400" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
-          Input console
-        </p>
-      </div>
+  function removeMiscLine(id: string) {
+    onChange({
+      miscBorderCosts: inputs.miscBorderCosts.filter((line) => line.id !== id),
+    });
+  }
 
-      {/* Always-visible accountant essentials */}
-      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 mb-3 space-y-2.5">
-        <p className="text-[9px] font-bold uppercase tracking-wider text-cyan-500/80">
-          Key drivers · always visible
-        </p>
-        <div className="grid grid-cols-2 gap-2">
+  const titles: Record<StageId, string> = {
+    1: "Stage 1 inputs · Origin & border (USD)",
+    2: "Stage 2 inputs · Customs (official rate)",
+    3: "Stage 3 inputs · Inland transit (ETB)",
+    4: "Stage 4 inputs · Pricing & margin",
+  };
+
+  return (
+    <div
+      className={`rounded-lg border bg-black/20 p-4 ${accentBorderOpen[accent]}`}
+    >
+      <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${accentTitle[accent]}`}>
+        {titles[stage]}
+      </p>
+
+      {stage === 1 && (
+        <div className="space-y-3">
           <NumberField
             label="Quantity"
             value={inputs.quantityKg}
             onChange={(v) => onChange({ quantityKg: v })}
             step="1"
             suffix="kg"
-            compact
-          />
-          <NumberField
-            label="Target price"
-            value={inputs.targetSellingPriceEtbPerKg}
-            onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
-            step="0.01"
-            suffix="ETB/kg"
-            accent="purple"
-            compact
-          />
-          <NumberField
-            label="Parallel rate"
-            value={inputs.capitalParallelRate}
-            onChange={(v) => onChange({ capitalParallelRate: v })}
             accent="cyan"
-            compact
           />
-          <NumberField
-            label="Official rate"
-            value={inputs.customsOfficialRate}
-            onChange={(v) => onChange({ customsOfficialRate: v })}
-            accent="amber"
-            compact
-          />
-        </div>
-        <p className="flex items-start gap-1 text-[9px] text-amber-500/70 leading-snug">
-          <Info className="h-3 w-3 shrink-0 mt-0.5" />
-          Parallel → capital ETB. Official → customs taxes only.
-        </p>
-      </div>
-
-      <div className="space-y-2 max-h-[min(52vh,520px)] overflow-y-auto pr-0.5">
-        <CollapsibleInputSection
-          id="origin"
-          title="Origin & Moyale"
-          badge="USD"
-          open={openSections.origin}
-          onToggle={() => toggleSection("origin")}
-        >
           <NumberField
             label="Supplier base price"
             value={inputs.supplierBasePriceUsd}
             onChange={(v) => onChange({ supplierBasePriceUsd: v })}
             step="0.0001"
             suffix="USD/kg"
+            accent="cyan"
           />
           <NumberField
             label="Supplier margin"
             value={inputs.supplierMarginPct}
             onChange={(v) => onChange({ supplierMarginPct: v })}
             suffix="%"
+            accent="cyan"
           />
           <NumberField
             label="Transport to Moyale"
@@ -565,44 +545,91 @@ function InputConsole({
             onChange={(v) => onChange({ transportToMoyaleUsdPerKg: v })}
             step="0.0001"
             suffix="USD/kg"
+            accent="cyan"
           />
-        </CollapsibleInputSection>
-
-        <CollapsibleInputSection
-          id="misc"
-          title="Misc border fees"
-          badge="USD"
-          open={openSections.misc}
-          onToggle={() => toggleSection("misc")}
-        >
+          <div className="space-y-2 pt-1 border-t border-white/5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Misc border costs (USD)
+            </p>
+            {inputs.miscBorderCosts.map((line, index) => (
+              <div
+                key={line.id}
+                className="rounded-lg border border-white/5 bg-slate-950/50 p-2.5 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500">Line {index + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeMiscLine(line.id)}
+                    className="text-slate-500 hover:text-rose-400 p-0.5"
+                    aria-label="Remove misc cost"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <NumberField
+                  label="Amount"
+                  value={line.amountUsd}
+                  onChange={(v) => updateMiscLine(line.id, { amountUsd: v })}
+                  step="0.01"
+                  suffix="USD"
+                />
+                <TextField
+                  label="Reason"
+                  value={line.reason}
+                  onChange={(v) => updateMiscLine(line.id, { reason: v })}
+                  placeholder="e.g. Moyale storage fee"
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  miscBorderCosts: [
+                    ...inputs.miscBorderCosts,
+                    createMiscBorderCostLine(),
+                  ],
+                })
+              }
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-cyan-500/30 py-2 text-xs font-medium text-cyan-400 hover:bg-cyan-500/10 transition"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add misc border cost
+            </button>
+          </div>
           <NumberField
-            label="Amount (shipment total)"
-            value={inputs.miscBorderCostUsd}
-            onChange={(v) => onChange({ miscBorderCostUsd: v })}
-            step="0.01"
-            suffix="USD"
+            label="Capital / parallel rate"
+            hint="USD border total → capital outlay (ETB)"
+            value={inputs.capitalParallelRate}
+            onChange={(v) => onChange({ capitalParallelRate: v })}
+            accent="cyan"
+            suffix="ETB/USD"
           />
-          <TextField
-            label="Reason"
-            value={inputs.miscBorderReason}
-            onChange={(v) => onChange({ miscBorderReason: v })}
-            placeholder="e.g. Moyale storage fee"
-          />
-        </CollapsibleInputSection>
+        </div>
+      )}
 
-        <CollapsibleInputSection
-          id="customs"
-          title="Customs parameters"
-          badge="USD"
-          open={openSections.customs}
-          onToggle={() => toggleSection("customs")}
-        >
+      {stage === 2 && (
+        <div className="space-y-3">
+          <NumberField
+            label="Customs official rate"
+            hint="CIF USD → CIF base ETB and all customs taxes"
+            value={inputs.customsOfficialRate}
+            onChange={(v) => onChange({ customsOfficialRate: v })}
+            accent="amber"
+            suffix="ETB/USD"
+          />
+          <p className="flex items-start gap-1.5 text-[10px] text-amber-500/80 leading-snug">
+            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            Official rate only — never applied to capital outlay.
+          </p>
           <NumberField
             label="Base customs reference"
             value={inputs.baseCustomsReferenceUsd}
             onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
             step="0.0001"
             suffix="USD/kg"
+            accent="amber"
           />
           <div className="flex items-center gap-2">
             <input
@@ -612,10 +639,10 @@ function InputConsole({
               onChange={(e) =>
                 onChange({ taxSpecialGoodsPct: e.target.checked ? 15 : 0 })
               }
-              className="rounded border-white/20 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+              className="rounded border-white/20 bg-slate-900 text-amber-500 focus:ring-amber-500"
             />
             <label htmlFor="special-goods-15" className="text-xs text-slate-400">
-              15% special goods tax
+              Apply 15% special goods tax
             </label>
           </div>
           <NumberField
@@ -623,9 +650,161 @@ function InputConsole({
             value={inputs.taxSpecialGoodsPct}
             onChange={(v) => onChange({ taxSpecialGoodsPct: v })}
             suffix="%"
+            accent="amber"
           />
-        </CollapsibleInputSection>
+        </div>
+      )}
+
+      {stage === 3 && (
+        <div className="space-y-3">
+          <NumberField
+            label="Inland clearance per kg"
+            hint={`Default ${DEFAULT_TRADE_TRANSIT_INPUTS.inlandClearancePerKgEtb} ETB/kg unless changed`}
+            value={inputs.inlandClearancePerKgEtb}
+            onChange={(v) => onChange({ inlandClearancePerKgEtb: v })}
+            suffix="ETB/kg"
+            accent="emerald"
+          />
+          <NumberField
+            label="Quantity (for inland calc)"
+            value={inputs.quantityKg}
+            onChange={(v) => onChange({ quantityKg: v })}
+            step="1"
+            suffix="kg"
+            accent="emerald"
+          />
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-3 py-2 text-xs text-slate-400">
+            Computed unit cost:{" "}
+            <span className="font-bold text-emerald-300 tabular-nums">
+              {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 4)} ETB/kg
+            </span>
+          </div>
+        </div>
+      )}
+
+      {stage === 4 && (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-purple-500/5 border border-purple-500/20 px-3 py-2 text-xs text-slate-400">
+            Unit cost:{" "}
+            <span className="font-mono text-purple-200">
+              {formatNumber(result.stage4.unitCostEtbPerKg, 4)} ETB/kg
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onChange({ sellingPriceMode: "margin" })}
+              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                inputs.sellingPriceMode === "margin"
+                  ? "bg-purple-600 text-white"
+                  : "bg-slate-900 text-slate-400 border border-white/10"
+              }`}
+            >
+              Target margin %
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  sellingPriceMode: "manual",
+                  targetSellingPriceEtbPerKg:
+                    result.stage4.targetSellingPriceEtbPerKg,
+                })
+              }
+              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                inputs.sellingPriceMode === "manual"
+                  ? "bg-purple-600 text-white"
+                  : "bg-slate-900 text-slate-400 border border-white/10"
+              }`}
+            >
+              Manual price
+            </button>
+          </div>
+          {inputs.sellingPriceMode === "margin" ? (
+            <>
+              <NumberField
+                label="Target gross margin"
+                hint="Price = unitCost ÷ (1 − margin%). True gross margin, not markup."
+                value={inputs.targetMarginPct}
+                onChange={(v) => onChange({ targetMarginPct: v, sellingPriceMode: "margin" })}
+                step="0.1"
+                suffix="%"
+                accent="purple"
+              />
+              <NumberField
+                label="Computed selling price"
+                value={result.stage4.targetSellingPriceEtbPerKg}
+                readOnly
+                suffix="ETB/kg"
+                accent="purple"
+              />
+            </>
+          ) : (
+            <NumberField
+              label="Target selling price"
+              value={inputs.targetSellingPriceEtbPerKg}
+              onChange={(v) =>
+                onChange({ targetSellingPriceEtbPerKg: v, sellingPriceMode: "manual" })
+              }
+              step="0.01"
+              suffix="ETB/kg"
+              accent="purple"
+            />
+          )}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg bg-slate-950/80 p-2 border border-white/5">
+              <p className="text-slate-500 text-[10px] uppercase">Profit/kg</p>
+              <p
+                className={`font-bold tabular-nums ${result.stage4.profitPerKgEtb >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+              >
+                {formatNumber(result.stage4.profitPerKgEtb, 4)} ETB
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-950/80 p-2 border border-white/5">
+              <p className="text-slate-500 text-[10px] uppercase">Margin %</p>
+              <p
+                className={`font-bold tabular-nums ${result.stage4.profitPerKgEtb >= 0 ? "text-purple-300" : "text-rose-400"}`}
+              >
+                {formatNumber(result.stage4.grossMarginPct, 2)}%
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InputConsole({
+  activeStage,
+  inputs,
+  result,
+  onChange,
+}: {
+  activeStage: StageId;
+  inputs: TradeTransitInputs;
+  result: TradeTransitResult;
+  onChange: (patch: Partial<TradeTransitInputs>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4 lg:sticky lg:top-4">
+      <div className="flex items-center gap-2 mb-3">
+        <SlidersHorizontal className="h-4 w-4 text-cyan-400" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
+          Input console
+        </p>
       </div>
+      <p className="text-[10px] text-slate-600 mb-3">
+        Showing parameters for{" "}
+        <span className="text-slate-400">Stage {activeStage}</span>. Defaults
+        apply until you change them.
+      </p>
+      <StageInputPanel
+        stage={activeStage}
+        inputs={inputs}
+        result={result}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -636,6 +815,8 @@ export function ImportFinanceCalculatorPanel({
   constants = DEFAULT_FINANCE_CONSTANTS,
   compact = false,
 }: ImportFinanceCalculatorPanelProps) {
+  const [activeStage, setActiveStage] = useState<StageId>(1);
+
   const result = useMemo(
     () => calculateTradeTransit(inputs, constants),
     [inputs, constants],
@@ -643,7 +824,7 @@ export function ImportFinanceCalculatorPanel({
 
   const qty = Math.max(inputs.quantityKg, 0);
 
-  const layout = (
+  return (
     <div
       className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2 xl:grid-cols-[1.1fr_0.9fr]"}`}
     >
@@ -653,13 +834,18 @@ export function ImportFinanceCalculatorPanel({
           inputs={inputs}
           constants={constants}
           qty={qty}
+          activeStage={activeStage}
+          onStageChange={setActiveStage}
         />
       </div>
       <div className="min-w-0 order-2">
-        <InputConsole inputs={inputs} onChange={onChange} />
+        <InputConsole
+          activeStage={activeStage}
+          inputs={inputs}
+          result={result}
+          onChange={onChange}
+        />
       </div>
     </div>
   );
-
-  return layout;
 }
