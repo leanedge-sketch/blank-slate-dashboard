@@ -22,6 +22,7 @@ import { PartnerChemicalsPage } from "./pages/pms/PartnerChemicalsPage";
 import { PricingPage } from "./pages/pms/PricingPage";
 import { ProductsPage } from "./pages/pms/ProductsPage";
 import { MarketPage } from "./pages/pms/MarketPage";
+import { ImportFinancePage } from "./pages/finance/ImportFinancePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
@@ -215,6 +216,16 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MarketPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Import Finance */}
+          <Route
+            path="/finance/import"
+            element={
+              <ProtectedRoute>
+                <ImportFinancePage />
               </ProtectedRoute>
             }
           />

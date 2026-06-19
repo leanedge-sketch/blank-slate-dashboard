@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
-import { ProductCatalogProvider } from "./contexts/ProductCatalogContext";
+import { ImportFinanceDockProvider } from "./contexts/ImportFinanceDockContext";
 import { CanonicalUrlRedirect } from "./components/CanonicalUrlRedirect";
 import { SupabaseBootstrap } from "./components/SupabaseBootstrap";
 import App from "./App";
@@ -32,7 +32,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <SupabaseBootstrap>
         <AuthProvider>
           <ProductCatalogProvider>
-            <App />
+            <ImportFinanceDockProvider>
+              <App />
+            </ImportFinanceDockProvider>
           </ProductCatalogProvider>
         </AuthProvider>
       </SupabaseBootstrap>

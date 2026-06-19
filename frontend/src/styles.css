@@ -250,6 +250,27 @@ a:hover {
   height: 1rem;
 }
 
+.app-import-finance-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  border-radius: 0.5rem;
+  background: rgba(79, 70, 229, 0.15);
+  color: #c7d2fe;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.app-import-finance-btn:hover {
+  background: rgba(79, 70, 229, 0.35);
+  color: #fff;
+}
+
 .app-main {
   flex: 1;
   padding: 1.5rem;
