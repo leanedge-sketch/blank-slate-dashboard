@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { Database, Loader2, RefreshCw, Save } from "lucide-react";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
-import {
-  shipmentRowToInputs,
-  type ImportFinanceProduct,
-  type ImportShipmentRow,
-} from "../../services/importFinance";
-import type { FinanceConstants, ImportFinanceInputs } from "../../utils/importFinanceCalc";
+import type { ImportFinanceProduct, ImportShipmentRow } from "../../services/importFinance";
+import type { FinanceConstants } from "../../utils/importFinanceCalc";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import {
-  DEFAULT_IMPORT_FINANCE_INPUTS,
+  legacyShipmentToTradeTransit,
+  tradeTransitToLegacyInputs,
+  type TradeTransitInputs,
+} from "../../utils/tradeTransitCalc";
+import {
+  DEFAULT_TRADE_TRANSIT_INPUTS,
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
 
@@ -44,8 +45,8 @@ export function ImportFinanceCalculatorWorkspace({
     saveDraft,
   } = useImportFinanceData(enabled);
 
-  const [inputs, setInputs] = useState<ImportFinanceInputs>(
-    DEFAULT_IMPORT_FINANCE_INPUTS,
+  const [inputs, setInputs] = useState<TradeTransitInputs>(
+    DEFAULT_TRADE_TRANSIT_INPUTS,
   );
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export function ImportFinanceCalculatorWorkspace({
 
   function handleLoadShipment(row: ImportShipmentRow) {
     setSelectedProductId(row.product_id);
-    setInputs(shipmentRowToInputs(row));
+    setInputs(legacyShipmentToTradeTransit(row));
     setLoadedShipmentId(row.id);
   }
 
@@ -85,7 +86,11 @@ export function ImportFinanceCalculatorWorkspace({
       return;
     }
     try {
-      const row = await saveDraft(selectedProductId, inputs, constants);
+      const row = await saveDraft(
+        selectedProductId,
+        tradeTransitToLegacyInputs(inputs),
+        constants,
+      );
       setLoadedShipmentId(row.id);
       alert(
         `Pipeline snapshot saved.\n` +
