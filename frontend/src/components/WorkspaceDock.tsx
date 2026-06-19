@@ -11,7 +11,7 @@ const dockItems: {
   { label: "CRM", to: "/crm", section: "crm", match: (p) => p.startsWith("/crm") },
   { label: "PMS", to: "/pms", section: "pms", match: (p) => p.startsWith("/pms") },
   {
-    label: "Trade & Transit",
+    label: "Procurement",
     to: "/finance/import",
     section: "pms",
     match: (p) => p.startsWith("/finance"),
