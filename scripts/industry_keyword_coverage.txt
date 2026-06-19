@@ -1,0 +1,10 @@
+TOTAL 713
+UNKNOWN 0
+Dry Mix mortar: 24
+Concrete admixture: 68
+Paint and Coating: 556
+Plastic: 47
+Foam: 15
+Detergent: 3
+Food: 0
+Pharmaceutical: 0

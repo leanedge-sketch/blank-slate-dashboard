@@ -36,6 +36,10 @@ backend/.env
 .env.local.bak
 .vercel
 
+# Python
+__pycache__/
+*.pyc
+
 # Telegram Desktop exports (private)
 data/telegram-imports/*.json
 data/telegram-imports/**/*.json
