@@ -6,7 +6,9 @@
 --    Table Editor (public.finance_constants, import_finance_products,
 --    import_finance_shipments). The app reads from public — no extra schema
 --    exposure in API settings required.
--- 3. Redeploy / hard-refresh the app. Open Import Finance — Sodium Gluconate
+-- 3. Run docs/0014_import_finance_pipeline_columns.sql if shipments table
+--    already existed before pipeline snapshot columns were added.
+-- 4. Redeploy / hard-refresh the app. Open Import Finance — Sodium Gluconate
 --    should appear in the product dropdown; Save draft shipment should work.
 -- =============================================================================
 -- Legacy: tables below live in schema `import_finance`. Step 2 copies them to

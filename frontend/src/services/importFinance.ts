@@ -1,9 +1,11 @@
 import { getSupabase } from "../lib/supabase";
 import {
+  calculateImportFinance,
   DEFAULT_FINANCE_CONSTANTS,
   LOCAL_CLEARANCE_PER_KG_ETB,
   type FinanceConstants,
   type ImportFinanceInputs,
+  type ImportFinanceResult,
 } from "../utils/importFinanceCalc";
 
 export interface ImportFinanceProduct {
@@ -27,6 +29,26 @@ export interface ImportShipmentRow {
   snapshot_official_rate: number;
   snapshot_parallel_rate: number;
   local_clearance_per_kg_etb: number;
+  snapshot_base_customs_reference_usd?: number | null;
+  target_selling_price_etb_per_kg?: number | null;
+  material_cost_usd_per_kg?: number | null;
+  border_value_usd_per_kg?: number | null;
+  capital_outlay_etb?: number | null;
+  cif_assessed_usd_per_kg?: number | null;
+  cif_base_etb?: number | null;
+  duty_etb?: number | null;
+  scan_fee_etb?: number | null;
+  social_fee_etb?: number | null;
+  wht_etb?: number | null;
+  vat_etb?: number | null;
+  total_customs_paid_etb?: number | null;
+  inland_transport_etb?: number | null;
+  gross_investment_etb?: number | null;
+  net_landed_cost_etb?: number | null;
+  final_landed_unit_cost_etb_per_kg?: number | null;
+  profit_per_kg_etb?: number | null;
+  gross_margin_pct?: number | null;
+  total_expected_revenue_etb?: number | null;
   status: string;
   created_at: string;
 }
@@ -57,6 +79,62 @@ function mapConstantsRow(
   };
 }
 
+export function buildShipmentPipelinePayload(
+  productId: string,
+  inputs: ImportFinanceInputs,
+  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+  result: ImportFinanceResult = calculateImportFinance(inputs, constants),
+) {
+  return {
+    product_id: productId,
+    quantity_kg: inputs.quantityKg,
+    supplier_base_price_usd: inputs.supplierBasePriceUsd,
+    supplier_margin_pct: inputs.supplierMarginPct,
+    transport_to_border_usd: inputs.transportToBorderUsdPerKg,
+    snapshot_official_rate: inputs.officialRate,
+    snapshot_parallel_rate: inputs.parallelRate,
+    local_clearance_per_kg_etb: LOCAL_CLEARANCE_PER_KG_ETB,
+    snapshot_base_customs_reference_usd: inputs.baseCustomsReferenceUsd,
+    target_selling_price_etb_per_kg: inputs.targetSellingPriceEtbPerKg,
+    material_cost_usd_per_kg: result.capital.materialCostUsdPerKg,
+    border_value_usd_per_kg: result.capital.borderValueUsdPerKg,
+    capital_outlay_etb: result.capital.totalCapitalEtb,
+    cif_assessed_usd_per_kg: result.customs.cifAssessedUsdPerKg,
+    cif_base_etb: result.customs.cifBaseEtb,
+    duty_etb: result.customs.dutyEtb,
+    scan_fee_etb: result.customs.scanFeeEtb,
+    social_fee_etb: result.customs.socialFeeEtb,
+    wht_etb: result.customs.whtEtb,
+    vat_etb: result.customs.vatEtb,
+    total_customs_paid_etb: result.customs.totalCustomsPaidEtb,
+    inland_transport_etb: result.bottomLine.totalLocalClearanceEtb,
+    gross_investment_etb: result.bottomLine.grossInvestmentEtb,
+    net_landed_cost_etb: result.bottomLine.netLandedCostEtb,
+    final_landed_unit_cost_etb_per_kg: result.bottomLine.finalUnitCostEtbPerKg,
+    profit_per_kg_etb: result.sales.profitPerKgEtb,
+    gross_margin_pct: result.sales.grossMarginPct,
+    total_expected_revenue_etb: result.sales.totalExpectedRevenueEtb,
+    status: "draft" as const,
+  };
+}
+
+export function shipmentRowToInputs(row: ImportShipmentRow): ImportFinanceInputs {
+  return {
+    quantityKg: Number(row.quantity_kg),
+    officialRate: Number(row.snapshot_official_rate),
+    parallelRate: Number(row.snapshot_parallel_rate),
+    supplierBasePriceUsd: Number(row.supplier_base_price_usd),
+    supplierMarginPct: Number(row.supplier_margin_pct),
+    transportToBorderUsdPerKg: Number(row.transport_to_border_usd),
+    baseCustomsReferenceUsd: Number(
+      row.snapshot_base_customs_reference_usd ?? 0,
+    ),
+    targetSellingPriceEtbPerKg: Number(
+      row.target_selling_price_etb_per_kg ?? 0,
+    ),
+  };
+}
+
 export function importFinanceSetupHint(error: unknown): string | null {
   const msg = String(
     (error as { message?: string; details?: string })?.message ??
@@ -67,11 +145,13 @@ export function importFinanceSetupHint(error: unknown): string | null {
     msg.includes("import_finance") ||
     msg.includes("schema") ||
     msg.includes("pgrst") ||
-    msg.includes("permission denied")
+    msg.includes("permission denied") ||
+    msg.includes("column") ||
+    msg.includes("capital_outlay")
   ) {
     return (
-      "Run docs/0013b_import_finance_public_tables.sql in the Supabase SQL Editor " +
-      "(creates public.finance_constants, import_finance_products, import_finance_shipments)."
+      "Run docs/0013b_import_finance_public_tables.sql, then " +
+      "docs/0014_import_finance_pipeline_columns.sql in the Supabase SQL Editor."
     );
   }
   return null;
@@ -129,20 +209,13 @@ export async function createImportFinanceProduct(
 export async function saveImportShipmentDraft(
   productId: string,
   inputs: ImportFinanceInputs,
+  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
 ): Promise<ImportShipmentRow> {
+  const payload = buildShipmentPipelinePayload(productId, inputs, constants);
+
   const { data, error } = await importFinanceDb()
     .from(TABLES.shipments)
-    .insert({
-      product_id: productId,
-      quantity_kg: inputs.quantityKg,
-      supplier_base_price_usd: inputs.supplierBasePriceUsd,
-      supplier_margin_pct: inputs.supplierMarginPct,
-      transport_to_border_usd: inputs.transportToBorderUsdPerKg,
-      snapshot_official_rate: inputs.officialRate,
-      snapshot_parallel_rate: inputs.parallelRate,
-      local_clearance_per_kg_etb: LOCAL_CLEARANCE_PER_KG_ETB,
-      status: "draft",
-    })
+    .insert(payload)
     .select("*")
     .single();
 

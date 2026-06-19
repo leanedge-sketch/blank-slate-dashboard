@@ -58,11 +58,19 @@ export function useImportFinanceData(enabled = true) {
   }, [reload]);
 
   const saveDraft = useCallback(
-    async (productId: string, inputs: ImportFinanceInputs) => {
+    async (
+      productId: string,
+      inputs: ImportFinanceInputs,
+      constantsOverride?: FinanceConstants,
+    ) => {
       setSaving(true);
       setError(null);
       try {
-        const row = await saveImportShipmentDraft(productId, inputs);
+        const row = await saveImportShipmentDraft(
+          productId,
+          inputs,
+          constantsOverride ?? constants,
+        );
         setShipments((prev) => [row, ...prev].slice(0, 20));
         return row;
       } catch (err: unknown) {
@@ -78,7 +86,7 @@ export function useImportFinanceData(enabled = true) {
         setSaving(false);
       }
     },
-    [],
+    [constants],
   );
 
   return {

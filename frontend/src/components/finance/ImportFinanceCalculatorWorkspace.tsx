@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Save } from "lucide-react";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
-import type { ImportFinanceProduct } from "../../services/importFinance";
+import {
+  shipmentRowToInputs,
+  type ImportFinanceProduct,
+  type ImportShipmentRow,
+} from "../../services/importFinance";
 import type { FinanceConstants, ImportFinanceInputs } from "../../utils/importFinanceCalc";
+import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import {
   DEFAULT_IMPORT_FINANCE_INPUTS,
   ImportFinanceCalculatorPanel,
@@ -12,6 +17,13 @@ type ImportFinanceCalculatorWorkspaceProps = {
   enabled?: boolean;
   showRecentShipments?: boolean;
 };
+
+function marginTone(pct: number | null | undefined): string {
+  if (pct == null || Number.isNaN(pct)) return "text-slate-500";
+  if (pct < 0) return "text-rose-600 font-semibold";
+  if (pct >= 15) return "text-emerald-600 font-semibold";
+  return "text-amber-600 font-semibold";
+}
 
 export function ImportFinanceCalculatorWorkspace({
   enabled = true,
@@ -33,6 +45,7 @@ export function ImportFinanceCalculatorWorkspace({
     DEFAULT_IMPORT_FINANCE_INPUTS,
   );
   const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedProductId && products.length > 0) {
@@ -47,6 +60,7 @@ export function ImportFinanceCalculatorWorkspace({
 
   function handleProductChange(productId: string) {
     setSelectedProductId(productId);
+    setLoadedShipmentId(null);
     const product = products.find((p) => p.id === productId);
     if (product) {
       setInputs((prev) => ({
@@ -56,14 +70,25 @@ export function ImportFinanceCalculatorWorkspace({
     }
   }
 
+  function handleLoadShipment(row: ImportShipmentRow) {
+    setSelectedProductId(row.product_id);
+    setInputs(shipmentRowToInputs(row));
+    setLoadedShipmentId(row.id);
+  }
+
   async function handleSaveDraft() {
     if (!selectedProductId) {
       alert("Select a product from the database before saving.");
       return;
     }
     try {
-      const row = await saveDraft(selectedProductId, inputs);
-      alert(`Saved draft shipment ${row.id.slice(0, 8)}…`);
+      const row = await saveDraft(selectedProductId, inputs, constants);
+      setLoadedShipmentId(row.id);
+      alert(
+        `Saved pipeline snapshot to database.\n` +
+          `Landed: ${formatNumber(Number(row.final_landed_unit_cost_etb_per_kg ?? 0), 2)} ETB/kg · ` +
+          `Margin: ${formatNumber(Number(row.gross_margin_pct ?? 0), 1)}%`,
+      );
     } catch {
       /* error state shown in banner */
     }
@@ -137,38 +162,121 @@ export function ImportFinanceCalculatorWorkspace({
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Save draft shipment
+            Save pipeline to database
           </button>
         </div>
       </div>
 
+      {loadedShipmentId && (
+        <p className="text-xs text-indigo-600">
+          Loaded shipment {loadedShipmentId.slice(0, 8)}… — edit and save again to
+          write a new row.
+        </p>
+      )}
+
       <ImportFinanceCalculatorPanel
         inputs={inputs}
-        onChange={(patch) => setInputs((prev) => ({ ...prev, ...patch }))}
+        onChange={(patch) => {
+          setLoadedShipmentId(null);
+          setInputs((prev) => ({ ...prev, ...patch }));
+        }}
         constants={constants as FinanceConstants}
       />
 
       {showRecentShipments && shipments.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-2">
-            Recent saved shipments
+        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-slate-800 mb-3">
+            Saved pipeline snapshots (click to load)
           </h3>
-          <ul className="space-y-1 text-sm text-slate-600">
-            {shipments.map((s) => {
-              const product = products.find((p) => p.id === s.product_id);
-              return (
-                <li key={s.id} className="flex flex-wrap justify-between gap-2">
-                  <span>
-                    {product?.product_name ?? s.product_id.slice(0, 8)} ·{" "}
-                    {Number(s.quantity_kg).toLocaleString()} kg
-                  </span>
-                  <span className="text-slate-400">
-                    {s.status} · {new Date(s.created_at).toLocaleString()}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          <table className="w-full min-w-[720px] text-sm text-left">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                <th className="py-2 pr-3 font-medium">Product</th>
+                <th className="py-2 pr-3 font-medium text-right">Qty</th>
+                <th className="py-2 pr-3 font-medium text-right">Capital ETB</th>
+                <th className="py-2 pr-3 font-medium text-right">Customs ETB</th>
+                <th className="py-2 pr-3 font-medium text-right">Landed ETB/kg</th>
+                <th className="py-2 pr-3 font-medium text-right">Target ETB/kg</th>
+                <th className="py-2 pr-3 font-medium text-right">Margin</th>
+                <th className="py-2 pr-3 font-medium text-right">Revenue</th>
+                <th className="py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shipments.map((s) => {
+                const product = products.find((p) => p.id === s.product_id);
+                const isLoaded = loadedShipmentId === s.id;
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => handleLoadShipment(s)}
+                    className={`border-b border-slate-100 cursor-pointer transition ${
+                      isLoaded
+                        ? "bg-indigo-50"
+                        : "hover:bg-white"
+                    }`}
+                  >
+                    <td className="py-2.5 pr-3 text-slate-800">
+                      {product?.product_name ?? s.product_id.slice(0, 8)}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                      {Number(s.quantity_kg).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                      {s.capital_outlay_etb != null
+                        ? formatEtb(Number(s.capital_outlay_etb), 0)
+                        : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                      {s.total_customs_paid_etb != null
+                        ? formatEtb(Number(s.total_customs_paid_etb), 0)
+                        : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums font-medium text-sky-700">
+                      {s.final_landed_unit_cost_etb_per_kg != null
+                        ? formatNumber(
+                            Number(s.final_landed_unit_cost_etb_per_kg),
+                            2,
+                          )
+                        : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                      {s.target_selling_price_etb_per_kg != null
+                        ? formatNumber(
+                            Number(s.target_selling_price_etb_per_kg),
+                            2,
+                          )
+                        : "—"}
+                    </td>
+                    <td
+                      className={`py-2.5 pr-3 text-right tabular-nums ${marginTone(
+                        s.gross_margin_pct != null
+                          ? Number(s.gross_margin_pct)
+                          : null,
+                      )}`}
+                    >
+                      {s.gross_margin_pct != null
+                        ? `${formatNumber(Number(s.gross_margin_pct), 1)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                      {s.total_expected_revenue_etb != null
+                        ? formatEtb(Number(s.total_expected_revenue_etb), 0)
+                        : "—"}
+                    </td>
+                    <td className="py-2.5 text-slate-400 text-xs">
+                      {s.status}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[11px] text-slate-400">
+            Full stage breakdown is stored on each row in{" "}
+            <code className="text-slate-500">import_finance_shipments</code> in
+            Supabase Table Editor.
+          </p>
         </div>
       )}
     </div>
