@@ -95,49 +95,9 @@ const PIPELINE_STAGES: PipelineStage[] = [
   "Lost",
 ];
 
-function pipelineGroupKey(pipeline: SalesPipeline): string {
-  const productId = pipeline.chemical_type_id || pipeline.tds_id || "none";
-  return `${pipeline.customer_id}-${productId}`;
-}
-
 function pipelineTimestamp(pipeline: SalesPipeline): number {
   const raw = pipeline.updated_at || pipeline.created_at;
   return raw ? new Date(raw).getTime() : 0;
-}
-
-function pickBetterPipeline(
-  existing: SalesPipeline,
-  candidate: SalesPipeline
-): SalesPipeline {
-  if (candidate.is_current_version && !existing.is_current_version) {
-    return candidate;
-  }
-  if (!candidate.is_current_version && existing.is_current_version) {
-    return existing;
-  }
-  const vExisting = existing.version_number ?? 0;
-  const vCandidate = candidate.version_number ?? 0;
-  if (vCandidate !== vExisting) {
-    return vCandidate > vExisting ? candidate : existing;
-  }
-  return pipelineTimestamp(candidate) > pipelineTimestamp(existing)
-    ? candidate
-    : existing;
-}
-
-function deduplicatePipelines(rows: SalesPipeline[]): SalesPipeline[] {
-  const grouped = new Map<string, SalesPipeline>();
-  for (const pipeline of rows) {
-    const key = pipelineGroupKey(pipeline);
-    const existing = grouped.get(key);
-    grouped.set(
-      key,
-      existing ? pickBetterPipeline(existing, pipeline) : pipeline
-    );
-  }
-  return Array.from(grouped.values()).sort(
-    (a, b) => pipelineTimestamp(b) - pipelineTimestamp(a)
-  );
 }
 
 // Full commercial fields required from Proposal onward (not at Validation)
@@ -270,33 +230,7 @@ export function SalesPipelinePage() {
     return productId ?? DEAL_LINK_KEY_NONE;
   }
 
-  function findExistingPipelineForProduct(
-    productId: string | null,
-  ): SalesPipeline | undefined {
-    if (productId) {
-      return customerPipelines.find(
-        (p) =>
-          p.chemical_type_id &&
-          String(p.chemical_type_id) === String(productId),
-      );
-    }
-    return customerPipelines.find((p) => !p.chemical_type_id && !p.tds_id);
-  }
-
-  function suggestDealLink(productId: string | null): ProductDealLink {
-    if (!productId) {
-      const umbrella = customerPipelines.find(
-        (p) => !p.chemical_type_id && !p.tds_id,
-      );
-      if (umbrella) {
-        return { mode: "existing", existingPipelineId: umbrella.id };
-      }
-      return emptyProductDealLink();
-    }
-    const match = findExistingPipelineForProduct(productId);
-    if (match) {
-      return { mode: "existing", existingPipelineId: match.id };
-    }
+  function suggestDealLink(_productId: string | null): ProductDealLink {
     return emptyProductDealLink();
   }
 
@@ -371,7 +305,7 @@ export function SalesPipelinePage() {
         const res = await fetchSalesPipelines({
           customer_id: formData.customer_id,
           limit: 1000,
-          latest_per_deal: true,
+          latest_per_deal: false,
         });
         if (cancelled) return;
         setCustomerPipelines(res.pipelines || []);
@@ -540,18 +474,20 @@ export function SalesPipelinePage() {
         customer_id: selectedCustomer || undefined,
         chemical_type_id: selectedChemicalType || undefined,
         stage: selectedStage || undefined,
-        latest_per_deal: true,
+        latest_per_deal: false,
       });
 
-      const uniquePipelines = deduplicatePipelines(res.pipelines);
-      const paginatedPipelines = uniquePipelines.slice(offset, offset + limit);
+      const sortedPipelines = [...res.pipelines].sort(
+        (a, b) => pipelineTimestamp(b) - pipelineTimestamp(a),
+      );
+      const paginatedPipelines = sortedPipelines.slice(offset, offset + limit);
 
-      setStageBoardPipelines(uniquePipelines);
+      setStageBoardPipelines(sortedPipelines);
       setPipelines(paginatedPipelines);
-      setTotal(res.total ?? uniquePipelines.length);
+      setTotal(res.total ?? sortedPipelines.length);
       setExpandedCustomers(
         new Set(
-          uniquePipelines
+          sortedPipelines
             .map((p) => p.customer_id)
             .filter((id): id is string => Boolean(id))
         )
@@ -1024,15 +960,12 @@ export function SalesPipelinePage() {
             cid,
           );
 
-          const existingDeal = findExistingPipelineForProduct(productId);
           const targetPipelineId =
-            link.mode === "existing" && link.existingPipelineId
-              ? link.existingPipelineId
-              : existingDeal?.id;
+            link.mode === "existing" ? link.existingPipelineId : null;
 
           if (targetPipelineId) {
             console.log(
-              "Updating existing pipeline (no duplicate):",
+              "Updating existing pipeline (user chose link to existing):",
               targetPipelineId,
               updateData,
             );
