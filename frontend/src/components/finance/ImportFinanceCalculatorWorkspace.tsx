@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Save } from "lucide-react";
+import { Database, Loader2, RefreshCw, Save } from "lucide-react";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
 import {
   shipmentRowToInputs,
@@ -20,10 +20,13 @@ type ImportFinanceCalculatorWorkspaceProps = {
 
 function marginTone(pct: number | null | undefined): string {
   if (pct == null || Number.isNaN(pct)) return "text-slate-500";
-  if (pct < 0) return "text-rose-600 font-semibold";
-  if (pct >= 15) return "text-emerald-600 font-semibold";
-  return "text-amber-600 font-semibold";
+  if (pct < 0) return "text-rose-400 font-semibold";
+  if (pct >= 15) return "text-emerald-400 font-semibold";
+  return "text-amber-400 font-semibold";
 }
+
+const darkSelect =
+  "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50";
 
 export function ImportFinanceCalculatorWorkspace({
   enabled = true,
@@ -85,7 +88,7 @@ export function ImportFinanceCalculatorWorkspace({
       const row = await saveDraft(selectedProductId, inputs, constants);
       setLoadedShipmentId(row.id);
       alert(
-        `Saved pipeline snapshot to database.\n` +
+        `Pipeline snapshot saved.\n` +
           `Landed: ${formatNumber(Number(row.final_landed_unit_cost_etb_per_kg ?? 0), 2)} ETB/kg · ` +
           `Margin: ${formatNumber(Number(row.gross_margin_pct ?? 0), 1)}%`,
       );
@@ -95,16 +98,16 @@ export function ImportFinanceCalculatorWorkspace({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {(error || setupHint) && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <p className="font-medium">Database connection</p>
-          <p className="mt-1">{setupHint ?? error}</p>
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <p className="font-medium text-amber-100">Database connection</p>
+          <p className="mt-1 text-amber-200/90">{setupHint ?? error}</p>
           {!setupHint && (
             <button
               type="button"
               onClick={() => void reload()}
-              className="mt-2 text-xs font-semibold text-amber-800 underline"
+              className="mt-2 text-xs font-semibold text-cyan-400 underline"
             >
               Retry
             </button>
@@ -112,16 +115,17 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
         <div className="min-w-[220px] flex-1">
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            Product (from database)
+          <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
+            <Database className="h-3.5 w-3.5 text-cyan-500" />
+            Product (Supabase)
           </label>
           <select
             value={selectedProductId}
             onChange={(e) => handleProductChange(e.target.value)}
             disabled={loading || products.length === 0}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50"
+            className={darkSelect}
           >
             <option value="">
               {loading
@@ -142,7 +146,7 @@ export function ImportFinanceCalculatorWorkspace({
             type="button"
             onClick={() => void reload()}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-300 hover:border-cyan-500/30 hover:text-cyan-300 disabled:opacity-50 transition"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -155,7 +159,7 @@ export function ImportFinanceCalculatorWorkspace({
             type="button"
             onClick={() => void handleSaveDraft()}
             disabled={saving || !selectedProductId || Boolean(setupHint)}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.25)] disabled:opacity-50 transition"
           >
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -168,8 +172,8 @@ export function ImportFinanceCalculatorWorkspace({
       </div>
 
       {loadedShipmentId && (
-        <p className="text-xs text-indigo-600">
-          Loaded shipment {loadedShipmentId.slice(0, 8)}… — edit and save again to
+        <p className="text-xs text-cyan-400/90">
+          Loaded snapshot {loadedShipmentId.slice(0, 8)}… — edit and save to
           write a new row.
         </p>
       )}
@@ -184,19 +188,22 @@ export function ImportFinanceCalculatorWorkspace({
       />
 
       {showRecentShipments && shipments.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 overflow-x-auto">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">
-            Saved pipeline snapshots (click to load)
+        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
+            Saved pipeline snapshots
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              click to load
+            </span>
           </h3>
           <table className="w-full min-w-[720px] text-sm text-left">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
                 <th className="py-2 pr-3 font-medium">Product</th>
                 <th className="py-2 pr-3 font-medium text-right">Qty</th>
-                <th className="py-2 pr-3 font-medium text-right">Capital ETB</th>
-                <th className="py-2 pr-3 font-medium text-right">Customs ETB</th>
-                <th className="py-2 pr-3 font-medium text-right">Landed ETB/kg</th>
-                <th className="py-2 pr-3 font-medium text-right">Target ETB/kg</th>
+                <th className="py-2 pr-3 font-medium text-right">Capital</th>
+                <th className="py-2 pr-3 font-medium text-right">Customs</th>
+                <th className="py-2 pr-3 font-medium text-right">Landed/kg</th>
+                <th className="py-2 pr-3 font-medium text-right">Target/kg</th>
                 <th className="py-2 pr-3 font-medium text-right">Margin</th>
                 <th className="py-2 pr-3 font-medium text-right">Revenue</th>
                 <th className="py-2 font-medium">Status</th>
@@ -210,29 +217,29 @@ export function ImportFinanceCalculatorWorkspace({
                   <tr
                     key={s.id}
                     onClick={() => handleLoadShipment(s)}
-                    className={`border-b border-slate-100 cursor-pointer transition ${
+                    className={`border-b border-white/5 cursor-pointer transition ${
                       isLoaded
-                        ? "bg-indigo-50"
-                        : "hover:bg-white"
+                        ? "bg-cyan-500/10"
+                        : "hover:bg-white/5"
                     }`}
                   >
-                    <td className="py-2.5 pr-3 text-slate-800">
+                    <td className="py-2.5 pr-3 text-slate-200">
                       {product?.product_name ?? s.product_id.slice(0, 8)}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
                       {Number(s.quantity_kg).toLocaleString()}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
                       {s.capital_outlay_etb != null
                         ? formatEtb(Number(s.capital_outlay_etb), 0)
                         : "—"}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
                       {s.total_customs_paid_etb != null
                         ? formatEtb(Number(s.total_customs_paid_etb), 0)
                         : "—"}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums font-medium text-sky-700">
+                    <td className="py-2.5 pr-3 text-right tabular-nums font-medium text-emerald-400">
                       {s.final_landed_unit_cost_etb_per_kg != null
                         ? formatNumber(
                             Number(s.final_landed_unit_cost_etb_per_kg),
@@ -240,7 +247,7 @@ export function ImportFinanceCalculatorWorkspace({
                           )
                         : "—"}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
                       {s.target_selling_price_etb_per_kg != null
                         ? formatNumber(
                             Number(s.target_selling_price_etb_per_kg),
@@ -259,24 +266,17 @@ export function ImportFinanceCalculatorWorkspace({
                         ? `${formatNumber(Number(s.gross_margin_pct), 1)}%`
                         : "—"}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
                       {s.total_expected_revenue_etb != null
                         ? formatEtb(Number(s.total_expected_revenue_etb), 0)
                         : "—"}
                     </td>
-                    <td className="py-2.5 text-slate-400 text-xs">
-                      {s.status}
-                    </td>
+                    <td className="py-2.5 text-slate-500 text-xs">{s.status}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          <p className="mt-2 text-[11px] text-slate-400">
-            Full stage breakdown is stored on each row in{" "}
-            <code className="text-slate-500">import_finance_shipments</code> in
-            Supabase Table Editor.
-          </p>
         </div>
       )}
     </div>

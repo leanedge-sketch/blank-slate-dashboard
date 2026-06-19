@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
+import { TradeTransitDeckCard } from "../../components/finance/TradeTransitDeckCard";
 
 const modules = [
   {
@@ -174,6 +175,7 @@ export function PMSHomePage() {
 
             {/* Modules Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              <TradeTransitDeckCard className="md:col-span-2 lg:col-span-1" />
               {modules.map((module, index) => {
                 const Icon = module.icon;
                 return (

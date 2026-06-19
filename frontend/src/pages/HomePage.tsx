@@ -11,6 +11,7 @@ import {
   Activity,
   Zap,
 } from "lucide-react";
+import { TradeTransitDeckCard } from "../components/finance/TradeTransitDeckCard";
 export function HomePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black overflow-hidden">
@@ -251,6 +252,9 @@ export function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Trade & Transit deck */}
+            <TradeTransitDeckCard className="h-full" />
 
             {/* Reports & Analysis card */}
             <div className="crm-feature-card-enhanced group relative overflow-hidden rounded-2xl">

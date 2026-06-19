@@ -1,10 +1,11 @@
 import { useMemo, type ReactNode } from "react";
 import {
-  ArrowDown,
   MapPin,
   ShieldCheck,
+  Sparkles,
   TrendingUp,
   Truck,
+  Warehouse,
 } from "lucide-react";
 import {
   calculateImportFinance,
@@ -36,52 +37,70 @@ type ImportFinanceCalculatorPanelProps = {
   compact?: boolean;
 };
 
+type Accent = "cyan" | "amber" | "emerald" | "purple";
+
+const accentStyles: Record<
+  Accent,
+  { icon: string; title: string; glow: string; badge: string }
+> = {
+  cyan: {
+    icon: "text-cyan-400 bg-cyan-500/10 border-cyan-500/30",
+    title: "text-cyan-300",
+    glow: "shadow-[0_0_24px_rgba(6,182,212,0.12)]",
+    badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/25",
+  },
+  amber: {
+    icon: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+    title: "text-amber-300",
+    glow: "shadow-[0_0_24px_rgba(245,158,11,0.1)]",
+    badge: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+  },
+  emerald: {
+    icon: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+    title: "text-emerald-300",
+    glow: "shadow-[0_0_28px_rgba(16,185,129,0.18)]",
+    badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
+  },
+  purple: {
+    icon: "text-purple-400 bg-purple-500/10 border-purple-500/30",
+    title: "text-purple-300",
+    glow: "shadow-[0_0_24px_rgba(168,85,247,0.12)]",
+    badge: "bg-purple-500/15 text-purple-300 border-purple-500/25",
+  },
+};
+
 function MetricRow({
   label,
   value,
   sub,
   highlight,
+  accent,
 }: {
   label: string;
   value: string;
   sub?: string;
   highlight?: boolean;
+  accent?: Accent;
 }) {
   return (
     <div
-      className={`flex items-baseline justify-between gap-4 py-2 border-b border-slate-100 last:border-0 ${
-        highlight ? "font-semibold text-slate-900" : "text-slate-700"
+      className={`flex items-baseline justify-between gap-4 py-2.5 border-b border-white/5 last:border-0 ${
+        highlight ? "text-slate-100" : "text-slate-400"
       }`}
     >
       <div className="min-w-0">
-        <span className="text-sm">{label}</span>
-        {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
+        <span className={`text-sm ${highlight ? "font-medium text-slate-200" : ""}`}>
+          {label}
+        </span>
+        {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
       </div>
-      <span className="text-sm tabular-nums text-right shrink-0">{value}</span>
-    </div>
-  );
-}
-
-function TimelineNode({
-  icon,
-  active,
-  complete,
-}: {
-  icon: ReactNode;
-  active?: boolean;
-  complete?: boolean;
-}) {
-  return (
-    <div
-      className={`relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 shadow-sm transition-colors ${
-        complete
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : active
-            ? "border-indigo-500 bg-white text-indigo-600"
-            : "border-slate-200 bg-white text-slate-400"
-      }`}
-    >
-      {icon}
+      <span
+        className={`text-sm tabular-nums text-right shrink-0 ${
+          highlight && accent ? accentStyles[accent].title : "text-slate-200"
+        } ${highlight ? "font-semibold" : ""}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -92,7 +111,7 @@ function StageCard({
   location,
   icon,
   children,
-  accent = "indigo",
+  accent,
   isLast,
 }: {
   stage: number;
@@ -100,36 +119,29 @@ function StageCard({
   location: string;
   icon: ReactNode;
   children: ReactNode;
-  accent?: "indigo" | "amber" | "sky" | "emerald";
+  accent: Accent;
   isLast?: boolean;
 }) {
-  const accentMap = {
-    indigo: "from-indigo-500/10 to-white border-indigo-200/80",
-    amber: "from-amber-500/10 to-white border-amber-200/80",
-    sky: "from-sky-500/10 to-white border-sky-200/80",
-    emerald: "from-emerald-500/10 to-white border-emerald-200/80",
-  };
+  const styles = accentStyles[accent];
 
   return (
-    <div className="relative flex gap-4 pb-10 last:pb-0">
-      <div className="flex flex-col items-center">
-        <TimelineNode icon={icon} complete />
-        {!isLast && (
-          <div className="mt-2 flex flex-1 flex-col items-center">
-            <div className="w-0.5 flex-1 min-h-[2rem] bg-gradient-to-b from-indigo-300 to-indigo-100" />
-            <ArrowDown className="h-4 w-4 text-indigo-300 -mt-1" />
-          </div>
-        )}
+    <div className={`relative mb-6 last:mb-0 pl-10 ${!isLast ? "pb-2" : ""}`}>
+      <div
+        className={`absolute left-0 top-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border ${styles.icon}`}
+      >
+        {icon}
       </div>
 
       <article
-        className={`flex-1 rounded-2xl border bg-gradient-to-br p-5 shadow-sm ${accentMap[accent]}`}
+        className={`bg-white/5 backdrop-blur-md border border-white/10 p-6 rounded-xl relative ${styles.glow}`}
       >
         <header className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ${styles.badge}`}
+          >
             Stage {stage}
-          </p>
-          <h3 className="text-lg font-bold text-slate-900 mt-0.5">{title}</h3>
+          </span>
+          <h3 className={`text-lg font-bold mt-2 ${styles.title}`}>{title}</h3>
           <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
             <MapPin className="h-3 w-3 shrink-0" />
             {location}
@@ -147,7 +159,7 @@ function Stage1Output({ result, qty }: { result: ImportFinanceResult; qty: numbe
     <>
       <MetricRow
         label="Material cost"
-        sub="Supplier base × (1 + margin %)"
+        sub="Base price × (1 + margin %)"
         value={`${formatUsd(capital.materialCostUsdPerKg)} /kg`}
       />
       <MetricRow
@@ -157,28 +169,23 @@ function Stage1Output({ result, qty }: { result: ImportFinanceResult; qty: numbe
         )} /kg`}
       />
       <MetricRow
-        label="Border value"
+        label="Border value (USD)"
         sub="Material + transport"
         value={`${formatUsd(capital.borderValueUsdPerKg)} /kg`}
         highlight
+        accent="cyan"
       />
-      <MetricRow
-        label="× Quantity"
-        value={`${formatNumber(qty, 0)} kg`}
-      />
+      <MetricRow label="× Quantity" value={`${formatNumber(qty, 0)} kg`} />
       <MetricRow
         label="× Parallel rate"
         value={formatUsd(capital.totalCapitalUsd, 2)}
       />
-      <div className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">
-          Capital outlay
+      <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/80">
+          Capital outlay (ETB)
         </p>
-        <p className="text-2xl font-bold tabular-nums mt-1">
+        <p className="text-2xl font-bold tabular-nums text-cyan-300 mt-1">
           {formatEtb(capital.totalCapitalEtb, 0)}
-        </p>
-        <p className="text-xs text-indigo-200 mt-1">
-          Cash deployed at the border (parallel FX)
         </p>
       </div>
     </>
@@ -200,44 +207,32 @@ function Stage2Output({
   return (
     <>
       <MetricRow
-        label="CIF assessed value"
-        sub={`Base customs reference × ${1 + constants.freightInsuranceBufferPct} (${bufferPct}% buffer)`}
+        label="CIF assessed value (USD)"
+        sub={`Base customs reference × 1.10 (${bufferPct}% buffer)`}
         value={`${formatUsd(customs.cifAssessedUsdPerKg)} /kg`}
-      />
-      <MetricRow
-        label="Total CIF (USD)"
-        value={formatUsd(customs.totalCifAssessedUsd, 2)}
       />
       <MetricRow
         label="× Official rate"
         sub={`${formatNumber(officialRate, 2)} ETB/USD`}
         value={formatEtb(customs.cifBaseEtb, 0)}
         highlight
+        accent="amber"
       />
-      <div className="mt-3 rounded-lg bg-white/70 border border-amber-100 px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">
+      <div className="mt-3 rounded-lg bg-black/20 border border-amber-500/15 px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90 mb-1">
           Tax waterfall
         </p>
-        <MetricRow
-          label="Customs duty (5%)"
-          value={formatEtb(customs.dutyEtb, 0)}
-        />
-        <MetricRow
-          label="Scan fee (0.07%)"
-          value={formatEtb(customs.scanFeeEtb, 0)}
-        />
-        <MetricRow
-          label="Social fee (3%)"
-          value={formatEtb(customs.socialFeeEtb, 0)}
-        />
+        <MetricRow label="Duty (5%)" value={formatEtb(customs.dutyEtb, 0)} />
+        <MetricRow label="Scan (0.07%)" value={formatEtb(customs.scanFeeEtb, 0)} />
+        <MetricRow label="Social (3%)" value={formatEtb(customs.socialFeeEtb, 0)} />
         <MetricRow label="WHT (3%)" value={formatEtb(customs.whtEtb, 0)} />
         <MetricRow label="VAT (15%)" value={formatEtb(customs.vatEtb, 0)} />
       </div>
-      <div className="mt-4 rounded-xl bg-amber-600 px-4 py-3 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
+      <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">
           Total customs paid
         </p>
-        <p className="text-2xl font-bold tabular-nums mt-1">
+        <p className="text-2xl font-bold tabular-nums text-amber-300 mt-1">
           {formatEtb(customs.totalCustomsPaidEtb, 0)}
         </p>
       </div>
@@ -246,7 +241,7 @@ function Stage2Output({
 }
 
 function Stage3Output({ result, qty }: { result: ImportFinanceResult; qty: number }) {
-  const { capital, customs, bottomLine } = result;
+  const { customs, bottomLine } = result;
 
   return (
     <>
@@ -256,25 +251,14 @@ function Stage3Output({ result, qty }: { result: ImportFinanceResult; qty: numbe
         value={formatEtb(bottomLine.totalLocalClearanceEtb, 0)}
       />
       <MetricRow
-        label="Capital outlay"
-        value={formatEtb(capital.totalCapitalEtb, 0)}
-      />
-      <MetricRow
-        label="+ Total customs"
-        value={formatEtb(customs.totalCustomsPaidEtb, 0)}
-      />
-      <MetricRow
-        label="+ Inland transport"
-        value={formatEtb(bottomLine.totalLocalClearanceEtb, 0)}
-      />
-      <MetricRow
         label="Gross investment"
+        sub="Capital + customs + inland"
         value={formatEtb(bottomLine.grossInvestmentEtb, 0)}
         highlight
+        accent="emerald"
       />
       <MetricRow
         label="− Refundable WHT & VAT"
-        sub="Excluded from net landed cost"
         value={formatEtb(customs.whtEtb + customs.vatEtb, 0)}
       />
       <MetricRow
@@ -282,49 +266,43 @@ function Stage3Output({ result, qty }: { result: ImportFinanceResult; qty: numbe
         value={formatEtb(bottomLine.netLandedCostEtb, 0)}
         highlight
       />
-      <div className="mt-4 rounded-xl border-2 border-sky-500 bg-sky-50 px-4 py-4 text-center">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-sky-700">
-          Final landed unit cost in Addis
+      <div className="mt-4 rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-5 text-center shadow-[0_0_30px_rgba(16,185,129,0.15)]">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-400">
+          Final landed unit cost (ETB/kg)
         </p>
-        <p className="text-3xl font-extrabold tabular-nums text-sky-900 mt-1">
+        <p className="text-2xl font-bold tabular-nums text-emerald-300 mt-2">
           {formatNumber(bottomLine.finalUnitCostEtbPerKg, 2)}
-          <span className="text-lg font-semibold text-sky-700 ml-1">ETB/kg</span>
+          <span className="text-base font-semibold text-emerald-400/80 ml-1">
+            ETB/kg
+          </span>
         </p>
+        <p className="text-xs text-emerald-500/70 mt-1">Addis Ababa warehouse</p>
       </div>
     </>
   );
 }
 
-function Stage4Output({
-  result,
-  qty,
-}: {
-  result: ImportFinanceResult;
-  qty: number;
-}) {
+function Stage4Output({ result }: { result: ImportFinanceResult }) {
   const { sales, bottomLine } = result;
   const positive = sales.profitPerKgEtb >= 0;
-  const strongMargin = sales.grossMarginPct >= 15;
 
   return (
     <div
-      className={`rounded-xl border-2 p-4 ${
+      className={`rounded-xl border p-4 ${
         positive
-          ? strongMargin
-            ? "border-emerald-400 bg-emerald-50/80"
-            : "border-emerald-300 bg-emerald-50/50"
-          : "border-rose-400 bg-rose-50/80"
+          ? "border-purple-500/30 bg-purple-500/5"
+          : "border-rose-500/40 bg-rose-500/10"
       }`}
     >
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Sparkles className={`h-4 w-4 ${positive ? "text-purple-400" : "text-rose-400"}`} />
         <span
-          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-            positive ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"
+          className={`text-[10px] font-bold uppercase tracking-wider ${
+            positive ? "text-purple-300" : "text-rose-300"
           }`}
         >
-          Market outlook
+          Market strategy
         </span>
-        <span className="text-xs text-slate-500">CRM connect</span>
       </div>
 
       <MetricRow
@@ -332,42 +310,40 @@ function Stage4Output({
         value={`${formatNumber(sales.targetSellingPriceEtbPerKg, 2)} ETB/kg`}
       />
       <MetricRow
-        label="Final landed unit cost"
+        label="Landed unit cost"
         value={`${formatNumber(bottomLine.finalUnitCostEtbPerKg, 2)} ETB/kg`}
       />
       <MetricRow
         label="Expected profit per kg"
         value={`${positive ? "+" : ""}${formatNumber(sales.profitPerKgEtb, 2)} ETB`}
         highlight
+        accent="purple"
       />
       <MetricRow
-        label="Gross margin"
+        label="Gross margin %"
         value={`${formatNumber(sales.grossMarginPct, 1)}%`}
         highlight
+        accent={positive ? "purple" : undefined}
       />
 
       <div
-        className={`mt-4 rounded-xl px-4 py-4 text-center ${
-          positive ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+        className={`mt-4 rounded-xl px-4 py-4 text-center border ${
+          positive
+            ? "border-purple-500/30 bg-purple-600/20"
+            : "border-rose-500/40 bg-rose-600/20"
         }`}
       >
-        <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           Total expected revenue
         </p>
-        <p className="text-2xl font-bold tabular-nums mt-1">
+        <p
+          className={`text-2xl font-bold tabular-nums mt-1 ${
+            positive ? "text-purple-200" : "text-rose-300"
+          }`}
+        >
           {formatEtb(sales.totalExpectedRevenueEtb, 0)}
         </p>
-        <p className="text-xs opacity-80 mt-1">
-          {formatNumber(sales.targetSellingPriceEtbPerKg, 2)} ETB/kg ×{" "}
-          {qty.toLocaleString()} kg
-        </p>
       </div>
-
-      {!positive && (
-        <p className="mt-3 text-xs text-rose-700 font-medium text-center">
-          Selling below landed cost — adjust price or renegotiate supplier terms.
-        </p>
-      )}
     </div>
   );
 }
@@ -385,28 +361,40 @@ function InputField({
   value: number;
   onChange: (v: number) => void;
   step?: string;
-  accent?: boolean;
+  accent?: "cyan" | "purple";
 }) {
+  const ring =
+    accent === "purple"
+      ? "focus:ring-purple-500"
+      : accent === "cyan"
+        ? "focus:ring-cyan-500"
+        : "focus:ring-cyan-500";
+  const labelColor =
+    accent === "purple" ? "text-purple-300" : "text-slate-400";
+
   return (
-    <label className="block space-y-1">
-      <span
-        className={`text-xs font-medium ${accent ? "text-emerald-700" : "text-slate-600"}`}
-      >
-        {label}
-      </span>
+    <label className="block space-y-1.5">
+      <span className={`text-xs font-medium ${labelColor}`}>{label}</span>
       <input
         type="number"
         step={step}
         value={value}
         onChange={(e) => onChange(Number.parseFloat(e.target.value) || 0)}
-        className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm transition focus:outline-none focus:ring-2 ${
-          accent
-            ? "border-emerald-300 focus:ring-emerald-500"
-            : "border-slate-300 focus:ring-indigo-500"
-        }`}
+        className={`w-full rounded-lg bg-slate-900 border border-transparent px-3 py-2.5 text-sm text-white placeholder:text-slate-600 transition focus:outline-none focus:ring-2 ${ring}`}
       />
-      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+      {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
     </label>
+  );
+}
+
+function InputGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+        {title}
+      </p>
+      {children}
+    </div>
   );
 }
 
@@ -425,139 +413,156 @@ export function ImportFinanceCalculatorPanel({
 
   return (
     <div
-      className={`grid gap-8 ${
-        compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-[minmax(280px,340px)_1fr]"
+      className={`grid gap-8 lg:gap-10 ${
+        compact
+          ? "grid-cols-1"
+          : "grid-cols-1 lg:grid-cols-[minmax(280px,320px)_1fr]"
       }`}
     >
-      {/* Left: sticky inputs */}
-      <aside className="xl:sticky xl:top-4 self-start space-y-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-            Journey inputs
+      {/* Command console */}
+      <aside className="lg:sticky lg:top-6 self-start">
+        <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
+            Command console
           </p>
-          <h3 className="text-base font-bold text-slate-900 mt-1">
-            Origin → Moyale → Addis
-          </h3>
-          <p className="text-xs text-slate-500 mt-1 mb-4">
-            Adjust any value — the pipeline updates instantly.
+          <h3 className="text-base font-bold text-white mt-1">Journey variables</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-5">
+            Origin → Moyale → Addis — updates in real time.
           </p>
 
-          <div className="space-y-3">
-            <InputField
-              label="Quantity (kg)"
-              value={inputs.quantityKg}
-              onChange={(v) => onChange({ quantityKg: v })}
-              step="1"
-            />
-            <InputField
-              label="Supplier base price (USD/kg)"
-              value={inputs.supplierBasePriceUsd}
-              onChange={(v) => onChange({ supplierBasePriceUsd: v })}
-              step="0.0001"
-            />
-            <InputField
-              label="Supplier margin (%)"
-              value={inputs.supplierMarginPct}
-              onChange={(v) => onChange({ supplierMarginPct: v })}
-            />
-            <InputField
-              label="Transport to Moyale (USD/kg)"
-              value={inputs.transportToBorderUsdPerKg}
-              onChange={(v) => onChange({ transportToBorderUsdPerKg: v })}
-              step="0.0001"
-            />
-            <InputField
-              label="Official exchange rate (ETB/USD)"
-              value={inputs.officialRate}
-              onChange={(v) => onChange({ officialRate: v })}
-            />
-            <InputField
-              label="Parallel exchange rate (ETB/USD)"
-              value={inputs.parallelRate}
-              onChange={(v) => onChange({ parallelRate: v })}
-            />
-            <InputField
-              label="Base customs reference (USD/kg)"
-              value={inputs.baseCustomsReferenceUsd}
-              onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
-              step="0.0001"
-            />
-            <InputField
-              label="Target selling price per kg (ETB)"
-              hint="Used for margin & CRM outlook"
-              value={inputs.targetSellingPriceEtbPerKg}
-              onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
-              step="0.01"
-              accent
-            />
+          <div className="space-y-5">
+            <InputGroup title="Shipment">
+              <InputField
+                label="Quantity (kg)"
+                value={inputs.quantityKg}
+                onChange={(v) => onChange({ quantityKg: v })}
+                step="1"
+              />
+            </InputGroup>
+
+            <InputGroup title="Supplier & border">
+              <InputField
+                label="Supplier base price (USD/kg)"
+                value={inputs.supplierBasePriceUsd}
+                onChange={(v) => onChange({ supplierBasePriceUsd: v })}
+                step="0.0001"
+              />
+              <InputField
+                label="Supplier margin (%)"
+                value={inputs.supplierMarginPct}
+                onChange={(v) => onChange({ supplierMarginPct: v })}
+              />
+              <InputField
+                label="Transport to Moyale (USD/kg)"
+                value={inputs.transportToBorderUsdPerKg}
+                onChange={(v) => onChange({ transportToBorderUsdPerKg: v })}
+                step="0.0001"
+              />
+              <InputField
+                label="Base customs reference (USD/kg)"
+                value={inputs.baseCustomsReferenceUsd}
+                onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
+                step="0.0001"
+              />
+            </InputGroup>
+
+            <InputGroup title="Exchange rates">
+              <InputField
+                label="Official rate (ETB/USD)"
+                value={inputs.officialRate}
+                onChange={(v) => onChange({ officialRate: v })}
+                accent="cyan"
+              />
+              <InputField
+                label="Parallel rate (ETB/USD)"
+                value={inputs.parallelRate}
+                onChange={(v) => onChange({ parallelRate: v })}
+                accent="cyan"
+              />
+            </InputGroup>
+
+            <InputGroup title="Market strategy">
+              <InputField
+                label="Target selling price per kg (ETB)"
+                hint="Margin outlook vs landed cost"
+                value={inputs.targetSellingPriceEtbPerKg}
+                onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
+                step="0.01"
+                accent="purple"
+              />
+            </InputGroup>
           </div>
 
-          <p className="mt-4 text-[11px] text-slate-400 border-t border-slate-100 pt-3">
-            Inland clearance fixed at {LOCAL_CLEARANCE_PER_KG_ETB} ETB/kg (Moyale
-            → Addis Ababa warehouse).
+          <p className="mt-5 text-[11px] text-slate-600 border-t border-white/5 pt-4">
+            Inland haul fixed at {LOCAL_CLEARANCE_PER_KG_ETB} ETB/kg (Moyale →
+            Addis warehouse).
           </p>
         </div>
       </aside>
 
-      {/* Right: vertical pipeline story */}
-      <div className="min-w-0">
-        <div className="mb-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500">
-            Supply chain pipeline
+      {/* Journey timeline */}
+      <div className="min-w-0 relative">
+        <div className="mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70">
+            Journey timeline
           </p>
-          <h2 className="text-xl font-bold text-slate-900 mt-1">
-            Shipment journey & landed cost
-          </h2>
+          <h2 className="text-xl font-bold text-white mt-1">Procurement pipeline</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Follow the goods from supplier origin through Moyale customs to your
-            Addis Ababa warehouse.
+            Physical movement of goods — all stages visible simultaneously.
           </p>
         </div>
 
-        <StageCard
-          stage={1}
-          title="Arrival at Moyale Border"
-          location="Ethiopia–Kenya border · Southern corridor"
-          icon={<MapPin className="h-5 w-5" />}
-          accent="indigo"
-        >
-          <Stage1Output result={result} qty={qty} />
-        </StageCard>
-
-        <StageCard
-          stage={2}
-          title="Customs Clearance"
-          location="Moyale customs · Assessed value & duties"
-          icon={<ShieldCheck className="h-5 w-5" />}
-          accent="amber"
-        >
-          <Stage2Output
-            result={result}
-            constants={constants}
-            officialRate={inputs.officialRate}
+        <div className="relative">
+          <div
+            className="absolute left-4 top-4 bottom-4 w-px bg-gradient-to-b from-cyan-500/40 via-amber-500/30 via-emerald-500/30 to-purple-500/40"
+            aria-hidden
           />
-        </StageCard>
 
-        <StageCard
-          stage={3}
-          title="Transit: Moyale → Addis Ababa"
-          location="Inland haul to warehouse"
-          icon={<Truck className="h-5 w-5" />}
-          accent="sky"
-        >
-          <Stage3Output result={result} qty={qty} />
-        </StageCard>
+          <StageCard
+            stage={1}
+            title="Arrival at Moyale Border"
+            location="Ethiopia–Kenya corridor"
+            icon={<MapPin className="h-4 w-4" />}
+            accent="cyan"
+          >
+            <Stage1Output result={result} qty={qty} />
+          </StageCard>
 
-        <StageCard
-          stage={4}
-          title="Sales & Margin"
-          location="Addis Ababa warehouse · CRM pricing"
-          icon={<TrendingUp className="h-5 w-5" />}
-          accent="emerald"
-          isLast
-        >
-          <Stage4Output result={result} qty={qty} />
-        </StageCard>
+          <StageCard
+            stage={2}
+            title="Customs Clearance"
+            location="Moyale customs · assessed duties"
+            icon={<ShieldCheck className="h-4 w-4" />}
+            accent="amber"
+          >
+            <Stage2Output
+              result={result}
+              constants={constants}
+              officialRate={inputs.officialRate}
+            />
+          </StageCard>
+
+          <StageCard
+            stage={3}
+            title="Addis Ababa Warehouse"
+            location="Inland transit complete"
+            icon={<Warehouse className="h-4 w-4" />}
+            accent="emerald"
+          >
+            <Stage3Output result={result} qty={qty} />
+          </StageCard>
+
+          <StageCard
+            stage={4}
+            title="Market Strategy"
+            location="CRM pricing outlook"
+            icon={<TrendingUp className="h-4 w-4" />}
+            accent="purple"
+            isLast
+          >
+            <Stage4Output result={result} />
+          </StageCard>
+        </div>
       </div>
     </div>
   );

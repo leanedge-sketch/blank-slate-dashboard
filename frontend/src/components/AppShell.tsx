@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Calculator, LogOut } from "lucide-react";
+import { Container, LogOut } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useImportFinanceDock } from "../contexts/ImportFinanceDockContext";
 import { AppBuildBadge } from "./AppBuildBadge";
@@ -44,10 +44,10 @@ export function AppShell() {
                   type="button"
                   className="app-import-finance-btn"
                   onClick={openDock}
-                  title="Import Finance Calculator"
+                  title="Procurement Pipeline"
                 >
-                  <Calculator className="h-4 w-4" aria-hidden />
-                  <span className="hidden sm:inline">Import Finance</span>
+                  <Container className="h-4 w-4" aria-hidden />
+                  <span className="hidden sm:inline">Trade &amp; Transit</span>
                 </button>
                 <UserProfileMenu />
                 <button
