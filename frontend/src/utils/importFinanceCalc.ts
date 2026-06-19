@@ -27,6 +27,7 @@ export interface ImportFinanceInputs {
   supplierMarginPct: number;
   transportToBorderUsdPerKg: number;
   baseCustomsReferenceUsd: number;
+  targetSellingPriceEtbPerKg: number;
 }
 
 export interface ImportFinanceResult {
@@ -52,6 +53,12 @@ export interface ImportFinanceResult {
     grossInvestmentEtb: number;
     netLandedCostEtb: number;
     finalUnitCostEtbPerKg: number;
+  };
+  sales: {
+    targetSellingPriceEtbPerKg: number;
+    profitPerKgEtb: number;
+    grossMarginPct: number;
+    totalExpectedRevenueEtb: number;
   };
 }
 
@@ -88,6 +95,12 @@ export function calculateImportFinance(
   const netLandedCostEtb = grossInvestmentEtb - (whtEtb + vatEtb);
   const finalUnitCostEtbPerKg = qty > 0 ? netLandedCostEtb / qty : 0;
 
+  const targetPrice = Math.max(inputs.targetSellingPriceEtbPerKg, 0);
+  const profitPerKgEtb = targetPrice - finalUnitCostEtbPerKg;
+  const grossMarginPct =
+    targetPrice > 0 ? (profitPerKgEtb / targetPrice) * 100 : 0;
+  const totalExpectedRevenueEtb = targetPrice * qty;
+
   return {
     capital: {
       materialCostUsdPerKg,
@@ -111,6 +124,12 @@ export function calculateImportFinance(
       grossInvestmentEtb,
       netLandedCostEtb,
       finalUnitCostEtbPerKg,
+    },
+    sales: {
+      targetSellingPriceEtbPerKg: targetPrice,
+      profitPerKgEtb,
+      grossMarginPct,
+      totalExpectedRevenueEtb,
     },
   };
 }

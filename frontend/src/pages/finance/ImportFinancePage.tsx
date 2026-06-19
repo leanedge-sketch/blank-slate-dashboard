@@ -16,11 +16,11 @@ export function ImportFinancePage() {
               </p>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight flex items-center gap-3">
                 <Calculator className="text-indigo-300" size={32} />
-                Landed Cost Calculator
+                Import Finance & Supply Chain Pipeline
               </h1>
               <p className="text-sm text-indigo-100 max-w-2xl">
-                Loads tax constants and products from Supabase. Save draft shipments to
-                public.import_finance_shipments.
+                Track shipments from origin through Moyale customs to the Addis
+                Ababa warehouse. Live margin outlook against your target selling price.
               </p>
             </div>
             <button

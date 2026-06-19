@@ -34,10 +34,10 @@ export function ImportFinanceCalculatorDock({
                 id="import-finance-dock-title"
                 className="text-lg font-semibold text-slate-900"
               >
-                Import Finance Calculator
+                Import Finance & Supply Chain Pipeline
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Connected to Supabase — tax rates, products, and draft shipments.
+                Origin → Moyale → Addis — live landed cost and margin outlook.
               </p>
             </div>
           </div>
