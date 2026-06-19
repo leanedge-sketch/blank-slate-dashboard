@@ -2,13 +2,15 @@
 -- =============================================================================
 -- SETUP (do once):
 -- 1. Paste and run this entire script in Supabase → SQL Editor.
--- 2. Supabase Dashboard → Project Settings → API → Exposed schemas
---    → add "import_finance" (keep "public" checked) → Save.
--- 3. Redeploy / hard-refresh the app. Open Import Finance — you should see
---    Sodium Gluconate in the product dropdown and be able to Save draft shipment.
+-- 2. Then run docs/0013b_import_finance_public_tables.sql so tables appear in
+--    Table Editor (public.finance_constants, import_finance_products,
+--    import_finance_shipments). The app reads from public — no extra schema
+--    exposure in API settings required.
+-- 3. Redeploy / hard-refresh the app. Open Import Finance — Sodium Gluconate
+--    should appear in the product dropdown; Save draft shipment should work.
 -- =============================================================================
--- Tables live in schema `import_finance` so `products` does not collide with
--- existing public.products used by Stock.
+-- Legacy: tables below live in schema `import_finance`. Step 2 copies them to
+-- `public` for Table Editor + PostgREST default schema.
 
 CREATE SCHEMA IF NOT EXISTS import_finance;
 

@@ -20,7 +20,7 @@ export function ImportFinancePage() {
               </h1>
               <p className="text-sm text-indigo-100 max-w-2xl">
                 Loads tax constants and products from Supabase. Save draft shipments to
-                import_finance.import_shipments.
+                public.import_finance_shipments.
               </p>
             </div>
             <button

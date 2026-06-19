@@ -32,8 +32,14 @@ export interface ImportShipmentRow {
 }
 
 function importFinanceDb() {
-  return getSupabase().schema("import_finance");
+  return getSupabase();
 }
+
+const TABLES = {
+  constants: "finance_constants",
+  products: "import_finance_products",
+  shipments: "import_finance_shipments",
+} as const;
 
 function mapConstantsRow(
   row: Record<string, unknown>,
@@ -64,8 +70,8 @@ export function importFinanceSetupHint(error: unknown): string | null {
     msg.includes("permission denied")
   ) {
     return (
-      "Run docs/0013_import_finance.sql in Supabase, then add import_finance under " +
-      "Project Settings → API → Exposed schemas."
+      "Run docs/0013b_import_finance_public_tables.sql in the Supabase SQL Editor " +
+      "(creates public.finance_constants, import_finance_products, import_finance_shipments)."
     );
   }
   return null;
@@ -73,7 +79,7 @@ export function importFinanceSetupHint(error: unknown): string | null {
 
 export async function fetchImportFinanceConstants(): Promise<FinanceConstants> {
   const { data, error } = await importFinanceDb()
-    .from("finance_constants")
+    .from(TABLES.constants)
     .select("*")
     .limit(1)
     .maybeSingle();
@@ -85,7 +91,7 @@ export async function fetchImportFinanceConstants(): Promise<FinanceConstants> {
 
 export async function fetchImportFinanceProducts(): Promise<ImportFinanceProduct[]> {
   const { data, error } = await importFinanceDb()
-    .from("products")
+    .from(TABLES.products)
     .select("id, product_name, base_customs_reference_usd, created_at")
     .order("product_name", { ascending: true });
 
@@ -103,7 +109,7 @@ export async function createImportFinanceProduct(
   baseCustomsReferenceUsd: number,
 ): Promise<ImportFinanceProduct> {
   const { data, error } = await importFinanceDb()
-    .from("products")
+    .from(TABLES.products)
     .insert({
       product_name: productName.trim(),
       base_customs_reference_usd: baseCustomsReferenceUsd,
@@ -125,7 +131,7 @@ export async function saveImportShipmentDraft(
   inputs: ImportFinanceInputs,
 ): Promise<ImportShipmentRow> {
   const { data, error } = await importFinanceDb()
-    .from("import_shipments")
+    .from(TABLES.shipments)
     .insert({
       product_id: productId,
       quantity_kg: inputs.quantityKg,
@@ -148,7 +154,7 @@ export async function fetchRecentImportShipments(
   limit = 20,
 ): Promise<ImportShipmentRow[]> {
   const { data, error } = await importFinanceDb()
-    .from("import_shipments")
+    .from(TABLES.shipments)
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
