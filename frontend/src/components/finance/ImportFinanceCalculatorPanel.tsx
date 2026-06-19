@@ -1,9 +1,10 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
-  CircleDollarSign,
+  ChevronDown,
   Info,
   MapPin,
   ShieldCheck,
+  SlidersHorizontal,
   TrendingUp,
   Warehouse,
 } from "lucide-react";
@@ -22,7 +23,6 @@ import {
 } from "../../utils/tradeTransitCalc";
 
 export { DEFAULT_TRADE_TRANSIT_INPUTS };
-/** @deprecated Use DEFAULT_TRADE_TRANSIT_INPUTS */
 export const DEFAULT_IMPORT_FINANCE_INPUTS = DEFAULT_TRADE_TRANSIT_INPUTS;
 
 type ImportFinanceCalculatorPanelProps = {
@@ -34,13 +34,6 @@ type ImportFinanceCalculatorPanelProps = {
 
 type Accent = "cyan" | "amber" | "emerald" | "purple";
 
-const accentRing: Record<Accent, string> = {
-  cyan: "hover:border-cyan-500/25",
-  amber: "hover:border-amber-500/25",
-  emerald: "hover:border-emerald-500/25",
-  purple: "hover:border-purple-500/25",
-};
-
 const accentTitle: Record<Accent, string> = {
   cyan: "text-cyan-400",
   amber: "text-amber-400",
@@ -49,69 +42,30 @@ const accentTitle: Record<Accent, string> = {
 };
 
 const accentIcon: Record<Accent, string> = {
-  cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+  amber: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+  emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  purple: "bg-purple-500/10 text-purple-400 border-purple-500/30",
 };
 
-function BentoCard({
-  stage,
-  title,
-  icon,
-  accent,
-  children,
-  kpi,
-}: {
-  stage: number;
-  title: string;
-  icon: ReactNode;
-  accent: Accent;
-  children: ReactNode;
-  kpi: ReactNode;
-}) {
-  return (
-    <article
-      className={`bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-xl p-5 flex flex-col justify-between min-h-[240px] hover:border-white/20 transition-all ${accentRing[accent]}`}
-    >
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <div
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${accentIcon[accent]}`}
-          >
-            {icon}
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Stage {stage}
-            </p>
-            <h3 className={`text-sm font-bold leading-snug ${accentTitle[accent]}`}>
-              {title}
-            </h3>
-          </div>
-        </div>
-        {children}
-      </div>
-      <div className="mt-3 pt-3 border-t border-white/5">{kpi}</div>
-    </article>
-  );
-}
+const accentBorderOpen: Record<Accent, string> = {
+  cyan: "border-cyan-500/30",
+  amber: "border-amber-500/30",
+  emerald: "border-emerald-500/30",
+  purple: "border-purple-500/30",
+};
 
 function DetailRow({
   label,
   value,
-  mono,
 }: {
   label: string;
   value: string;
-  mono?: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5 text-xs">
       <span className="text-slate-500">{label}</span>
-      <span
-        className={`text-slate-300 shrink-0 text-right ${mono ? "tabular-nums font-mono text-[11px]" : "tabular-nums"}`}
-      >
+      <span className="tabular-nums font-mono text-[11px] text-slate-300 text-right shrink-0">
         {value}
       </span>
     </div>
@@ -141,27 +95,23 @@ function FxConversion({
       : "text-amber-400 bg-amber-500/10 border-amber-500/25";
 
   return (
-    <div className="my-2 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 space-y-1.5">
-      <div className="flex items-center justify-between gap-2 text-xs">
+    <div className="my-2 rounded-lg border border-white/5 bg-black/25 px-3 py-2 space-y-1">
+      <div className="flex justify-between gap-2 text-xs">
         <span className="text-slate-500">{leftLabel}</span>
         <span className="font-mono tabular-nums text-slate-300">{leftValue}</span>
       </div>
       <div className="flex items-center justify-center gap-2 py-0.5">
         <span className="text-slate-600 text-[10px]">×</span>
         <span
-          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold tabular-nums ${rateColor}`}
+          className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold tabular-nums ${rateColor}`}
         >
           {rateLabel} {formatNumber(rate, 2)}
         </span>
         <span className="text-slate-600 text-[10px]">=</span>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className={`text-xs font-medium ${accentTitle[accent]}`}>
-          {rightLabel}
-        </span>
-        <span
-          className={`text-sm font-bold tabular-nums ${accentTitle[accent]}`}
-        >
+      <div className="flex justify-between gap-2">
+        <span className={`text-xs ${accentTitle[accent]}`}>{rightLabel}</span>
+        <span className={`text-sm font-bold tabular-nums ${accentTitle[accent]}`}>
           {rightValue}
         </span>
       </div>
@@ -169,265 +119,233 @@ function FxConversion({
   );
 }
 
-function Stage1Bento({
-  result,
-  qty,
+function PipelineAccordion({
+  stage,
+  title,
+  icon,
+  accent,
+  kpiLabel,
+  kpiValue,
+  kpiSub,
+  open,
+  onToggle,
+  children,
 }: {
-  result: TradeTransitResult;
-  qty: number;
+  stage: number;
+  title: string;
+  icon: ReactNode;
+  accent: Accent;
+  kpiLabel: string;
+  kpiValue: string;
+  kpiSub?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
 }) {
-  const s = result.stage1;
   return (
-    <BentoCard
-      stage={1}
-      title="Origin & Border Outlay"
-      accent="cyan"
-      icon={<MapPin className="h-4 w-4" />}
-      kpi={
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500/70 mb-1">
-            Capital outlay (ETB) · parallel FX
+    <div
+      className={`rounded-xl border backdrop-blur-md transition-all ${
+        open
+          ? `bg-slate-900/60 ${accentBorderOpen[accent]}`
+          : "bg-slate-900/40 border-white/10 hover:border-white/20"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 p-3.5 text-left"
+        aria-expanded={open}
+      >
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${accentIcon[accent]}`}
+        >
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Stage {stage}
           </p>
-          <p className="text-3xl font-bold tabular-nums text-cyan-300 leading-none">
-            {formatEtb(s.capitalOutlayEtb, 0)}
+          <p className={`text-sm font-semibold truncate ${accentTitle[accent]}`}>
+            {title}
           </p>
         </div>
-      }
-    >
-      <DetailRow
-        label="Material USD/kg"
-        value={formatUsd(s.materialUsdPerKg)}
-        mono
-      />
-      <DetailRow
-        label="+ Transport USD/kg"
-        value={formatUsd(s.transportUsdPerKg)}
-        mono
-      />
-      {s.miscBorderUsdTotal > 0 && (
-        <DetailRow
-          label="+ Misc border (total USD)"
-          value={formatUsd(s.miscBorderUsdTotal, 2)}
-          mono
+        <div className="text-right shrink-0 max-w-[45%]">
+          <p className="text-[9px] uppercase tracking-wider text-slate-500 truncate">
+            {kpiLabel}
+          </p>
+          <p className={`text-base sm:text-lg font-bold tabular-nums leading-tight ${accentTitle[accent]}`}>
+            {kpiValue}
+          </p>
+          {kpiSub && (
+            <p className="text-[10px] text-slate-500 tabular-nums">{kpiSub}</p>
+          )}
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
         />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-0 border-t border-white/5 mx-3.5 mb-3.5 mt-0 pt-3">
+          {children}
+        </div>
       )}
-      <DetailRow
-        label={`Border × ${formatNumber(qty, 0)} kg`}
-        value={formatUsd(s.totalBorderUsd, 2)}
-        mono
-      />
-      <FxConversion
-        leftLabel="USD border total"
-        leftValue={formatUsd(s.totalBorderUsd, 2)}
-        rate={s.capitalParallelRate}
-        rateLabel="Capital / parallel"
-        rightLabel="Capital outlay (ETB)"
-        rightValue={formatEtb(s.capitalOutlayEtb, 0)}
-        accent="cyan"
-      />
-    </BentoCard>
+    </div>
   );
 }
 
-function Stage2Bento({
+function PipelineStack({
   result,
+  inputs,
   constants,
-  specialGoodsPct,
+  qty,
 }: {
   result: TradeTransitResult;
+  inputs: TradeTransitInputs;
   constants: FinanceConstants;
-  specialGoodsPct: number;
+  qty: number;
 }) {
-  const s = result.stage2;
+  const [openStage, setOpenStage] = useState<number | null>(null);
+  const s1 = result.stage1;
+  const s2 = result.stage2;
+  const s3 = result.stage3;
+  const s4 = result.stage4;
+  const positive = s4.profitPerKgEtb >= 0;
+
   const taxes = [
+    { label: `Duty (${(constants.customsDutyPct * 100).toFixed(0)}%)`, value: s2.dutyEtb },
+    { label: `Scan (${(constants.scanFeePct * 100).toFixed(2)}%)`, value: s2.scanFeeEtb },
+    { label: `Social (${(constants.socialFeePct * 100).toFixed(0)}%)`, value: s2.socialFeeEtb },
     {
-      label: `Duty (${(constants.customsDutyPct * 100).toFixed(0)}%)`,
-      value: s.dutyEtb,
+      label: `Special (${inputs.taxSpecialGoodsPct.toFixed(0)}%)`,
+      value: s2.specialGoodsEtb,
     },
-    {
-      label: `Scan (${(constants.scanFeePct * 100).toFixed(2)}%)`,
-      value: s.scanFeeEtb,
-    },
-    {
-      label: `Social (${(constants.socialFeePct * 100).toFixed(0)}%)`,
-      value: s.socialFeeEtb,
-    },
-    {
-      label: `Special goods (${specialGoodsPct.toFixed(0)}%)`,
-      value: s.specialGoodsEtb,
-    },
-    {
-      label: `WHT (${(constants.whtPct * 100).toFixed(0)}%)`,
-      value: s.whtEtb,
-    },
-    {
-      label: `VAT (${(constants.vatPct * 100).toFixed(0)}%)`,
-      value: s.vatEtb,
-    },
-    { label: "Surtax (0%)", value: s.surtaxEtb },
-    { label: "Excise (0%)", value: s.exciseEtb },
+    { label: `WHT (${(constants.whtPct * 100).toFixed(0)}%)`, value: s2.whtEtb },
+    { label: `VAT (${(constants.vatPct * 100).toFixed(0)}%)`, value: s2.vatEtb },
+    { label: "Surtax (0%)", value: s2.surtaxEtb },
+    { label: "Excise (0%)", value: s2.exciseEtb },
   ];
 
+  function toggle(stage: number) {
+    setOpenStage((prev) => (prev === stage ? null : stage));
+  }
+
   return (
-    <BentoCard
-      stage={2}
-      title="Customs Tax Waterfall"
-      accent="amber"
-      icon={<ShieldCheck className="h-4 w-4" />}
-      kpi={
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/70 mb-1">
-            Total customs paid (ETB)
-          </p>
-          <p className="text-3xl font-bold tabular-nums text-amber-300 leading-none">
-            {formatEtb(s.totalCustomsPaidEtb, 0)}
-          </p>
-        </div>
-      }
-    >
-      <DetailRow
-        label="CIF USD (ref × 1.10) /kg"
-        value={formatUsd(s.cifUsdPerKg)}
-        mono
-      />
-      <DetailRow
-        label="Total CIF USD"
-        value={formatUsd(s.totalCifUsd, 2)}
-        mono
-      />
-      <FxConversion
-        leftLabel="CIF USD total"
-        leftValue={formatUsd(s.totalCifUsd, 2)}
-        rate={s.customsOfficialRate}
-        rateLabel="Official"
-        rightLabel="CIF base (ETB)"
-        rightValue={formatEtb(s.cifBaseEtb, 0)}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between mb-1 px-0.5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70">
+          Pipeline ledger
+        </p>
+        <p className="text-[10px] text-slate-600">Click to expand audit trail</p>
+      </div>
+
+      <PipelineAccordion
+        stage={1}
+        title="Origin & Border Outlay"
+        accent="cyan"
+        icon={<MapPin className="h-4 w-4" />}
+        kpiLabel="Capital outlay · parallel"
+        kpiValue={formatEtb(s1.capitalOutlayEtb, 0)}
+        kpiSub={`@ ${formatNumber(s1.capitalParallelRate, 0)} ETB/USD`}
+        open={openStage === 1}
+        onToggle={() => toggle(1)}
+      >
+        <DetailRow label="Material USD/kg" value={formatUsd(s1.materialUsdPerKg)} />
+        <DetailRow label="+ Transport USD/kg" value={formatUsd(s1.transportUsdPerKg)} />
+        {s1.miscBorderUsdTotal > 0 && (
+          <DetailRow label="+ Misc border USD" value={formatUsd(s1.miscBorderUsdTotal, 2)} />
+        )}
+        <DetailRow
+          label={`Border × ${formatNumber(qty, 0)} kg`}
+          value={formatUsd(s1.totalBorderUsd, 2)}
+        />
+        <FxConversion
+          leftLabel="USD border total"
+          leftValue={formatUsd(s1.totalBorderUsd, 2)}
+          rate={s1.capitalParallelRate}
+          rateLabel="Parallel"
+          rightLabel="Capital outlay (ETB)"
+          rightValue={formatEtb(s1.capitalOutlayEtb, 0)}
+          accent="cyan"
+        />
+      </PipelineAccordion>
+
+      <PipelineAccordion
+        stage={2}
+        title="Customs Tax Waterfall"
         accent="amber"
-      />
-      <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-2 mb-1">
-        Off CIF base (ETB) · official rate only
-      </p>
-      <ul className="space-y-0.5">
-        {taxes.map((t) => (
-          <li
-            key={t.label}
-            className="flex justify-between gap-2 text-sm text-slate-400"
-          >
-            <span>{t.label}</span>
-            <span className="tabular-nums font-mono text-xs">
-              {formatEtb(t.value, 0)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </BentoCard>
-  );
-}
+        icon={<ShieldCheck className="h-4 w-4" />}
+        kpiLabel="Total customs · official"
+        kpiValue={formatEtb(s2.totalCustomsPaidEtb, 0)}
+        kpiSub={`@ ${formatNumber(s2.customsOfficialRate, 0)} ETB/USD`}
+        open={openStage === 2}
+        onToggle={() => toggle(2)}
+      >
+        <DetailRow label="CIF USD/kg (×1.10)" value={formatUsd(s2.cifUsdPerKg)} />
+        <DetailRow label="Total CIF USD" value={formatUsd(s2.totalCifUsd, 2)} />
+        <FxConversion
+          leftLabel="CIF USD total"
+          leftValue={formatUsd(s2.totalCifUsd, 2)}
+          rate={s2.customsOfficialRate}
+          rateLabel="Official"
+          rightLabel="CIF base (ETB)"
+          rightValue={formatEtb(s2.cifBaseEtb, 0)}
+          accent="amber"
+        />
+        <ul className="mt-2 space-y-0.5">
+          {taxes.map((t) => (
+            <li key={t.label} className="flex justify-between text-sm text-slate-400">
+              <span>{t.label}</span>
+              <span className="tabular-nums font-mono text-xs">{formatEtb(t.value, 0)}</span>
+            </li>
+          ))}
+        </ul>
+      </PipelineAccordion>
 
-function Stage3Bento({
-  result,
-  qty,
-  inlandPerKg,
-}: {
-  result: TradeTransitResult;
-  qty: number;
-  inlandPerKg: number;
-}) {
-  const s = result.stage3;
-  return (
-    <BentoCard
-      stage={3}
-      title="Transit & Landed Cost"
-      accent="emerald"
-      icon={<Warehouse className="h-4 w-4" />}
-      kpi={
-        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 shadow-[0_0_24px_rgba(16,185,129,0.15)]">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-            Final landed unit cost (ETB/kg)
-          </p>
-          <p className="text-3xl font-bold tabular-nums text-emerald-300 mt-1 leading-none">
-            {formatNumber(s.finalLandedUnitCostEtbPerKg, 2)}
-          </p>
-        </div>
-      }
-    >
-      <DetailRow
-        label={`Inland ETB (${formatNumber(qty, 0)} kg × ${inlandPerKg})`}
-        value={formatEtb(s.inlandTransportEtb, 0)}
-        mono
-      />
-      <DetailRow
-        label="Gross investment (ETB)"
-        value={formatEtb(s.grossInvestmentEtb, 0)}
-        mono
-      />
-      <DetailRow
-        label="− Refundable WHT + VAT (ETB)"
-        value={formatEtb(s.refundableWhtVatEtb, 0)}
-        mono
-      />
-      <DetailRow
-        label="Net landed cost (ETB)"
-        value={formatEtb(s.netLandedCostEtb, 0)}
-        mono
-      />
-    </BentoCard>
-  );
-}
+      <PipelineAccordion
+        stage={3}
+        title="Transit & Landed Cost"
+        accent="emerald"
+        icon={<Warehouse className="h-4 w-4" />}
+        kpiLabel="Landed unit cost"
+        kpiValue={`${formatNumber(s3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`}
+        open={openStage === 3}
+        onToggle={() => toggle(3)}
+      >
+        <DetailRow
+          label={`Inland (${qty.toLocaleString()} × ${inputs.inlandClearancePerKgEtb})`}
+          value={formatEtb(s3.inlandTransportEtb, 0)}
+        />
+        <DetailRow label="Gross investment" value={formatEtb(s3.grossInvestmentEtb, 0)} />
+        <DetailRow label="− WHT + VAT (refundable)" value={formatEtb(s3.refundableWhtVatEtb, 0)} />
+        <DetailRow label="Net landed cost" value={formatEtb(s3.netLandedCostEtb, 0)} />
+      </PipelineAccordion>
 
-function Stage4Bento({ result }: { result: TradeTransitResult }) {
-  const s = result.stage4;
-  const landed = result.stage3.finalLandedUnitCostEtbPerKg;
-  const positive = s.profitPerKgEtb >= 0;
-
-  return (
-    <BentoCard
-      stage={4}
-      title="Market Strategy"
-      accent="purple"
-      icon={<TrendingUp className="h-4 w-4" />}
-      kpi={
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-              Expected profit / kg (ETB)
-            </p>
-            <p
-              className={`text-2xl font-bold tabular-nums leading-none ${positive ? "text-emerald-400" : "text-rose-400"}`}
-            >
-              {positive ? "+" : ""}
-              {formatNumber(s.profitPerKgEtb, 2)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-              Gross margin %
-            </p>
-            <p
-              className={`text-2xl font-bold tabular-nums leading-none ${positive ? "text-purple-300" : "text-rose-400"}`}
-            >
-              {formatNumber(s.grossMarginPct, 1)}%
-            </p>
-          </div>
-        </div>
-      }
-    >
-      <DetailRow
-        label="Net landed unit cost (ETB/kg)"
-        value={formatNumber(landed, 2)}
-        mono
-      />
-      <DetailRow
-        label="Target selling price (ETB/kg)"
-        value={formatNumber(s.targetSellingPriceEtbPerKg, 2)}
-        mono
-      />
-      <DetailRow
-        label="Total expected revenue (ETB)"
-        value={formatEtb(s.totalExpectedRevenueEtb, 0)}
-        mono
-      />
-    </BentoCard>
+      <PipelineAccordion
+        stage={4}
+        title="Market Strategy"
+        accent="purple"
+        icon={<TrendingUp className="h-4 w-4" />}
+        kpiLabel="Gross margin"
+        kpiValue={`${formatNumber(s4.grossMarginPct, 1)}%`}
+        kpiSub={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB/kg`}
+        open={openStage === 4}
+        onToggle={() => toggle(4)}
+      >
+        <DetailRow
+          label="Landed unit cost"
+          value={`${formatNumber(s3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`}
+        />
+        <DetailRow
+          label="Target selling price"
+          value={`${formatNumber(s4.targetSellingPriceEtbPerKg, 2)} ETB/kg`}
+        />
+        <DetailRow
+          label="Expected profit / kg"
+          value={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB`}
+        />
+        <DetailRow label="Total revenue" value={formatEtb(s4.totalExpectedRevenueEtb, 0)} />
+      </PipelineAccordion>
+    </div>
   );
 }
 
@@ -439,6 +357,7 @@ function NumberField({
   step = "any",
   accent,
   suffix,
+  compact,
 }: {
   label: string;
   hint?: string;
@@ -447,6 +366,7 @@ function NumberField({
   step?: string;
   accent?: "cyan" | "amber" | "purple";
   suffix?: string;
+  compact?: boolean;
 }) {
   const ring =
     accent === "purple"
@@ -464,15 +384,15 @@ function NumberField({
           step={step}
           value={value}
           onChange={(e) => onChange(Number.parseFloat(e.target.value) || 0)}
-          className={`w-full rounded-lg bg-slate-900 border border-transparent px-3 py-2 text-sm text-white transition focus:outline-none focus:ring-2 ${ring} ${suffix ? "pr-14" : ""}`}
+          className={`w-full rounded-lg bg-slate-950 border border-white/5 text-white transition focus:outline-none focus:ring-2 ${ring} ${compact ? "px-2.5 py-1.5 text-sm" : "px-3 py-2 text-sm"} ${suffix ? "pr-12" : ""}`}
         />
         {suffix && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500">
             {suffix}
           </span>
         )}
       </div>
-      {hint && <span className="text-[10px] text-slate-600 leading-snug block">{hint}</span>}
+      {hint && <span className="text-[10px] text-slate-600 block leading-snug">{hint}</span>}
     </label>
   );
 }
@@ -496,174 +416,217 @@ function TextField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg bg-slate-900 border border-transparent px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        className="w-full rounded-lg bg-slate-950 border border-white/5 px-3 py-1.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
       />
     </label>
   );
 }
 
-function InputGroup({
+function CollapsibleInputSection({
+  id,
   title,
   badge,
+  open,
+  onToggle,
   children,
 }: {
+  id: string;
   title: string;
   badge?: string;
+  open: boolean;
+  onToggle: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-2.5 rounded-lg border border-white/5 bg-black/15 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">
+    <div className="rounded-lg border border-white/5 bg-black/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={`section-${id}`}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-white/5 transition"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
           {title}
-        </p>
-        {badge && (
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
-            {badge}
-          </span>
-        )}
-      </div>
-      {children}
+        </span>
+        <div className="flex items-center gap-2">
+          {badge && (
+            <span className="text-[9px] font-semibold text-slate-600 uppercase">{badge}</span>
+          )}
+          <ChevronDown
+            className={`h-3.5 w-3.5 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </div>
+      </button>
+      {open && (
+        <div id={`section-${id}`} className="px-3 pb-3 pt-0 space-y-2.5 border-t border-white/5">
+          <div className="pt-2.5 space-y-2.5">{children}</div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CommandConsole({
+function InputConsole({
   inputs,
   onChange,
 }: {
   inputs: TradeTransitInputs;
   onChange: (patch: Partial<TradeTransitInputs>) => void;
 }) {
+  const [openSections, setOpenSections] = useState({
+    origin: false,
+    misc: false,
+    customs: false,
+  });
   const specialGoods15 = inputs.taxSpecialGoodsPct === 15;
 
+  function toggleSection(key: keyof typeof openSections) {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   return (
-    <aside className="lg:sticky lg:top-4 self-start">
-      <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <CircleDollarSign className="h-4 w-4 text-cyan-400" />
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
-            Input command console
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <InputGroup title="Group A · Shipment details">
-            <NumberField
-              label="Quantity (kg)"
-              value={inputs.quantityKg}
-              onChange={(v) => onChange({ quantityKg: v })}
-              step="1"
-            />
-            <NumberField
-              label="Target selling price (ETB/kg)"
-              value={inputs.targetSellingPriceEtbPerKg}
-              onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
-              step="0.01"
-              accent="purple"
-              suffix="ETB/kg"
-            />
-          </InputGroup>
-
-          <InputGroup title="Group B · Origin & Moyale" badge="USD">
-            <NumberField
-              label="Supplier base price"
-              value={inputs.supplierBasePriceUsd}
-              onChange={(v) => onChange({ supplierBasePriceUsd: v })}
-              step="0.0001"
-              suffix="USD/kg"
-            />
-            <NumberField
-              label="Supplier margin"
-              value={inputs.supplierMarginPct}
-              onChange={(v) => onChange({ supplierMarginPct: v })}
-              suffix="%"
-            />
-            <NumberField
-              label="Transport to Moyale"
-              value={inputs.transportToMoyaleUsdPerKg}
-              onChange={(v) => onChange({ transportToMoyaleUsdPerKg: v })}
-              step="0.0001"
-              suffix="USD/kg"
-            />
-          </InputGroup>
-
-          <InputGroup title="Group C · Misc border additions" badge="USD">
-            <NumberField
-              label="Amount (total shipment)"
-              value={inputs.miscBorderCostUsd}
-              onChange={(v) => onChange({ miscBorderCostUsd: v })}
-              step="0.01"
-              suffix="USD"
-            />
-            <TextField
-              label="Reason"
-              value={inputs.miscBorderReason}
-              onChange={(v) => onChange({ miscBorderReason: v })}
-              placeholder="e.g. Moyale storage fee"
-            />
-          </InputGroup>
-
-          <InputGroup title="Group D · Exchange rates" badge="ETB/USD">
-            <NumberField
-              label="Capital / parallel rate"
-              hint="Applied to USD border total → capital outlay (ETB)"
-              value={inputs.capitalParallelRate}
-              onChange={(v) => onChange({ capitalParallelRate: v })}
-              accent="cyan"
-            />
-            <NumberField
-              label="Customs official rate"
-              hint="Locked for CIF base and all customs taxes (ETB)"
-              value={inputs.customsOfficialRate}
-              onChange={(v) => onChange({ customsOfficialRate: v })}
-              accent="amber"
-            />
-            <p className="flex items-start gap-1.5 text-[10px] text-amber-500/80 leading-snug">
-              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              Official rate is used exclusively for customs assessment and tax
-              waterfall. Capital purchases use the parallel rate.
-            </p>
-          </InputGroup>
-
-          <InputGroup title="Group E · Customs parameters" badge="USD">
-            <NumberField
-              label="Base customs reference"
-              value={inputs.baseCustomsReferenceUsd}
-              onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
-              step="0.0001"
-              suffix="USD/kg"
-            />
-            <div className="flex items-center gap-2">
-              <input
-                id="special-goods-15"
-                type="checkbox"
-                checked={specialGoods15}
-                onChange={(e) =>
-                  onChange({
-                    taxSpecialGoodsPct: e.target.checked ? 15 : 0,
-                  })
-                }
-                className="rounded border-white/20 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
-              />
-              <label
-                htmlFor="special-goods-15"
-                className="text-xs text-slate-400"
-              >
-                Apply 15% special goods tax
-              </label>
-            </div>
-            <NumberField
-              label="Special goods tax %"
-              value={inputs.taxSpecialGoodsPct}
-              onChange={(v) => onChange({ taxSpecialGoodsPct: v })}
-              step="0.01"
-              suffix="%"
-            />
-          </InputGroup>
-        </div>
+    <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4 lg:sticky lg:top-4">
+      <div className="flex items-center gap-2 mb-3">
+        <SlidersHorizontal className="h-4 w-4 text-cyan-400" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
+          Input console
+        </p>
       </div>
-    </aside>
+
+      {/* Always-visible accountant essentials */}
+      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 mb-3 space-y-2.5">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-cyan-500/80">
+          Key drivers · always visible
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="Quantity"
+            value={inputs.quantityKg}
+            onChange={(v) => onChange({ quantityKg: v })}
+            step="1"
+            suffix="kg"
+            compact
+          />
+          <NumberField
+            label="Target price"
+            value={inputs.targetSellingPriceEtbPerKg}
+            onChange={(v) => onChange({ targetSellingPriceEtbPerKg: v })}
+            step="0.01"
+            suffix="ETB/kg"
+            accent="purple"
+            compact
+          />
+          <NumberField
+            label="Parallel rate"
+            value={inputs.capitalParallelRate}
+            onChange={(v) => onChange({ capitalParallelRate: v })}
+            accent="cyan"
+            compact
+          />
+          <NumberField
+            label="Official rate"
+            value={inputs.customsOfficialRate}
+            onChange={(v) => onChange({ customsOfficialRate: v })}
+            accent="amber"
+            compact
+          />
+        </div>
+        <p className="flex items-start gap-1 text-[9px] text-amber-500/70 leading-snug">
+          <Info className="h-3 w-3 shrink-0 mt-0.5" />
+          Parallel → capital ETB. Official → customs taxes only.
+        </p>
+      </div>
+
+      <div className="space-y-2 max-h-[min(52vh,520px)] overflow-y-auto pr-0.5">
+        <CollapsibleInputSection
+          id="origin"
+          title="Origin & Moyale"
+          badge="USD"
+          open={openSections.origin}
+          onToggle={() => toggleSection("origin")}
+        >
+          <NumberField
+            label="Supplier base price"
+            value={inputs.supplierBasePriceUsd}
+            onChange={(v) => onChange({ supplierBasePriceUsd: v })}
+            step="0.0001"
+            suffix="USD/kg"
+          />
+          <NumberField
+            label="Supplier margin"
+            value={inputs.supplierMarginPct}
+            onChange={(v) => onChange({ supplierMarginPct: v })}
+            suffix="%"
+          />
+          <NumberField
+            label="Transport to Moyale"
+            value={inputs.transportToMoyaleUsdPerKg}
+            onChange={(v) => onChange({ transportToMoyaleUsdPerKg: v })}
+            step="0.0001"
+            suffix="USD/kg"
+          />
+        </CollapsibleInputSection>
+
+        <CollapsibleInputSection
+          id="misc"
+          title="Misc border fees"
+          badge="USD"
+          open={openSections.misc}
+          onToggle={() => toggleSection("misc")}
+        >
+          <NumberField
+            label="Amount (shipment total)"
+            value={inputs.miscBorderCostUsd}
+            onChange={(v) => onChange({ miscBorderCostUsd: v })}
+            step="0.01"
+            suffix="USD"
+          />
+          <TextField
+            label="Reason"
+            value={inputs.miscBorderReason}
+            onChange={(v) => onChange({ miscBorderReason: v })}
+            placeholder="e.g. Moyale storage fee"
+          />
+        </CollapsibleInputSection>
+
+        <CollapsibleInputSection
+          id="customs"
+          title="Customs parameters"
+          badge="USD"
+          open={openSections.customs}
+          onToggle={() => toggleSection("customs")}
+        >
+          <NumberField
+            label="Base customs reference"
+            value={inputs.baseCustomsReferenceUsd}
+            onChange={(v) => onChange({ baseCustomsReferenceUsd: v })}
+            step="0.0001"
+            suffix="USD/kg"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              id="special-goods-15"
+              type="checkbox"
+              checked={specialGoods15}
+              onChange={(e) =>
+                onChange({ taxSpecialGoodsPct: e.target.checked ? 15 : 0 })
+              }
+              className="rounded border-white/20 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+            />
+            <label htmlFor="special-goods-15" className="text-xs text-slate-400">
+              15% special goods tax
+            </label>
+          </div>
+          <NumberField
+            label="Special goods tax %"
+            value={inputs.taxSpecialGoodsPct}
+            onChange={(v) => onChange({ taxSpecialGoodsPct: v })}
+            suffix="%"
+          />
+        </CollapsibleInputSection>
+      </div>
+    </div>
   );
 }
 
@@ -680,38 +643,23 @@ export function ImportFinanceCalculatorPanel({
 
   const qty = Math.max(inputs.quantityKg, 0);
 
-  const bentoGrid = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Stage1Bento result={result} qty={qty} />
-      <Stage2Bento
-        result={result}
-        constants={constants}
-        specialGoodsPct={inputs.taxSpecialGoodsPct}
-      />
-      <Stage3Bento
-        result={result}
-        qty={qty}
-        inlandPerKg={inputs.inlandClearancePerKgEtb}
-      />
-      <Stage4Bento result={result} />
+  const layout = (
+    <div
+      className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2 xl:grid-cols-[1.1fr_0.9fr]"}`}
+    >
+      <div className="min-w-0 order-1">
+        <PipelineStack
+          result={result}
+          inputs={inputs}
+          constants={constants}
+          qty={qty}
+        />
+      </div>
+      <div className="min-w-0 order-2">
+        <InputConsole inputs={inputs} onChange={onChange} />
+      </div>
     </div>
   );
 
-  if (compact) {
-    return (
-      <div className="space-y-6">
-        <CommandConsole inputs={inputs} onChange={onChange} />
-        {bentoGrid}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-3">
-        <CommandConsole inputs={inputs} onChange={onChange} />
-      </div>
-      <div className="lg:col-span-9 min-w-0">{bentoGrid}</div>
-    </div>
-  );
+  return layout;
 }
