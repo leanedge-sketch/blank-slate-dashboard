@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2,
   Database,
   FileSpreadsheet,
   Loader2,
@@ -8,8 +7,8 @@ import {
   RefreshCw,
   Save,
   Trash2,
-  Users,
 } from "lucide-react";
+import { useTradeTransitRequestOptional } from "../../contexts/TradeTransitRequestContext";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
 import { PmsCatalogProductSearch } from "../pms/PmsCatalogProductSearch";
 import type { ChemicalFullData } from "../../services/api";
@@ -65,9 +64,6 @@ function marginTone(pct: number | null | undefined): string {
 const darkSelect =
   "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50";
 
-const darkInput =
-  "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500";
-
 export function ImportFinanceCalculatorWorkspace({
   enabled = true,
   showRecentShipments = true,
@@ -86,9 +82,13 @@ export function ImportFinanceCalculatorWorkspace({
     saveDraft,
   } = useImportFinanceData(enabled);
 
-  const [request, setRequest] = useState<TradeTransitRequest>(() =>
+  const transitCtx = useTradeTransitRequestOptional();
+  const [localRequest, setLocalRequest] = useState<TradeTransitRequest>(() =>
     createTradeTransitRequest(""),
   );
+  const request = transitCtx?.request ?? localRequest;
+  const setRequest = transitCtx?.setRequest ?? setLocalRequest;
+  const parameters = transitCtx?.parameters;
   const [activeLineId, setActiveLineId] = useState<string>(
     () => request.lines[0]?.id ?? "",
   );
@@ -278,13 +278,6 @@ export function ImportFinanceCalculatorWorkspace({
     loadFullScenarioRequest(parsed, clientName);
   }
 
-  function loadExpectedCost2026Sample() {
-    loadFullScenarioRequest(
-      EXPECTED_COST_2026_SCENARIOS,
-      request.clientName.trim() || "2026 Expected cost",
-    );
-  }
-
   function handleLoadShipment(row: ImportShipmentRow) {
     const product = products.find((p) => p.id === row.product_id);
     const line = createTradeTransitLine(product?.product_name ?? "Loaded product", {
@@ -302,7 +295,10 @@ export function ImportFinanceCalculatorWorkspace({
   }
 
   async function handleSaveDraft() {
-    const clientLabel = request.clientName.trim() || "Unnamed client";
+    const clientLabel =
+      parameters?.clientName.trim() ||
+      request.clientName.trim() ||
+      "Unnamed client";
     const unlinked = request.lines.filter((line) => !line.chemicalTypeId);
     if (unlinked.length > 0) {
       const names = unlinked.map((l) => l.productName).join(", ");
@@ -366,8 +362,6 @@ export function ImportFinanceCalculatorWorkspace({
     return null;
   }
 
-  const showTrade =
-    activeSection === "all" || activeSection === "trade";
   const showProducts =
     activeSection === "all" || activeSection === "products";
   const showSummary =
@@ -396,50 +390,6 @@ export function ImportFinanceCalculatorWorkspace({
             </button>
           )}
         </div>
-      )}
-
-      {showTrade && (
-      <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 space-y-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
-              <Building2 className="h-3.5 w-3.5 text-cyan-500" />
-              Client
-            </label>
-            <input
-              type="text"
-              value={request.clientName}
-              onChange={(e) =>
-                setRequest((prev) => ({ ...prev, clientName: e.target.value }))
-              }
-              placeholder="Customer / buyer name"
-              className={darkInput}
-            />
-          </div>
-          <div className="min-w-[160px] flex-1">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
-              Request ref
-            </label>
-            <input
-              type="text"
-              value={request.requestRef}
-              onChange={(e) =>
-                setRequest((prev) => ({ ...prev, requestRef: e.target.value }))
-              }
-              placeholder="PO / quote # (optional)"
-              className={darkInput}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={loadExpectedCost2026Sample}
-            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-200 hover:bg-emerald-500/20 transition"
-          >
-            <Users className="h-4 w-4" />
-            Load 2026 sample (2 products)
-          </button>
-        </div>
-      </div>
       )}
 
       {showProducts && (

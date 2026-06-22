@@ -1,4 +1,6 @@
 import { Briefcase, ClipboardList, Package } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
 import {
   TradeTransitHubDeckCard,
   type TradeTransitDeckAccent,
@@ -8,6 +10,7 @@ export type TradeTransitHubModule = "trade" | "products" | "summary";
 
 const decks: Array<{
   id: TradeTransitHubModule;
+  href: string;
   icon: typeof Briefcase;
   overline: string;
   title: string;
@@ -17,45 +20,42 @@ const decks: Array<{
 }> = [
   {
     id: "trade",
+    href: TRADE_TRANSIT_ROUTES.tradeParameters,
     icon: Briefcase,
     overline: "TRADE_PARAMETERS",
-    title: "Trade & Client Calculator",
+    title: "Trade Parameters Workspace",
     description:
-      "Define client details, purchase orders, and core request parameters for new transit calculations.",
-    buttonLabel: "Calculate Trade",
+      "Define client details, commercial terms, forex, and routing before any costing begins.",
+    buttonLabel: "Open workspace",
     accent: "blue",
   },
   {
     id: "products",
+    href: TRADE_TRANSIT_ROUTES.productCosting,
     icon: Package,
     overline: "PRODUCT_COSTING",
     title: "Product Costing Calculator",
     description:
       "Add and manage products, calculate landed costs, selling prices, and payload capacities.",
-    buttonLabel: "Calculate Products",
+    buttonLabel: "Calculate products",
     accent: "teal",
   },
   {
     id: "summary",
+    href: TRADE_TRANSIT_ROUTES.transitSummary,
     icon: ClipboardList,
     overline: "TRANSIT_SUMMARY",
     title: "Transit Summary Deck",
     description:
       "View the generated breakdown of quantities, landed/selling rates per KG, and total revenue.",
-    buttonLabel: "View Summary",
+    buttonLabel: "View summary",
     accent: "orange",
   },
 ];
 
-type TradeTransitHubDecksProps = {
-  activeModule: TradeTransitHubModule | null;
-  onSelectModule: (module: TradeTransitHubModule) => void;
-};
+export function TradeTransitHubDecks() {
+  const { pathname } = useLocation();
 
-export function TradeTransitHubDecks({
-  activeModule,
-  onSelectModule,
-}: TradeTransitHubDecksProps) {
   return (
     <section className="px-4 sm:px-6 lg:px-8 pb-10 sm:pb-14">
       <div className="max-w-7xl mx-auto">
@@ -67,8 +67,8 @@ export function TradeTransitHubDecks({
             Choose a workspace deck
           </h2>
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl font-light">
-            Each module opens a focused view below — trade parameters, product
-            costing, or the live request summary.
+            Each module opens in its own full-page workspace — trade parameters,
+            product costing, or transit summary.
           </p>
         </div>
 
@@ -76,14 +76,14 @@ export function TradeTransitHubDecks({
           {decks.map((deck) => (
             <TradeTransitHubDeckCard
               key={deck.id}
+              href={deck.href}
               icon={deck.icon}
               overline={deck.overline}
               title={deck.title}
               description={deck.description}
               buttonLabel={deck.buttonLabel}
               accent={deck.accent}
-              active={activeModule === deck.id}
-              onClick={() => onSelectModule(deck.id)}
+              active={pathname === deck.href}
             />
           ))}
         </div>

@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export type TradeTransitDeckAccent = "blue" | "teal" | "orange";
 
@@ -37,6 +38,7 @@ const accentStyles: Record<
 };
 
 type TradeTransitHubDeckCardProps = {
+  href: string;
   icon: LucideIcon;
   overline: string;
   title: string;
@@ -44,10 +46,10 @@ type TradeTransitHubDeckCardProps = {
   buttonLabel: string;
   accent: TradeTransitDeckAccent;
   active?: boolean;
-  onClick?: () => void;
 };
 
 export function TradeTransitHubDeckCard({
+  href,
   icon: Icon,
   overline,
   title,
@@ -55,7 +57,6 @@ export function TradeTransitHubDeckCard({
   buttonLabel,
   accent,
   active = false,
-  onClick,
 }: TradeTransitHubDeckCardProps) {
   const styles = accentStyles[accent];
 
@@ -100,14 +101,13 @@ export function TradeTransitHubDeckCard({
           {description}
         </p>
 
-        <button
-          type="button"
-          onClick={onClick}
+        <Link
+          to={href}
           className={`mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-xl ${styles.button} ${styles.glow} group/btn`}
         >
           {buttonLabel}
           <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
-        </button>
+        </Link>
       </div>
     </article>
   );

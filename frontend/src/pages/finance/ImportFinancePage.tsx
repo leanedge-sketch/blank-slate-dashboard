@@ -1,32 +1,11 @@
-import { useCallback, useRef, useState } from "react";
-import { PanelRightOpen, Sparkles } from "lucide-react";
-import { ImportFinanceCalculatorWorkspace } from "../../components/finance/ImportFinanceCalculatorWorkspace";
+import { PanelRightOpen } from "lucide-react";
 import { TradeTransitHubDecks } from "../../components/finance/trade-transit-hub/TradeTransitHubDecks";
 import { TradeTransitHubHero } from "../../components/finance/trade-transit-hub/TradeTransitHubHero";
-import type { TradeTransitHubModule } from "../../components/finance/trade-transit-hub/TradeTransitHubDecks";
+import { TRADE_TRANSIT_ROUTES } from "../../contexts/TradeTransitRequestContext";
 import { useImportFinanceDock } from "../../contexts/ImportFinanceDockContext";
 
 export function ImportFinancePage() {
   const { openDock } = useImportFinanceDock();
-  const [activeModule, setActiveModule] = useState<TradeTransitHubModule | null>(
-    null,
-  );
-  const [historyMode, setHistoryMode] = useState(false);
-  const modulePanelRef = useRef<HTMLDivElement>(null);
-
-  const openModule = useCallback(
-    (module: TradeTransitHubModule, options?: { history?: boolean }) => {
-      setHistoryMode(Boolean(options?.history));
-      setActiveModule(module);
-      window.requestAnimationFrame(() => {
-        modulePanelRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-    },
-    [],
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-slate-100 overflow-hidden">
@@ -58,44 +37,11 @@ export function ImportFinancePage() {
         </div>
 
         <TradeTransitHubHero
-          onNewRequest={() => openModule("trade")}
-          onViewHistory={() => openModule("products", { history: true })}
+          newRequestHref={TRADE_TRANSIT_ROUTES.tradeParameters}
+          historyHref={`${TRADE_TRANSIT_ROUTES.productCosting}?history=1`}
         />
 
-        <TradeTransitHubDecks
-          activeModule={activeModule}
-          onSelectModule={(module) => openModule(module)}
-        />
-
-        {activeModule && (
-          <section
-            ref={modulePanelRef}
-            className={`px-4 sm:px-6 lg:px-8 pb-16 sm:pb-24 scroll-mt-8 ${
-              activeModule === "summary" ? "pt-2" : ""
-            }`}
-          >
-            <div className="max-w-7xl mx-auto space-y-6">
-              {activeModule !== "summary" && (
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-cyan-400" />
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/80">
-                    {activeModule === "trade" && "Trade parameters workspace"}
-                    {activeModule === "products" &&
-                      (historyMode
-                        ? "Saved pipeline history"
-                        : "Product costing workspace")}
-                  </p>
-                </div>
-              )}
-
-              <ImportFinanceCalculatorWorkspace
-                activeSection={activeModule}
-                historyOnly={historyMode && activeModule === "products"}
-                showRecentShipments
-              />
-            </div>
-          </section>
-        )}
+        <TradeTransitHubDecks />
       </div>
     </div>
   );

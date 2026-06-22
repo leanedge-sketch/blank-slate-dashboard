@@ -23,6 +23,9 @@ import { PricingPage } from "./pages/pms/PricingPage";
 import { ProductsPage } from "./pages/pms/ProductsPage";
 import { MarketPage } from "./pages/pms/MarketPage";
 import { ImportFinancePage } from "./pages/finance/ImportFinancePage";
+import { TradeParametersWorkspacePage } from "./pages/finance/TradeParametersWorkspacePage";
+import { ProductCostingWorkspacePage } from "./pages/finance/ProductCostingWorkspacePage";
+import { TransitSummaryWorkspacePage } from "./pages/finance/TransitSummaryWorkspacePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
@@ -220,12 +223,36 @@ export default function App() {
             }
           />
 
-          {/* Import Finance */}
+          {/* Import Finance / Trade & Transit */}
           <Route
             path="/finance/import"
             element={
               <ProtectedRoute>
                 <ImportFinancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/trade-parameters"
+            element={
+              <ProtectedRoute>
+                <TradeParametersWorkspacePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/product-costing"
+            element={
+              <ProtectedRoute>
+                <ProductCostingWorkspacePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/transit-summary"
+            element={
+              <ProtectedRoute>
+                <TransitSummaryWorkspacePage />
               </ProtectedRoute>
             }
           />

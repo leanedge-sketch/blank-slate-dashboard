@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProductCatalogProvider } from "./contexts/ProductCatalogContext";
 import { ImportFinanceDockProvider } from "./contexts/ImportFinanceDockContext";
+import { TradeTransitRequestProvider } from "./contexts/TradeTransitRequestContext";
 import { CanonicalUrlRedirect } from "./components/CanonicalUrlRedirect";
 import { SupabaseBootstrap } from "./components/SupabaseBootstrap";
 import App from "./App";
@@ -34,7 +35,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         <AuthProvider>
           <ProductCatalogProvider>
             <ImportFinanceDockProvider>
-              <App />
+              <TradeTransitRequestProvider>
+                <App />
+              </TradeTransitRequestProvider>
             </ImportFinanceDockProvider>
           </ProductCatalogProvider>
         </AuthProvider>
