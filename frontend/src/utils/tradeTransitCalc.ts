@@ -2,6 +2,10 @@ import {
   DEFAULT_FINANCE_CONSTANTS,
   type FinanceConstants,
 } from "./importFinanceCalc";
+import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
+
+export type { CustomsDutyAssessmentInput, CustomsDutyAssessmentResult } from "./customsDutyCalc";
+export { calculateCustomsDutyAssessment };
 
 export const CIF_BUFFER_PCT = 0.1;
 export const DEFAULT_INLAND_ETB_PER_KG = 20;
@@ -74,10 +78,13 @@ export interface TradeTransitResult {
     capitalOutlayEtb: number;
   };
   stage2: {
+    fobValueEtb: number;
     cifUsdPerKg: number;
     totalCifUsd: number;
     customsOfficialRate: number;
+    /** Customs Duty Assessment Base (CIF) in ETB. */
     cifBaseEtb: number;
+    vatBaseEtb: number;
     dutyEtb: number;
     scanFeeEtb: number;
     socialFeeEtb: number;
@@ -202,32 +209,30 @@ export function calculateTradeTransit(
   const totalBorderUsd = borderUsdPerKg * qty + miscBorderUsdTotal;
   const capitalOutlayEtb = totalBorderUsd * inputs.capitalParallelRate;
 
-  const cifUsdPerKg = inputs.baseCustomsReferenceUsd * (1 + inputs.cifBufferPct);
-  const totalCifUsd = cifUsdPerKg * qty;
-  const cifBaseEtb = totalCifUsd * inputs.customsOfficialRate;
+  const customs = calculateCustomsDutyAssessment({
+    quantityKg: qty,
+    customsRateUsdPerKg: inputs.baseCustomsReferenceUsd,
+    officialExchangeRate: inputs.customsOfficialRate,
+    cifFreightInsuranceBufferPct: inputs.cifBufferPct,
+    customsDutyPct: inputs.customsDutyPct,
+    scanFeePct: inputs.scanFeePct,
+    socialFeePct: inputs.socialFeePct,
+    whtPct: inputs.whtPct,
+    vatPct: inputs.vatPct,
+    specialGoodsPct: inputs.taxSpecialGoodsPct,
+    surtaxPct: inputs.surtaxPct,
+    excisePct: inputs.excisePct,
+  });
 
-  const dutyEtb = cifBaseEtb * inputs.customsDutyPct;
-  const scanFeeEtb = cifBaseEtb * inputs.scanFeePct;
-  const socialFeeEtb = cifBaseEtb * inputs.socialFeePct;
-  const specialGoodsEtb = cifBaseEtb * (inputs.taxSpecialGoodsPct / 100);
-  const whtEtb = cifBaseEtb * inputs.whtPct;
-  const vatEtb = cifBaseEtb * inputs.vatPct;
-  const surtaxEtb = cifBaseEtb * inputs.surtaxPct;
-  const exciseEtb = cifBaseEtb * inputs.excisePct;
-  const totalCustomsPaidEtb =
-    dutyEtb +
-    scanFeeEtb +
-    socialFeeEtb +
-    specialGoodsEtb +
-    whtEtb +
-    vatEtb +
-    surtaxEtb +
-    exciseEtb;
+  const cifUsdPerKg =
+    qty > 0
+      ? customs.cifValueUsd / qty
+      : inputs.baseCustomsReferenceUsd * (1 + inputs.cifBufferPct);
 
   const inlandTransportEtb = qty * inputs.inlandClearancePerKgEtb;
   const grossInvestmentEtb =
-    capitalOutlayEtb + totalCustomsPaidEtb + inlandTransportEtb;
-  const refundableWhtVatEtb = whtEtb + vatEtb;
+    capitalOutlayEtb + customs.totalCustomsFeeEtb + inlandTransportEtb;
+  const refundableWhtVatEtb = customs.whtEtb + customs.vatEtb;
   const netLandedCostEtb = grossInvestmentEtb - refundableWhtVatEtb;
   const unitCostEtbPerKg = qty > 0 ? netLandedCostEtb / qty : 0;
 
@@ -268,19 +273,21 @@ export function calculateTradeTransit(
       capitalOutlayEtb,
     },
     stage2: {
+      fobValueEtb: customs.fobValueEtb,
       cifUsdPerKg,
-      totalCifUsd,
+      totalCifUsd: customs.cifValueUsd,
       customsOfficialRate: inputs.customsOfficialRate,
-      cifBaseEtb,
-      dutyEtb,
-      scanFeeEtb,
-      socialFeeEtb,
-      specialGoodsEtb,
-      whtEtb,
-      vatEtb,
-      surtaxEtb,
-      exciseEtb,
-      totalCustomsPaidEtb,
+      cifBaseEtb: customs.cifValueEtb,
+      vatBaseEtb: customs.vatBaseEtb,
+      dutyEtb: customs.customDutyEtb,
+      scanFeeEtb: customs.scanFeeEtb,
+      socialFeeEtb: customs.socialFeeEtb,
+      specialGoodsEtb: customs.specialGoodsEtb,
+      whtEtb: customs.whtEtb,
+      vatEtb: customs.vatEtb,
+      surtaxEtb: customs.surtaxEtb,
+      exciseEtb: customs.exciseEtb,
+      totalCustomsPaidEtb: customs.totalCustomsFeeEtb,
     },
     stage3: {
       inlandTransportEtb,

@@ -233,7 +233,7 @@ function PipelineStack({
   const s4 = result.stage4;
   const positive = s4.profitPerKgEtb >= 0;
 
-  const taxes = [
+  const preVatTaxes = [
     { label: `Duty (${pctLabel(inputs.customsDutyPct, 0)})`, value: s2.dutyEtb },
     { label: `Scan (${pctLabel(inputs.scanFeePct, 2)})`, value: s2.scanFeeEtb },
     { label: `Social (${pctLabel(inputs.socialFeePct, 0)})`, value: s2.socialFeeEtb },
@@ -242,7 +242,8 @@ function PipelineStack({
       value: s2.specialGoodsEtb,
     },
     { label: `WHT (${pctLabel(inputs.whtPct, 0)})`, value: s2.whtEtb },
-    { label: `VAT (${pctLabel(inputs.vatPct, 0)})`, value: s2.vatEtb },
+  ];
+  const postVatTaxes = [
     { label: `Surtax (${pctLabel(inputs.surtaxPct, 0)})`, value: s2.surtaxEtb },
     { label: `Excise (${pctLabel(inputs.excisePct, 0)})`, value: s2.exciseEtb },
   ];
@@ -316,27 +317,49 @@ function PipelineStack({
         onSelect={() => selectStage(2)}
       >
         <DetailRow
-          label={`CIF USD/kg (×${(1 + inputs.cifBufferPct).toFixed(2)})`}
-          value={formatUsd(s2.cifUsdPerKg)}
+          label={`FOB USD/kg (customs reference)`}
+          value={formatUsd(inputs.baseCustomsReferenceUsd)}
         />
+        <DetailRow
+          label={`FOB × ${formatNumber(qty, 0)} kg × official rate`}
+          value={formatEtb(s2.fobValueEtb, 0)}
+        />
+        <DetailRow
+          label={`+ Freight & insurance (${pctLabel(inputs.cifBufferPct, 0)})`}
+          value={formatEtb(s2.cifBaseEtb - s2.fobValueEtb, 0)}
+        />
+        <DetailRow
+          label="Customs Duty Assessment Base (CIF)"
+          value={formatEtb(s2.cifBaseEtb, 0)}
+        />
+        <DetailRow label="CIF USD/kg" value={formatUsd(s2.cifUsdPerKg)} />
         <DetailRow label="Total CIF USD" value={formatUsd(s2.totalCifUsd, 2)} />
-        <FxConversion
-          leftLabel="CIF USD total"
-          leftValue={formatUsd(s2.totalCifUsd, 2)}
-          rate={s2.customsOfficialRate}
-          rateLabel="Official"
-          rightLabel="CIF base (ETB)"
-          rightValue={formatEtb(s2.cifBaseEtb, 0)}
-          accent="amber"
-        />
         <ul className="mt-2 space-y-0.5">
-          {taxes.map((t) => (
+          {preVatTaxes.map((t) => (
             <li key={t.label} className="flex justify-between text-sm text-slate-400">
               <span>{t.label}</span>
               <span className="tabular-nums font-mono text-xs">{formatEtb(t.value, 0)}</span>
             </li>
           ))}
         </ul>
+        <DetailRow
+          label="VAT base (CIF + duty + social)"
+          value={formatEtb(s2.vatBaseEtb, 0)}
+        />
+        <div className="flex justify-between text-sm text-slate-400 py-0.5">
+          <span>{`VAT (${pctLabel(inputs.vatPct, 0)})`}</span>
+          <span className="tabular-nums font-mono text-xs">{formatEtb(s2.vatEtb, 0)}</span>
+        </div>
+        {postVatTaxes.some((t) => t.value > 0) && (
+          <ul className="space-y-0.5">
+            {postVatTaxes.map((t) => (
+              <li key={t.label} className="flex justify-between text-sm text-slate-400">
+                <span>{t.label}</span>
+                <span className="tabular-nums font-mono text-xs">{formatEtb(t.value, 0)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </PipelineAccordion>
 
       <PipelineAccordion
@@ -652,7 +675,7 @@ function StageInputPanel({
         <div className="space-y-3">
           <NumberField
             label="Customs official rate"
-            hint="CIF USD → CIF base ETB and all customs taxes"
+            hint="FOB USD → FOB ETB, then CIF assessment base and customs taxes"
             value={inputs.customsOfficialRate}
             onChange={(v) => onChange({ customsOfficialRate: v })}
             accent="amber"
@@ -673,15 +696,15 @@ function StageInputPanel({
 
           <div className="pt-2 border-t border-white/5 space-y-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
-              Customs fee rates (% of CIF base)
+              Customs fee rates
             </p>
             <p className="text-[10px] text-slate-500 leading-snug">
-              Defaults match standard Ethiopia import rates — change any line to
-              match your shipment or ruling.
+              Duty, scan, social, and WHT apply to the CIF assessment base. VAT
+              applies to CIF + duty + social. Scan fee default is 0.07% (0.0007).
             </p>
             <PercentField
               label="CIF freight & insurance buffer"
-              hint="Applied to base reference before official FX (default 10%)"
+              hint="FOB ETB × (1 + buffer) = Customs Duty Assessment Base (default 10%)"
               decimalValue={inputs.cifBufferPct}
               onChange={(v) => onChange({ cifBufferPct: v })}
               step="0.1"
@@ -697,6 +720,7 @@ function StageInputPanel({
             />
             <PercentField
               label="Scan fee"
+              hint="0.07% of CIF base (decimal 0.0007)"
               decimalValue={inputs.scanFeePct}
               onChange={(v) => onChange({ scanFeePct: v })}
               step="0.001"

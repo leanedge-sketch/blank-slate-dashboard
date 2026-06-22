@@ -1,3 +1,5 @@
+import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
+
 /** Government tax rates and buffers — defaults match import_finance.finance_constants seed. */
 export interface FinanceConstants {
   customsDutyPct: number;
@@ -38,9 +40,12 @@ export interface ImportFinanceResult {
     totalCapitalEtb: number;
   };
   customs: {
+    fobValueEtb: number;
     cifAssessedUsdPerKg: number;
     totalCifAssessedUsd: number;
+    /** Customs Duty Assessment Base (CIF) in ETB. */
     cifBaseEtb: number;
+    vatBaseEtb: number;
     dutyEtb: number;
     scanFeeEtb: number;
     socialFeeEtb: number;
@@ -76,23 +81,29 @@ export function calculateImportFinance(
   const totalCapitalUsd = borderValueUsdPerKg * qty;
   const totalCapitalEtb = totalCapitalUsd * inputs.parallelRate;
 
-  const cifAssessedUsdPerKg =
-    inputs.baseCustomsReferenceUsd * (1 + constants.freightInsuranceBufferPct);
-  const totalCifAssessedUsd = cifAssessedUsdPerKg * qty;
-  const cifBaseEtb = totalCifAssessedUsd * inputs.officialRate;
+  const customs = calculateCustomsDutyAssessment({
+    quantityKg: qty,
+    customsRateUsdPerKg: inputs.baseCustomsReferenceUsd,
+    officialExchangeRate: inputs.officialRate,
+    cifFreightInsuranceBufferPct: constants.freightInsuranceBufferPct,
+    customsDutyPct: constants.customsDutyPct,
+    scanFeePct: constants.scanFeePct,
+    socialFeePct: constants.socialFeePct,
+    whtPct: constants.whtPct,
+    vatPct: constants.vatPct,
+  });
 
-  const dutyEtb = cifBaseEtb * constants.customsDutyPct;
-  const scanFeeEtb = cifBaseEtb * constants.scanFeePct;
-  const socialFeeEtb = cifBaseEtb * constants.socialFeePct;
-  const whtEtb = cifBaseEtb * constants.whtPct;
-  const vatEtb = cifBaseEtb * constants.vatPct;
-  const totalCustomsPaidEtb =
-    dutyEtb + scanFeeEtb + socialFeeEtb + whtEtb + vatEtb;
+  const cifAssessedUsdPerKg =
+    qty > 0
+      ? customs.cifValueUsd / qty
+      : inputs.baseCustomsReferenceUsd *
+        (1 + constants.freightInsuranceBufferPct);
 
   const totalLocalClearanceEtb = qty * localClearancePerKgEtb;
   const grossInvestmentEtb =
-    totalCapitalEtb + totalCustomsPaidEtb + totalLocalClearanceEtb;
-  const netLandedCostEtb = grossInvestmentEtb - (whtEtb + vatEtb);
+    totalCapitalEtb + customs.totalCustomsFeeEtb + totalLocalClearanceEtb;
+  const netLandedCostEtb =
+    grossInvestmentEtb - (customs.whtEtb + customs.vatEtb);
   const finalUnitCostEtbPerKg = qty > 0 ? netLandedCostEtb / qty : 0;
 
   const targetPrice = Math.max(inputs.targetSellingPriceEtbPerKg, 0);
@@ -109,15 +120,17 @@ export function calculateImportFinance(
       totalCapitalEtb,
     },
     customs: {
+      fobValueEtb: customs.fobValueEtb,
       cifAssessedUsdPerKg,
-      totalCifAssessedUsd,
-      cifBaseEtb,
-      dutyEtb,
-      scanFeeEtb,
-      socialFeeEtb,
-      whtEtb,
-      vatEtb,
-      totalCustomsPaidEtb,
+      totalCifAssessedUsd: customs.cifValueUsd,
+      cifBaseEtb: customs.cifValueEtb,
+      vatBaseEtb: customs.vatBaseEtb,
+      dutyEtb: customs.customDutyEtb,
+      scanFeeEtb: customs.scanFeeEtb,
+      socialFeeEtb: customs.socialFeeEtb,
+      whtEtb: customs.whtEtb,
+      vatEtb: customs.vatEtb,
+      totalCustomsPaidEtb: customs.totalCustomsFeeEtb,
     },
     bottomLine: {
       totalLocalClearanceEtb,
