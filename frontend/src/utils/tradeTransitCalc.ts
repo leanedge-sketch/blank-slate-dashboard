@@ -27,8 +27,39 @@ export interface TradeTransitInputs {
   capitalParallelRate: number;
   customsOfficialRate: number;
   baseCustomsReferenceUsd: number;
+  /** CIF = base reference × (1 + buffer). Decimal, e.g. 0.10 = 10%. */
+  cifBufferPct: number;
+  /** Share of CIF base ETB. Decimals, e.g. 0.05 = 5%. */
+  customsDutyPct: number;
+  scanFeePct: number;
+  socialFeePct: number;
+  whtPct: number;
+  vatPct: number;
+  surtaxPct: number;
+  excisePct: number;
   taxSpecialGoodsPct: number;
   inlandClearancePerKgEtb: number;
+}
+
+export function customsRatesFromConstants(
+  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+): Pick<
+  TradeTransitInputs,
+  | "cifBufferPct"
+  | "customsDutyPct"
+  | "scanFeePct"
+  | "socialFeePct"
+  | "whtPct"
+  | "vatPct"
+> {
+  return {
+    cifBufferPct: constants.freightInsuranceBufferPct,
+    customsDutyPct: constants.customsDutyPct,
+    scanFeePct: constants.scanFeePct,
+    socialFeePct: constants.socialFeePct,
+    whtPct: constants.whtPct,
+    vatPct: constants.vatPct,
+  };
 }
 
 export interface TradeTransitResult {
@@ -87,6 +118,9 @@ export const DEFAULT_TRADE_TRANSIT_INPUTS: TradeTransitInputs = {
   capitalParallelRate: 190,
   customsOfficialRate: 156,
   baseCustomsReferenceUsd: 0.792,
+  ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+  surtaxPct: 0,
+  excisePct: 0,
   taxSpecialGoodsPct: 0,
   inlandClearancePerKgEtb: DEFAULT_INLAND_ETB_PER_KG,
 };
@@ -156,7 +190,7 @@ export function sumMiscBorderCosts(lines: MiscBorderCostLine[]): number {
 
 export function calculateTradeTransit(
   inputs: TradeTransitInputs,
-  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+  _constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
 ): TradeTransitResult {
   const qty = Math.max(inputs.quantityKg, 0);
   const marginFactor = 1 + inputs.supplierMarginPct / 100;
@@ -168,18 +202,18 @@ export function calculateTradeTransit(
   const totalBorderUsd = borderUsdPerKg * qty + miscBorderUsdTotal;
   const capitalOutlayEtb = totalBorderUsd * inputs.capitalParallelRate;
 
-  const cifUsdPerKg = inputs.baseCustomsReferenceUsd * (1 + CIF_BUFFER_PCT);
+  const cifUsdPerKg = inputs.baseCustomsReferenceUsd * (1 + inputs.cifBufferPct);
   const totalCifUsd = cifUsdPerKg * qty;
   const cifBaseEtb = totalCifUsd * inputs.customsOfficialRate;
 
-  const dutyEtb = cifBaseEtb * constants.customsDutyPct;
-  const scanFeeEtb = cifBaseEtb * constants.scanFeePct;
-  const socialFeeEtb = cifBaseEtb * constants.socialFeePct;
+  const dutyEtb = cifBaseEtb * inputs.customsDutyPct;
+  const scanFeeEtb = cifBaseEtb * inputs.scanFeePct;
+  const socialFeeEtb = cifBaseEtb * inputs.socialFeePct;
   const specialGoodsEtb = cifBaseEtb * (inputs.taxSpecialGoodsPct / 100);
-  const whtEtb = cifBaseEtb * constants.whtPct;
-  const vatEtb = cifBaseEtb * constants.vatPct;
-  const surtaxEtb = 0;
-  const exciseEtb = 0;
+  const whtEtb = cifBaseEtb * inputs.whtPct;
+  const vatEtb = cifBaseEtb * inputs.vatPct;
+  const surtaxEtb = cifBaseEtb * inputs.surtaxPct;
+  const exciseEtb = cifBaseEtb * inputs.excisePct;
   const totalCustomsPaidEtb =
     dutyEtb +
     scanFeeEtb +
@@ -291,6 +325,9 @@ export function legacyShipmentToTradeTransit(row: {
     capitalParallelRate: Number(row.snapshot_parallel_rate),
     customsOfficialRate: Number(row.snapshot_official_rate),
     baseCustomsReferenceUsd: Number(row.snapshot_base_customs_reference_usd ?? 0),
+    ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+    surtaxPct: 0,
+    excisePct: 0,
     taxSpecialGoodsPct: 0,
     inlandClearancePerKgEtb: Number(
       row.local_clearance_per_kg_etb ?? DEFAULT_INLAND_ETB_PER_KG,

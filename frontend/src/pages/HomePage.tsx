@@ -10,6 +10,7 @@ import {
   Warehouse,
   Activity,
   Zap,
+  Ship,
 } from "lucide-react";
 export function HomePage() {
   return (
@@ -61,7 +62,7 @@ export function HomePage() {
                 <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white tracking-tighter leading-tight">
                   <span className="block">One home for</span>
                   <span className="block bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent animate-gradient">
-                    CRM, PMS, Stock &amp; Reports
+                    CRM, PMS, Trade, Stock &amp; Reports
                   </span>
                 </h1>
                 <p className="text-lg sm:text-xl text-slate-300 max-w-3xl leading-relaxed font-light">
@@ -295,6 +296,50 @@ export function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Trade & Transit / Procurement card (6th deck) */}
+            <div className="crm-feature-card-enhanced group relative overflow-hidden rounded-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-800/60 via-slate-900/40 to-black/40 rounded-2xl border border-slate-700/60 transition-all duration-500 group-hover:border-cyan-500/60" />
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-blue-400 to-cyan-400 rounded-t-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+              <div className="relative p-7 sm:p-8 flex flex-col h-full gap-5">
+                <div className="inline-flex items-center gap-3">
+                  <div className="inline-flex w-12 h-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 shadow-lg">
+                    <Ship className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">
+                      Trade &amp; Transit
+                    </h2>
+                    <p className="text-xs sm:text-sm text-cyan-300 font-medium">
+                      Imports · Customs · Landed Cost · Margin
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-light">
+                  Simulate global supply chain costs, calculate customs waterfalls, and
+                  project local warehouse margins for import procurement.
+                </p>
+
+                <ul className="text-slate-300 text-sm space-y-2 list-disc list-inside">
+                  <li>Moyale border &amp; capital outlay tracking</li>
+                  <li>Editable customs fee rates &amp; tax waterfalls</li>
+                  <li>Addis landed cost calculation</li>
+                  <li>Margin &amp; target price forecasting</li>
+                </ul>
+
+                <div className="pt-2">
+                  <Link
+                    to="/finance/import"
+                    className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-semibold text-sm sm:text-base transition-all duration-300 hover:shadow-xl hover:shadow-cyan-500/40 hover:-translate-y-1 active:translate-y-0 group/btn"
+                  >
+                    Open Pipeline
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-1 transition-transform" />
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -346,6 +391,10 @@ export function HomePage() {
                 <div className="flex items-center gap-1">
                   <Boxes className="w-4 h-4 text-emerald-400" />
                   <span>Product Management</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Ship className="w-4 h-4 text-cyan-400" />
+                  <span>Trade &amp; Transit</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <TrendingUp className="w-4 h-4 text-purple-400" />

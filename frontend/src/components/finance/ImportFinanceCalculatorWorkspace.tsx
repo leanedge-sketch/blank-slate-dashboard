@@ -6,6 +6,7 @@ import type { FinanceConstants } from "../../utils/importFinanceCalc";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import {
   calculateTradeTransit,
+  customsRatesFromConstants,
   legacyShipmentToTradeTransit,
   tradeTransitToLegacyInputs,
   type TradeTransitInputs,
@@ -51,6 +52,13 @@ export function ImportFinanceCalculatorWorkspace({
   );
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setInputs((prev) => ({
+      ...prev,
+      ...customsRatesFromConstants(constants),
+    }));
+  }, [constants]);
 
   useEffect(() => {
     if (!selectedProductId && products.length > 0) {

@@ -209,17 +209,19 @@ function PipelineAccordion({
   );
 }
 
+function pctLabel(decimal: number, digits = 2): string {
+  return `${(decimal * 100).toFixed(digits)}%`;
+}
+
 function PipelineStack({
   result,
   inputs,
-  constants,
   qty,
   activeStage,
   onStageChange,
 }: {
   result: TradeTransitResult;
   inputs: TradeTransitInputs;
-  constants: FinanceConstants;
   qty: number;
   activeStage: StageId;
   onStageChange: (stage: StageId) => void;
@@ -232,17 +234,17 @@ function PipelineStack({
   const positive = s4.profitPerKgEtb >= 0;
 
   const taxes = [
-    { label: `Duty (${(constants.customsDutyPct * 100).toFixed(0)}%)`, value: s2.dutyEtb },
-    { label: `Scan (${(constants.scanFeePct * 100).toFixed(2)}%)`, value: s2.scanFeeEtb },
-    { label: `Social (${(constants.socialFeePct * 100).toFixed(0)}%)`, value: s2.socialFeeEtb },
+    { label: `Duty (${pctLabel(inputs.customsDutyPct, 0)})`, value: s2.dutyEtb },
+    { label: `Scan (${pctLabel(inputs.scanFeePct, 2)})`, value: s2.scanFeeEtb },
+    { label: `Social (${pctLabel(inputs.socialFeePct, 0)})`, value: s2.socialFeeEtb },
     {
       label: `Special (${inputs.taxSpecialGoodsPct.toFixed(0)}%)`,
       value: s2.specialGoodsEtb,
     },
-    { label: `WHT (${(constants.whtPct * 100).toFixed(0)}%)`, value: s2.whtEtb },
-    { label: `VAT (${(constants.vatPct * 100).toFixed(0)}%)`, value: s2.vatEtb },
-    { label: "Surtax (0%)", value: s2.surtaxEtb },
-    { label: "Excise (0%)", value: s2.exciseEtb },
+    { label: `WHT (${pctLabel(inputs.whtPct, 0)})`, value: s2.whtEtb },
+    { label: `VAT (${pctLabel(inputs.vatPct, 0)})`, value: s2.vatEtb },
+    { label: `Surtax (${pctLabel(inputs.surtaxPct, 0)})`, value: s2.surtaxEtb },
+    { label: `Excise (${pctLabel(inputs.excisePct, 0)})`, value: s2.exciseEtb },
   ];
 
   function selectStage(stage: StageId) {
@@ -313,7 +315,10 @@ function PipelineStack({
         active={activeStage === 2}
         onSelect={() => selectStage(2)}
       >
-        <DetailRow label="CIF USD/kg (×1.10)" value={formatUsd(s2.cifUsdPerKg)} />
+        <DetailRow
+          label={`CIF USD/kg (×${(1 + inputs.cifBufferPct).toFixed(2)})`}
+          value={formatUsd(s2.cifUsdPerKg)}
+        />
         <DetailRow label="Total CIF USD" value={formatUsd(s2.totalCifUsd, 2)} />
         <FxConversion
           leftLabel="CIF USD total"
@@ -468,6 +473,40 @@ function TextField({
         className="w-full rounded-lg bg-slate-950 border border-white/5 px-3 py-1.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
       />
     </label>
+  );
+}
+
+function PercentField({
+  label,
+  hint,
+  decimalValue,
+  onChange,
+  step = "0.01",
+  accent,
+  defaultDecimal,
+}: {
+  label: string;
+  hint?: string;
+  decimalValue: number;
+  onChange: (decimal: number) => void;
+  step?: string;
+  accent?: Accent;
+  defaultDecimal?: number;
+}) {
+  const defaultHint =
+    defaultDecimal != null
+      ? `Default ${pctLabel(defaultDecimal, defaultDecimal < 0.01 ? 2 : 0)}`
+      : undefined;
+  return (
+    <NumberField
+      label={label}
+      hint={hint ?? defaultHint}
+      value={decimalValue * 100}
+      onChange={(v) => onChange(v / 100)}
+      step={step}
+      suffix="%"
+      accent={accent}
+    />
   );
 }
 
@@ -631,27 +670,103 @@ function StageInputPanel({
             suffix="USD/kg"
             accent="amber"
           />
-          <div className="flex items-center gap-2">
-            <input
-              id="special-goods-15"
-              type="checkbox"
-              checked={specialGoods15}
-              onChange={(e) =>
-                onChange({ taxSpecialGoodsPct: e.target.checked ? 15 : 0 })
-              }
-              className="rounded border-white/20 bg-slate-900 text-amber-500 focus:ring-amber-500"
+
+          <div className="pt-2 border-t border-white/5 space-y-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
+              Customs fee rates (% of CIF base)
+            </p>
+            <p className="text-[10px] text-slate-500 leading-snug">
+              Defaults match standard Ethiopia import rates — change any line to
+              match your shipment or ruling.
+            </p>
+            <PercentField
+              label="CIF freight & insurance buffer"
+              hint="Applied to base reference before official FX (default 10%)"
+              decimalValue={inputs.cifBufferPct}
+              onChange={(v) => onChange({ cifBufferPct: v })}
+              step="0.1"
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.freightInsuranceBufferPct}
             />
-            <label htmlFor="special-goods-15" className="text-xs text-slate-400">
-              Apply 15% special goods tax
-            </label>
+            <PercentField
+              label="Customs duty"
+              decimalValue={inputs.customsDutyPct}
+              onChange={(v) => onChange({ customsDutyPct: v })}
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.customsDutyPct}
+            />
+            <PercentField
+              label="Scan fee"
+              decimalValue={inputs.scanFeePct}
+              onChange={(v) => onChange({ scanFeePct: v })}
+              step="0.001"
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.scanFeePct}
+            />
+            <PercentField
+              label="Social contribution"
+              decimalValue={inputs.socialFeePct}
+              onChange={(v) => onChange({ socialFeePct: v })}
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.socialFeePct}
+            />
+            <div className="flex items-center gap-2">
+              <input
+                id="special-goods-15"
+                type="checkbox"
+                checked={specialGoods15}
+                onChange={(e) =>
+                  onChange({ taxSpecialGoodsPct: e.target.checked ? 15 : 0 })
+                }
+                className="rounded border-white/20 bg-slate-900 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="special-goods-15" className="text-xs text-slate-400">
+                Apply 15% special goods tax (default off)
+              </label>
+            </div>
+            <NumberField
+              label="Special goods tax"
+              value={inputs.taxSpecialGoodsPct}
+              onChange={(v) => onChange({ taxSpecialGoodsPct: v })}
+              suffix="%"
+              accent="amber"
+            />
+            <PercentField
+              label="Withholding tax (WHT)"
+              decimalValue={inputs.whtPct}
+              onChange={(v) => onChange({ whtPct: v })}
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.whtPct}
+            />
+            <PercentField
+              label="VAT"
+              decimalValue={inputs.vatPct}
+              onChange={(v) => onChange({ vatPct: v })}
+              accent="amber"
+              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.vatPct}
+            />
+            <PercentField
+              label="Surtax"
+              decimalValue={inputs.surtaxPct}
+              onChange={(v) => onChange({ surtaxPct: v })}
+              accent="amber"
+              defaultDecimal={0}
+            />
+            <PercentField
+              label="Excise"
+              decimalValue={inputs.excisePct}
+              onChange={(v) => onChange({ excisePct: v })}
+              accent="amber"
+              defaultDecimal={0}
+            />
           </div>
-          <NumberField
-            label="Special goods tax %"
-            value={inputs.taxSpecialGoodsPct}
-            onChange={(v) => onChange({ taxSpecialGoodsPct: v })}
-            suffix="%"
-            accent="amber"
-          />
+
+          <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2 text-xs text-slate-400">
+            Total customs (preview):{" "}
+            <span className="font-bold text-amber-200 tabular-nums">
+              {formatEtb(result.stage2.totalCustomsPaidEtb, 0)}
+            </span>
+          </div>
         </div>
       )}
 
@@ -832,7 +947,6 @@ export function ImportFinanceCalculatorPanel({
         <PipelineStack
           result={result}
           inputs={inputs}
-          constants={constants}
           qty={qty}
           activeStage={activeStage}
           onStageChange={setActiveStage}
