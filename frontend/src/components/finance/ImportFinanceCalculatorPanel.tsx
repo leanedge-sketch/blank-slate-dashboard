@@ -379,15 +379,33 @@ function PipelineStack({
         onSelect={() => selectStage(3)}
       >
         <DetailRow
-          label={`Inland (${qty.toLocaleString()} × ${inputs.inlandClearancePerKgEtb})`}
-          value={formatEtb(s3.inlandTransportEtb, 0)}
+          label="Capital outlay (from Stage 1)"
+          value={formatEtb(s1.capitalOutlayEtb, 0)}
         />
-        <DetailRow label="Gross investment" value={formatEtb(s3.grossInvestmentEtb, 0)} />
+        <DetailRow label="+ Bank charges" value={formatEtb(s3.bankChargesEtb, 0)} />
+        <DetailRow label="+ Insurance" value={formatEtb(s3.insuranceEtb, 0)} />
+        <DetailRow
+          label="+ Total customs (Stage 2)"
+          value={formatEtb(s2.totalCustomsPaidEtb, 0)}
+        />
+        <DetailRow
+          label="+ Betchem clearance"
+          value={formatEtb(s3.betchemClearanceEtb, 0)}
+        />
+        <DetailRow
+          label={`+ Transport Addis (${qty.toLocaleString()} × ${inputs.inlandClearancePerKgEtb})`}
+          value={formatEtb(s3.transportAddisEtb, 0)}
+        />
         <DetailRow
           label="− WHT + VAT (refundable)"
           value={formatEtb(s3.refundableWhtVatEtb, 0)}
         />
-        <DetailRow label="Net landed cost" value={formatEtb(s3.netLandedCostEtb, 0)} />
+        <DetailRow
+          label="Pre-landed base"
+          value={formatEtb(s3.preProfitLandedBaseEtb, 0)}
+        />
+        <DetailRow label="+ Profit tax" value={formatEtb(s3.profitTaxEtb, 0)} />
+        <DetailRow label="Total landed cost" value={formatEtb(s3.netLandedCostEtb, 0)} />
       </PipelineAccordion>
 
       <PipelineAccordion
@@ -802,8 +820,39 @@ function StageInputPanel({
 
       {stage === 3 && (
         <div className="space-y-3">
+          <PercentField
+            label="Bank charges"
+            hint="Share of capital outlay (legacy Excel default 7.8%)"
+            decimalValue={inputs.bankChargePctOnCapital}
+            onChange={(v) => onChange({ bankChargePctOnCapital: v })}
+            step="0.1"
+            accent="emerald"
+            defaultDecimal={DEFAULT_TRADE_TRANSIT_INPUTS.bankChargePctOnCapital}
+          />
           <NumberField
-            label="Inland clearance per kg"
+            label="Insurance"
+            value={inputs.insuranceEtb}
+            onChange={(v) => onChange({ insuranceEtb: v })}
+            suffix="ETB"
+            accent="emerald"
+          />
+          <NumberField
+            label="Betchem clearance"
+            value={inputs.betchemClearanceEtb}
+            onChange={(v) => onChange({ betchemClearanceEtb: v })}
+            suffix="ETB"
+            accent="emerald"
+          />
+          <PercentField
+            label="Profit tax"
+            hint="Share of pre-landed base (before profit tax)"
+            decimalValue={inputs.profitTaxPctOnPreLanded}
+            onChange={(v) => onChange({ profitTaxPctOnPreLanded: v })}
+            step="0.01"
+            accent="emerald"
+          />
+          <NumberField
+            label="Transport Addis per kg"
             hint={`Default ${DEFAULT_TRADE_TRANSIT_INPUTS.inlandClearancePerKgEtb} ETB/kg unless changed`}
             value={inputs.inlandClearancePerKgEtb}
             onChange={(v) => onChange({ inlandClearancePerKgEtb: v })}
@@ -811,18 +860,38 @@ function StageInputPanel({
             accent="emerald"
           />
           <NumberField
-            label="Quantity (for inland calc)"
+            label="Quantity"
             value={inputs.quantityKg}
             onChange={(v) => onChange({ quantityKg: v })}
             step="1"
             suffix="kg"
             accent="emerald"
           />
-          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-3 py-2 text-xs text-slate-400">
-            Computed unit cost:{" "}
-            <span className="font-bold text-emerald-300 tabular-nums">
-              {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 4)} ETB/kg
-            </span>
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-3 py-2 text-xs text-slate-400 space-y-1">
+            <p>
+              Bank charges:{" "}
+              <span className="font-bold text-emerald-300 tabular-nums">
+                {formatEtb(result.stage3.bankChargesEtb, 0)}
+              </span>
+            </p>
+            <p>
+              Profit tax:{" "}
+              <span className="font-bold text-emerald-300 tabular-nums">
+                {formatEtb(result.stage3.profitTaxEtb, 0)}
+              </span>
+            </p>
+            <p>
+              Total landed:{" "}
+              <span className="font-bold text-emerald-300 tabular-nums">
+                {formatEtb(result.stage3.netLandedCostEtb, 0)}
+              </span>
+            </p>
+            <p>
+              Unit cost:{" "}
+              <span className="font-bold text-emerald-300 tabular-nums">
+                {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg
+              </span>
+            </p>
           </div>
         </div>
       )}

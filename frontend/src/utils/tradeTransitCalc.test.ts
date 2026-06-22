@@ -70,6 +70,32 @@ describe("normalizeScanFeePct", () => {
   });
 });
 
+describe("calculateTradeTransit stage 3 landed cost", () => {
+  it("includes bank charges, insurance, betchem clearance, and profit tax", () => {
+    const result = calculateTradeTransit(DEFAULT_TRADE_TRANSIT_INPUTS);
+
+    expect(result.stage3.bankChargesEtb).toBe(334_932);
+    expect(result.stage3.insuranceEtb).toBe(1000);
+    expect(result.stage3.betchemClearanceEtb).toBe(13_500);
+    expect(result.stage3.profitTaxEtb).toBe(235_243.01);
+    expect(result.stage3.netLandedCostEtb).toBe(5_515_153.54);
+    expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(275.7577, 2);
+    expect(
+      Math.round(result.stage3.finalLandedUnitCostEtbPerKg * 100) / 100,
+    ).toBe(275.76);
+  });
+
+  it("feeds Stage 4 margin pricing from landed unit cost", () => {
+    const result = calculateTradeTransit(DEFAULT_TRADE_TRANSIT_INPUTS);
+
+    expect(result.stage4.unitCostEtbPerKg).toBeCloseTo(275.7577, 2);
+    expect(result.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(344.6971, 1);
+    expect(
+      Math.round(result.stage4.targetSellingPriceEtbPerKg * 10) / 10,
+    ).toBe(344.7);
+  });
+});
+
 describe("calculateTradeTransit stage 2", () => {
   it("excludes CIF assessment base from gross investment", () => {
     const result = calculateTradeTransit(DEFAULT_TRADE_TRANSIT_INPUTS);
@@ -77,10 +103,11 @@ describe("calculateTradeTransit stage 2", () => {
     expect(result.stage2.cifBaseEtb).toBe(2718144);
     expect(result.stage2.scanFeeEtb).toBe(19027.01);
     expect(result.stage2.totalCustomsPaidEtb).toBe(758362.18);
-    expect(result.stage3.grossInvestmentEtb).toBe(
+    expect(result.stage3.grossInvestmentEtb).toBeCloseTo(
       result.stage1.capitalOutlayEtb +
         result.stage2.totalCustomsPaidEtb +
         result.stage3.inlandTransportEtb,
+      2,
     );
     expect(result.stage3.grossInvestmentEtb).toBeLessThan(
       result.stage1.capitalOutlayEtb +

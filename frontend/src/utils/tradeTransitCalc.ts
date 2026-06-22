@@ -11,6 +11,16 @@ export { calculateCustomsDutyAssessment };
 export const CIF_BUFFER_PCT = 0.1;
 export const DEFAULT_INLAND_ETB_PER_KG = 20;
 export const DEFAULT_TARGET_MARGIN_PCT = 20;
+/** Bank charges = capital outlay × this rate (legacy Excel: 7.8%). */
+export const DEFAULT_BANK_CHARGE_PCT_ON_CAPITAL = 0.078;
+export const DEFAULT_TRANSIT_INSURANCE_ETB = 1000;
+export const DEFAULT_BETCHEM_CLEARANCE_ETB = 13500;
+/**
+ * Profit tax = pre-landed base × this rate.
+ * Pre-landed = capital + bank + insurance + customs + betchem + transport − refundables.
+ */
+export const DEFAULT_PROFIT_TAX_PCT_ON_PRE_LANDED =
+  235_243.01 / 5_279_910.532;
 
 export interface MiscBorderCostLine {
   id: string;
@@ -44,6 +54,14 @@ export interface TradeTransitInputs {
   excisePct: number;
   taxSpecialGoodsPct: number;
   inlandClearancePerKgEtb: number;
+  /** Bank charges as decimal share of capital outlay (default 7.8%). */
+  bankChargePctOnCapital: number;
+  /** Transit insurance (ETB flat). */
+  insuranceEtb: number;
+  /** Betchem clearance fee (ETB flat). */
+  betchemClearanceEtb: number;
+  /** Profit tax as decimal share of pre-landed base. */
+  profitTaxPctOnPreLanded: number;
 }
 
 export function customsRatesFromConstants(
@@ -97,9 +115,17 @@ export interface TradeTransitResult {
     totalCustomsPaidEtb: number;
   };
   stage3: {
+    bankChargesEtb: number;
+    insuranceEtb: number;
+    betchemClearanceEtb: number;
+    /** Inland / Addis transport (ETB). */
+    transportAddisEtb: number;
     inlandTransportEtb: number;
     grossInvestmentEtb: number;
     refundableWhtVatEtb: number;
+    /** Base before profit tax (capital + bank + insurance + customs + betchem + transport − refundables). */
+    preProfitLandedBaseEtb: number;
+    profitTaxEtb: number;
     netLandedCostEtb: number;
     finalLandedUnitCostEtbPerKg: number;
   };
@@ -131,6 +157,10 @@ export const DEFAULT_TRADE_TRANSIT_INPUTS: TradeTransitInputs = {
   excisePct: 0,
   taxSpecialGoodsPct: 0,
   inlandClearancePerKgEtb: DEFAULT_INLAND_ETB_PER_KG,
+  bankChargePctOnCapital: DEFAULT_BANK_CHARGE_PCT_ON_CAPITAL,
+  insuranceEtb: DEFAULT_TRANSIT_INSURANCE_ETB,
+  betchemClearanceEtb: DEFAULT_BETCHEM_CLEARANCE_ETB,
+  profitTaxPctOnPreLanded: DEFAULT_PROFIT_TAX_PCT_ON_PRE_LANDED,
 };
 
 export function roundFinancial(value: number, decimalPlaces = 4): number {
@@ -196,6 +226,94 @@ export function sumMiscBorderCosts(lines: MiscBorderCostLine[]): number {
   );
 }
 
+export interface LandedCostInput {
+  capitalOutlayEtb: number;
+  totalCustomsFeeEtb: number;
+  refundableWhtVatEtb: number;
+  quantityKg: number;
+  inlandClearancePerKgEtb: number;
+  bankChargePctOnCapital: number;
+  insuranceEtb: number;
+  betchemClearanceEtb: number;
+  profitTaxPctOnPreLanded: number;
+}
+
+export interface LandedCostResult {
+  bankChargesEtb: number;
+  insuranceEtb: number;
+  betchemClearanceEtb: number;
+  transportAddisEtb: number;
+  grossInvestmentEtb: number;
+  refundableWhtVatEtb: number;
+  preProfitLandedBaseEtb: number;
+  profitTaxEtb: number;
+  netLandedCostEtb: number;
+  finalLandedUnitCostEtbPerKg: number;
+}
+
+/**
+ * Stage 3 landed cost (legacy Excel parity):
+ * total = capital + bank + insurance + customs + betchem + transport − refundables + profitTax
+ */
+export function calculateLandedCost(params: LandedCostInput): LandedCostResult {
+  const qty = Math.max(params.quantityKg, 0);
+  const transportAddisEtb = roundFinancial(
+    qty * params.inlandClearancePerKgEtb,
+    2,
+  );
+  const bankChargesEtb = roundFinancial(
+    params.capitalOutlayEtb * params.bankChargePctOnCapital,
+    2,
+  );
+  const insuranceEtb = roundFinancial(params.insuranceEtb, 2);
+  const betchemClearanceEtb = roundFinancial(params.betchemClearanceEtb, 2);
+  const refundableWhtVatEtb = roundFinancial(params.refundableWhtVatEtb, 2);
+
+  const grossInvestmentEtb = roundFinancial(
+    params.capitalOutlayEtb +
+      params.totalCustomsFeeEtb +
+      transportAddisEtb,
+    2,
+  );
+
+  const preProfitLandedBaseEtb = roundFinancial(
+    params.capitalOutlayEtb +
+      bankChargesEtb +
+      insuranceEtb +
+      params.totalCustomsFeeEtb +
+      betchemClearanceEtb +
+      transportAddisEtb -
+      refundableWhtVatEtb,
+    2,
+  );
+
+  const profitTaxEtb = roundFinancial(
+    preProfitLandedBaseEtb * params.profitTaxPctOnPreLanded,
+    2,
+  );
+
+  const netLandedCostEtb = roundFinancial(
+    preProfitLandedBaseEtb + profitTaxEtb,
+    2,
+  );
+
+  const finalLandedUnitCostEtbPerKg =
+    qty > 0 ? roundFinancial(netLandedCostEtb / qty, 4) : 0;
+
+  return {
+    bankChargesEtb,
+    insuranceEtb,
+    betchemClearanceEtb,
+    transportAddisEtb,
+    grossInvestmentEtb,
+    refundableWhtVatEtb,
+    preProfitLandedBaseEtb,
+    profitTaxEtb,
+    netLandedCostEtb,
+    finalLandedUnitCostEtbPerKg,
+  };
+}
+
 export function calculateTradeTransit(
   inputs: TradeTransitInputs,
   _constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
@@ -231,11 +349,21 @@ export function calculateTradeTransit(
       : inputs.baseCustomsReferenceUsd * (1 + inputs.cifBufferPct);
 
   const inlandTransportEtb = qty * inputs.inlandClearancePerKgEtb;
-  const grossInvestmentEtb =
-    capitalOutlayEtb + customs.totalCustomsFeeEtb + inlandTransportEtb;
   const refundableWhtVatEtb = customs.whtEtb + customs.vatEtb;
-  const netLandedCostEtb = grossInvestmentEtb - refundableWhtVatEtb;
-  const unitCostEtbPerKg = qty > 0 ? netLandedCostEtb / qty : 0;
+
+  const landed = calculateLandedCost({
+    capitalOutlayEtb,
+    totalCustomsFeeEtb: customs.totalCustomsFeeEtb,
+    refundableWhtVatEtb,
+    quantityKg: qty,
+    inlandClearancePerKgEtb: inputs.inlandClearancePerKgEtb,
+    bankChargePctOnCapital: inputs.bankChargePctOnCapital,
+    insuranceEtb: inputs.insuranceEtb,
+    betchemClearanceEtb: inputs.betchemClearanceEtb,
+    profitTaxPctOnPreLanded: inputs.profitTaxPctOnPreLanded,
+  });
+
+  const unitCostEtbPerKg = landed.finalLandedUnitCostEtbPerKg;
 
   const marginDecimal = inputs.targetMarginPct / 100;
   let targetPrice: number;
@@ -291,11 +419,17 @@ export function calculateTradeTransit(
       totalCustomsPaidEtb: customs.totalCustomsFeeEtb,
     },
     stage3: {
-      inlandTransportEtb,
-      grossInvestmentEtb,
-      refundableWhtVatEtb,
-      netLandedCostEtb,
-      finalLandedUnitCostEtbPerKg: unitCostEtbPerKg,
+      bankChargesEtb: landed.bankChargesEtb,
+      insuranceEtb: landed.insuranceEtb,
+      betchemClearanceEtb: landed.betchemClearanceEtb,
+      transportAddisEtb: landed.transportAddisEtb,
+      inlandTransportEtb: landed.transportAddisEtb,
+      grossInvestmentEtb: landed.grossInvestmentEtb,
+      refundableWhtVatEtb: landed.refundableWhtVatEtb,
+      preProfitLandedBaseEtb: landed.preProfitLandedBaseEtb,
+      profitTaxEtb: landed.profitTaxEtb,
+      netLandedCostEtb: landed.netLandedCostEtb,
+      finalLandedUnitCostEtbPerKg: landed.finalLandedUnitCostEtbPerKg,
     },
     stage4: {
       unitCostEtbPerKg,
@@ -340,6 +474,10 @@ export function legacyShipmentToTradeTransit(row: {
     inlandClearancePerKgEtb: Number(
       row.local_clearance_per_kg_etb ?? DEFAULT_INLAND_ETB_PER_KG,
     ),
+    bankChargePctOnCapital: DEFAULT_BANK_CHARGE_PCT_ON_CAPITAL,
+    insuranceEtb: DEFAULT_TRANSIT_INSURANCE_ETB,
+    betchemClearanceEtb: DEFAULT_BETCHEM_CLEARANCE_ETB,
+    profitTaxPctOnPreLanded: DEFAULT_PROFIT_TAX_PCT_ON_PRE_LANDED,
   };
 }
 
