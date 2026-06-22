@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
-import { Database, Loader2, RefreshCw, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Database, FileSpreadsheet, Loader2, RefreshCw, Save } from "lucide-react";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
 import type { ImportFinanceProduct, ImportShipmentRow } from "../../services/importFinance";
 import type { FinanceConstants } from "../../utils/importFinanceCalc";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
+import {
+  EXPECTED_COST_2026_SCENARIOS,
+} from "../../data/expectedCost2026Scenarios";
+import { parseExpectedCostCsv } from "../../utils/expectedCostCsv";
 import {
   calculateTradeTransit,
   customsRatesFromConstants,
@@ -52,6 +56,20 @@ export function ImportFinanceCalculatorWorkspace({
   );
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
+  const [csvScenarios, setCsvScenarios] = useState<
+    ReturnType<typeof parseExpectedCostCsv>
+  >([]);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const scenarioOptions = [
+    ...EXPECTED_COST_2026_SCENARIOS,
+    ...csvScenarios.filter(
+      (s) => !EXPECTED_COST_2026_SCENARIOS.some((b) => b.id === s.id),
+    ),
+  ];
+
+  const activeScenario = scenarioOptions.find((s) => s.id === selectedScenarioId);
 
   useEffect(() => {
     setInputs((prev) => ({
@@ -74,6 +92,7 @@ export function ImportFinanceCalculatorWorkspace({
   function handleProductChange(productId: string) {
     setSelectedProductId(productId);
     setLoadedShipmentId(null);
+    setSelectedScenarioId("");
     const product = products.find((p) => p.id === productId);
     if (product) {
       setInputs((prev) => ({
@@ -83,8 +102,43 @@ export function ImportFinanceCalculatorWorkspace({
     }
   }
 
+  function applyScenario(scenario: (typeof scenarioOptions)[number]) {
+    setSelectedScenarioId(scenario.id);
+    setLoadedShipmentId(null);
+    setInputs((prev) => ({
+      ...prev,
+      ...scenario.inputs,
+      ...customsRatesFromConstants(constants),
+      bankChargePctOnCapital: scenario.inputs.bankChargePctOnCapital,
+      profitTaxPctOnPreLanded: scenario.inputs.profitTaxPctOnPreLanded,
+    }));
+  }
+
+  function handleScenarioChange(scenarioId: string) {
+    if (!scenarioId) {
+      setSelectedScenarioId("");
+      return;
+    }
+    const scenario = scenarioOptions.find((s) => s.id === scenarioId);
+    if (scenario) applyScenario(scenario);
+  }
+
+  async function handleCsvUpload(file: File) {
+    const text = await file.text();
+    const parsed = parseExpectedCostCsv(text);
+    if (parsed.length === 0) {
+      alert(
+        "Could not read product columns from this CSV. Use the Expected cost workbook format (product names in row 3).",
+      );
+      return;
+    }
+    setCsvScenarios(parsed);
+    applyScenario(parsed[0]);
+  }
+
   function handleLoadShipment(row: ImportShipmentRow) {
     setSelectedProductId(row.product_id);
+    setSelectedScenarioId("");
     setInputs(legacyShipmentToTradeTransit(row));
     setLoadedShipmentId(row.id);
   }
@@ -130,7 +184,25 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
-        <div className="min-w-[220px] flex-1">
+        <div className="min-w-[200px] flex-1">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
+            2026 expected cost scenario
+          </label>
+          <select
+            value={selectedScenarioId}
+            onChange={(e) => handleScenarioChange(e.target.value)}
+            className={darkSelect}
+          >
+            <option value="">Custom inputs…</option>
+            {scenarioOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.inputs.quantityKg.toLocaleString()} kg)
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[200px] flex-1">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <Database className="h-3.5 w-3.5 text-cyan-500" />
             Product (Supabase)
@@ -154,6 +226,28 @@ export function ImportFinanceCalculatorWorkspace({
               </option>
             ))}
           </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-400">Import CSV</span>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleCsvUpload(file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => csvInputRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-300 hover:border-emerald-500/30 hover:text-emerald-300 transition"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Upload workbook
+          </button>
         </div>
         <div className="flex gap-2">
           <button
@@ -185,6 +279,29 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       </div>
 
+      {activeScenario && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs text-slate-400">
+          <p className="font-medium text-emerald-200/90">
+            Loaded: {activeScenario.name}
+          </p>
+          <p className="mt-1 tabular-nums">
+            Sheet reference — landed{" "}
+            {formatNumber(activeScenario.expected.unitCostEtbPerKg, 2)} ETB/kg ·
+            customs {formatEtb(activeScenario.expected.totalCustomsFeeEtb, 0)} ·
+            total {formatEtb(activeScenario.expected.totalLandedCostEtb, 0)}
+          </p>
+          <p className="mt-1 tabular-nums text-slate-500">
+            Calculator — landed{" "}
+            {formatNumber(
+              calculateTradeTransit(inputs, constants).stage3
+                .finalLandedUnitCostEtbPerKg,
+              2,
+            )}{" "}
+            ETB/kg
+          </p>
+        </div>
+      )}
+
       {loadedShipmentId && (
         <p className="text-xs text-cyan-400/90">
           Loaded snapshot {loadedShipmentId.slice(0, 8)}… — edit and save to
@@ -196,6 +313,7 @@ export function ImportFinanceCalculatorWorkspace({
         inputs={inputs}
         onChange={(patch) => {
           setLoadedShipmentId(null);
+          setSelectedScenarioId("");
           setInputs((prev) => ({ ...prev, ...patch }));
         }}
         constants={constants as FinanceConstants}

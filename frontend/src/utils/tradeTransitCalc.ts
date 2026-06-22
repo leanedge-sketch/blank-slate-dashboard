@@ -62,6 +62,11 @@ export interface TradeTransitInputs {
   betchemClearanceEtb: number;
   /** Profit tax as decimal share of pre-landed base. */
   profitTaxPctOnPreLanded: number;
+  /**
+   * When set, overrides Stage 1 capital outlay (legacy sheet "Amount In Birr").
+   * Bank charges still use this ETB base when combined with bankChargePctOnCapital.
+   */
+  fixedCapitalOutlayEtb?: number | null;
 }
 
 export function customsRatesFromConstants(
@@ -326,7 +331,10 @@ export function calculateTradeTransit(
   const miscBorderUsdTotal = sumMiscBorderCosts(inputs.miscBorderCosts);
   const borderUsdPerKg = materialUsdPerKg + transportUsdPerKg;
   const totalBorderUsd = borderUsdPerKg * qty + miscBorderUsdTotal;
-  const capitalOutlayEtb = totalBorderUsd * inputs.capitalParallelRate;
+  const capitalOutlayEtb =
+    inputs.fixedCapitalOutlayEtb != null && inputs.fixedCapitalOutlayEtb > 0
+      ? roundFinancial(inputs.fixedCapitalOutlayEtb, 2)
+      : roundFinancial(totalBorderUsd * inputs.capitalParallelRate, 2);
 
   const customs = calculateCustomsDutyAssessment({
     quantityKg: qty,
