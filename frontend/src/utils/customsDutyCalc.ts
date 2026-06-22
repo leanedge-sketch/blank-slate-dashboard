@@ -47,7 +47,7 @@ export interface CustomsDutyAssessmentResult {
 
 /**
  * Customs tax waterfall from FOB through CIF assessment base.
- * Scan fee uses 0.0007 (0.07%), not 0.007 (0.7%).
+ * Scan fee: official sheet label is 0.07% but multiplier is 0.007 (legacy Excel).
  * VAT is applied to (CIF + duty + social), not to CIF alone.
  */
 export function calculateCustomsDutyAssessment(

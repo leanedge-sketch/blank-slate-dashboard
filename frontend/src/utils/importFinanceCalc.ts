@@ -12,7 +12,8 @@ export interface FinanceConstants {
 
 export const DEFAULT_FINANCE_CONSTANTS: FinanceConstants = {
   customsDutyPct: 0.05,
-  scanFeePct: 0.0007,
+  /** Official sheet labels 0.07%; applies multiplier 0.007 on CIF base. */
+  scanFeePct: 0.007,
   socialFeePct: 0.03,
   whtPct: 0.03,
   vatPct: 0.15,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
+import { DEFAULT_FINANCE_CONSTANTS } from "./importFinanceCalc";
 import {
   calculateSellingPriceFromTargetMargin,
   calculateTradeTransit,
@@ -13,7 +14,7 @@ describe("calculateCustomsDutyAssessment", () => {
     officialExchangeRate: 156,
     cifFreightInsuranceBufferPct: 0.1,
     customsDutyPct: 0.05,
-    scanFeePct: 0.0007,
+    scanFeePct: 0.007,
     socialFeePct: 0.03,
     whtPct: 0.03,
     vatPct: 0.15,
@@ -26,10 +27,10 @@ describe("calculateCustomsDutyAssessment", () => {
     expect(result.cifValueEtb).toBe(2718144);
   });
 
-  it("applies scan fee at 0.07% (0.0007), not 0.7%", () => {
+  it("matches legacy Excel scan fee (label 0.07%, multiplier 0.007)", () => {
     const result = calculateCustomsDutyAssessment(exampleInput);
 
-    expect(result.scanFeeEtb).toBe(1902.7);
+    expect(result.scanFeeEtb).toBe(19027.01);
     expect(result.cifValueEtb * 0.007).toBeCloseTo(19027.008, 3);
   });
 
@@ -41,11 +42,24 @@ describe("calculateCustomsDutyAssessment", () => {
     expect(result.cifValueEtb * 0.15).not.toBeCloseTo(result.vatEtb, 0);
   });
 
-  it("sums payable customs fees without including CIF in totalCustomsFeeEtb", () => {
+  it("matches legacy Excel total customs fee for 20,000 kg", () => {
     const result = calculateCustomsDutyAssessment(exampleInput);
 
-    expect(result.totalCustomsFeeEtb).toBeCloseTo(741237.87, 2);
+    expect(result.totalCustomsFeeEtb).toBe(758362.18);
     expect(result.totalCustomsFeeEtb).toBeLessThan(result.cifValueEtb);
+  });
+
+  it("uses 0.007 scan multiplier from default finance constants", () => {
+    expect(DEFAULT_FINANCE_CONSTANTS.scanFeePct).toBe(0.007);
+
+    const result = calculateCustomsDutyAssessment({
+      quantityKg: 20000,
+      customsRateUsdPerKg: 0.792,
+      officialExchangeRate: 156,
+    });
+
+    expect(result.scanFeeEtb).toBe(19027.01);
+    expect(result.totalCustomsFeeEtb).toBe(758362.18);
   });
 });
 
@@ -54,6 +68,8 @@ describe("calculateTradeTransit stage 2", () => {
     const result = calculateTradeTransit(DEFAULT_TRADE_TRANSIT_INPUTS);
 
     expect(result.stage2.cifBaseEtb).toBe(2718144);
+    expect(result.stage2.scanFeeEtb).toBe(19027.01);
+    expect(result.stage2.totalCustomsPaidEtb).toBe(758362.18);
     expect(result.stage3.grossInvestmentEtb).toBe(
       result.stage1.capitalOutlayEtb +
         result.stage2.totalCustomsPaidEtb +

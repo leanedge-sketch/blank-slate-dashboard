@@ -213,6 +213,11 @@ function pctLabel(decimal: number, digits = 2): string {
   return `${(decimal * 100).toFixed(digits)}%`;
 }
 
+/** Official assessment sheet labels scan fee 0.07% while applying ×0.007. */
+function scanFeeLegacyPctLabel(scanFeePct: number): string {
+  return `${(scanFeePct * 10).toFixed(2)}%`;
+}
+
 function PipelineStack({
   result,
   inputs,
@@ -235,7 +240,7 @@ function PipelineStack({
 
   const preVatTaxes = [
     { label: `Duty (${pctLabel(inputs.customsDutyPct, 0)})`, value: s2.dutyEtb },
-    { label: `Scan (${pctLabel(inputs.scanFeePct, 2)})`, value: s2.scanFeeEtb },
+    { label: `Scan (${scanFeeLegacyPctLabel(inputs.scanFeePct)})`, value: s2.scanFeeEtb },
     { label: `Social (${pctLabel(inputs.socialFeePct, 0)})`, value: s2.socialFeeEtb },
     {
       label: `Special (${inputs.taxSpecialGoodsPct.toFixed(0)}%)`,
@@ -700,7 +705,8 @@ function StageInputPanel({
             </p>
             <p className="text-[10px] text-slate-500 leading-snug">
               Duty, scan, social, and WHT apply to the CIF assessment base. VAT
-              applies to CIF + duty + social. Scan fee default is 0.07% (0.0007).
+              applies to CIF + duty + social. Scan fee uses legacy sheet label
+              0.07% with multiplier 0.007.
             </p>
             <PercentField
               label="CIF freight & insurance buffer"
@@ -718,14 +724,14 @@ function StageInputPanel({
               accent="amber"
               defaultDecimal={DEFAULT_FINANCE_CONSTANTS.customsDutyPct}
             />
-            <PercentField
+            <NumberField
               label="Scan fee"
-              hint="0.07% of CIF base (decimal 0.0007)"
-              decimalValue={inputs.scanFeePct}
-              onChange={(v) => onChange({ scanFeePct: v })}
-              step="0.001"
+              hint="Label 0.07% on official sheet; ×0.007 on CIF base"
+              value={inputs.scanFeePct * 10}
+              onChange={(v) => onChange({ scanFeePct: v / 10 })}
+              step="0.01"
+              suffix="%"
               accent="amber"
-              defaultDecimal={DEFAULT_FINANCE_CONSTANTS.scanFeePct}
             />
             <PercentField
               label="Social contribution"

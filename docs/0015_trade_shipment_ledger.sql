@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.trade_shipment_ledger (
   -- Customs tax waterfall (rates frozen at save time; ETB base uses official rate)
   base_customs_reference_usd numeric NOT NULL,
   tax_duty_pct numeric NOT NULL DEFAULT 0.05,
-  tax_scan_fee_pct numeric NOT NULL DEFAULT 0.0007,
+  tax_scan_fee_pct numeric NOT NULL DEFAULT 0.007,
   tax_social_fee_pct numeric NOT NULL DEFAULT 0.03,
   tax_special_goods_pct numeric NOT NULL DEFAULT 0,
   tax_wht_pct numeric NOT NULL DEFAULT 0.03,
