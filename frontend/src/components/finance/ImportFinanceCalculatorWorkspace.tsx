@@ -3,14 +3,13 @@ import {
   Database,
   FileSpreadsheet,
   Loader2,
-  Plus,
   RefreshCw,
   Save,
-  Trash2,
 } from "lucide-react";
 import { useTradeTransitRequestOptional } from "../../contexts/TradeTransitRequestContext";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
-import { PmsCatalogProductSearch } from "../pms/PmsCatalogProductSearch";
+import { RequestProductLineTabs } from "./RequestProductLineTabs";
+import { PmsVendorProductPicker } from "../pms/PmsVendorProductPicker";
 import type { ChemicalFullData } from "../../services/api";
 import {
   resolveImportFinanceProductId,
@@ -393,58 +392,17 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {showProducts && (
-      <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-full sm:w-auto sm:mr-2">
-            Products on this request
-          </p>
-          {request.lines.map((line) => {
-            const lineResult = summary.lines.find((s) => s.lineId === line.id);
-            const isActive = line.id === activeLineId;
-            return (
-              <button
-                key={line.id}
-                type="button"
-                onClick={() => {
-                  setActiveLineId(line.id);
-                  setSelectedScenarioId("");
-                }}
-                className={`rounded-lg px-3 py-2 text-left text-sm border transition ${
-                  isActive
-                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
-                    : "border-white/10 bg-slate-900/80 text-slate-300 hover:border-white/20"
-                }`}
-              >
-                <span className="font-medium block">{line.productName}</span>
-                <span className="text-[10px] tabular-nums text-slate-500">
-                  {line.inputs.quantityKg.toLocaleString()} kg
-                  {lineResult
-                    ? ` · ${formatNumber(lineResult.result.stage3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`
-                    : ""}
-                </span>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addProductLine}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-white/20 px-3 py-2 text-sm text-slate-400 hover:border-cyan-500/40 hover:text-cyan-300 transition"
-          >
-            <Plus className="h-4 w-4" />
-            Add product
-          </button>
-          {request.lines.length > 1 && (
-            <button
-              type="button"
-              onClick={removeActiveLine}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 px-3 py-2 text-sm text-rose-300/90 hover:bg-rose-500/10 transition"
-            >
-              <Trash2 className="h-4 w-4" />
-              Remove active
-            </button>
-          )}
-        </div>
-      </div>
+        <RequestProductLineTabs
+          request={request}
+          summary={summary}
+          activeLineId={activeLineId}
+          onSelectLine={(lineId) => {
+            setActiveLineId(lineId);
+            setSelectedScenarioId("");
+          }}
+          onAddLine={addProductLine}
+          onRemoveActive={removeActiveLine}
+        />
       )}
 
       {showSummary && (
@@ -456,7 +414,7 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {showTooling && (
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-visible">
         <div className="min-w-[200px] flex-1">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
@@ -475,12 +433,13 @@ export function ImportFinanceCalculatorWorkspace({
             ))}
           </select>
         </div>
-        <div className="min-w-[240px] flex-[2]">
+        <div className="min-w-[280px] flex-[2] overflow-visible">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <Database className="h-3.5 w-3.5 text-cyan-500" />
             PMS product (active line)
           </label>
-          <PmsCatalogProductSearch
+          <PmsVendorProductPicker
+            key={activeLine.id}
             value={activeLine.chemicalTypeId}
             onSelect={handlePmsProductSelect}
             onClear={handlePmsProductClear}
