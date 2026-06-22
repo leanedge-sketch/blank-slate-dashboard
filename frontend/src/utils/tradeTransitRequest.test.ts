@@ -31,7 +31,9 @@ describe("tradeTransitRequest", () => {
     );
 
     expect(summary.totals.quantityKg).toBe(16500);
+    expect(summary.totals.totalRevenue).toBeGreaterThan(0);
     expect(summary.totals.expectedRevenueEtb).toBeGreaterThan(0);
+    expect(summary.items).toHaveLength(2);
     expect(summary.lines).toHaveLength(2);
   });
 

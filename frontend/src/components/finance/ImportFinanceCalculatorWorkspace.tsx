@@ -500,8 +500,8 @@ export function ImportFinanceCalculatorWorkspace({
       {showSummary && (
         <TradeTransitRequestSummaryTable
           clientName={request.clientName}
-          request={request}
           summary={summary}
+          fullPanel={activeSection === "summary"}
         />
       )}
 

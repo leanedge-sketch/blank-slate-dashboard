@@ -1,5 +1,11 @@
 import type { FinanceConstants } from "./importFinanceCalc";
 import {
+  aggregateTransitFinancialTotals,
+  mapTransitRequestItem,
+  type TransitRequestFinancialTotals,
+  type TransitRequestItem,
+} from "./transitRequestItem";
+import {
   calculateTradeTransit,
   DEFAULT_TRADE_TRANSIT_INPUTS,
   type TradeTransitInputs,
@@ -48,14 +54,22 @@ export interface TradeTransitLineSummary {
 
 export interface TradeTransitRequestSummary {
   lines: TradeTransitLineSummary[];
-  totals: {
-    quantityKg: number;
-    capitalOutlayEtb: number;
-    customsPaidEtb: number;
+  items: TransitRequestItem[];
+  totals: TransitRequestFinancialTotals & {
+    /** @deprecated use totals.totalCost */
     landedCostEtb: number;
+    /** @deprecated use totals.totalRevenue */
     expectedRevenueEtb: number;
   };
 }
+
+export type {
+  TransitCostBreakdown,
+  TransitFinancialContext,
+  TransitRequestFinancialTotals,
+  TransitRequestItem,
+  TransitUom,
+} from "./transitRequestItem";
 
 export function createTradeTransitLineId(): string {
   return `ttl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -142,7 +156,18 @@ export function summarizeTradeTransitRequest(
     result: calculateTradeTransit(line.inputs, constants),
   }));
 
-  const totals = lines.reduce(
+  const quoteAsOfDate = new Date().toISOString().slice(0, 10);
+  const items = request.lines.map((line, index) =>
+    mapTransitRequestItem(
+      line.id,
+      line.productName,
+      line.inputs,
+      lines[index]!.result,
+      { quoteAsOfDate },
+    ),
+  );
+
+  const legacyTotals = lines.reduce(
     (acc, entry, index) => ({
       quantityKg:
         acc.quantityKg + Math.max(request.lines[index]?.inputs.quantityKg ?? 0, 0),
@@ -162,7 +187,21 @@ export function summarizeTradeTransitRequest(
     },
   );
 
-  return { lines, totals };
+  const financialTotals = aggregateTransitFinancialTotals(items, {
+    quantityKg: legacyTotals.quantityKg,
+    capitalOutlayEtb: legacyTotals.capitalOutlayEtb,
+    customsPaidEtb: legacyTotals.customsPaidEtb,
+  });
+
+  return {
+    lines,
+    items,
+    totals: {
+      ...financialTotals,
+      landedCostEtb: legacyTotals.landedCostEtb,
+      expectedRevenueEtb: legacyTotals.expectedRevenueEtb,
+    },
+  };
 }
 
 export function scenariosToTradeTransitRequest(

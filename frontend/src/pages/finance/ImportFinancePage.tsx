@@ -70,20 +70,23 @@ export function ImportFinancePage() {
         {activeModule && (
           <section
             ref={modulePanelRef}
-            className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-24 scroll-mt-8"
+            className={`px-4 sm:px-6 lg:px-8 pb-16 sm:pb-24 scroll-mt-8 ${
+              activeModule === "summary" ? "pt-2" : ""
+            }`}
           >
             <div className="max-w-7xl mx-auto space-y-6">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/80">
-                  {activeModule === "trade" && "Trade parameters workspace"}
-                  {activeModule === "products" &&
-                    (historyMode
-                      ? "Saved pipeline history"
-                      : "Product costing workspace")}
-                  {activeModule === "summary" && "Transit summary"}
-                </p>
-              </div>
+              {activeModule !== "summary" && (
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-400" />
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/80">
+                    {activeModule === "trade" && "Trade parameters workspace"}
+                    {activeModule === "products" &&
+                      (historyMode
+                        ? "Saved pipeline history"
+                        : "Product costing workspace")}
+                  </p>
+                </div>
+              )}
 
               <ImportFinanceCalculatorWorkspace
                 activeSection={activeModule}
