@@ -62,6 +62,11 @@ export function useImportFinanceData(enabled = true) {
       productId: string,
       inputs: ImportFinanceInputs,
       constantsOverride?: FinanceConstants,
+      clientContext?: {
+        clientName?: string;
+        requestRef?: string;
+        chemicalTypeId?: string | null;
+      },
     ) => {
       setSaving(true);
       setError(null);
@@ -70,6 +75,7 @@ export function useImportFinanceData(enabled = true) {
           productId,
           inputs,
           constantsOverride ?? constants,
+          clientContext,
         );
         setShipments((prev) => [row, ...prev].slice(0, 20));
         return row;

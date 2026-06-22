@@ -50,6 +50,9 @@ export interface ImportShipmentRow {
   profit_per_kg_etb?: number | null;
   gross_margin_pct?: number | null;
   total_expected_revenue_etb?: number | null;
+  client_name?: string | null;
+  request_ref?: string | null;
+  chemical_type_id?: string | null;
   status: string;
   created_at: string;
 }
@@ -87,6 +90,11 @@ export function buildShipmentPipelinePayload(
   inputs: ImportFinanceInputs,
   constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
   result: ImportFinanceResult = calculateImportFinance(inputs, constants),
+  clientContext?: {
+    clientName?: string;
+    requestRef?: string;
+    chemicalTypeId?: string | null;
+  },
 ) {
   return {
     product_id: productId,
@@ -117,6 +125,9 @@ export function buildShipmentPipelinePayload(
     profit_per_kg_etb: result.sales.profitPerKgEtb,
     gross_margin_pct: result.sales.grossMarginPct,
     total_expected_revenue_etb: result.sales.totalExpectedRevenueEtb,
+    client_name: clientContext?.clientName?.trim() || null,
+    request_ref: clientContext?.requestRef?.trim() || null,
+    chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
     status: "draft" as const,
   };
 }
@@ -209,12 +220,37 @@ export async function createImportFinanceProduct(
   };
 }
 
+/** Match by name or create a finance product row for customs reference persistence. */
+export async function resolveImportFinanceProductId(
+  products: ImportFinanceProduct[],
+  productName: string,
+  baseCustomsReferenceUsd: number,
+): Promise<ImportFinanceProduct> {
+  const norm = productName.trim().toLowerCase();
+  const existing = products.find(
+    (p) => p.product_name.trim().toLowerCase() === norm,
+  );
+  if (existing) return existing;
+  return createImportFinanceProduct(productName, baseCustomsReferenceUsd);
+}
+
 export async function saveImportShipmentDraft(
   productId: string,
   inputs: ImportFinanceInputs,
   constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+  clientContext?: {
+    clientName?: string;
+    requestRef?: string;
+    chemicalTypeId?: string | null;
+  },
 ): Promise<ImportShipmentRow> {
-  const payload = buildShipmentPipelinePayload(productId, inputs, constants);
+  const payload = buildShipmentPipelinePayload(
+    productId,
+    inputs,
+    constants,
+    calculateImportFinance(inputs, constants),
+    clientContext,
+  );
 
   const { data, error } = await importFinanceDb()
     .from(TABLES.shipments)

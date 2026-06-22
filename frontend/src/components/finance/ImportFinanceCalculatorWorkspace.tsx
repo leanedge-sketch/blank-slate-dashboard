@@ -1,12 +1,28 @@
-import { useEffect, useRef, useState } from "react";
-import { Database, FileSpreadsheet, Loader2, RefreshCw, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Building2,
+  Database,
+  FileSpreadsheet,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useImportFinanceData } from "../../hooks/useImportFinanceData";
-import type { ImportFinanceProduct, ImportShipmentRow } from "../../services/importFinance";
+import { PmsCatalogProductSearch } from "../pms/PmsCatalogProductSearch";
+import type { ChemicalFullData } from "../../services/api";
+import {
+  resolveImportFinanceProductId,
+  type ImportFinanceProduct,
+  type ImportShipmentRow,
+} from "../../services/importFinance";
+import { catalogProductValue } from "../../utils/catalogProducts";
+import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
 import type { FinanceConstants } from "../../utils/importFinanceCalc";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
-import {
-  EXPECTED_COST_2026_SCENARIOS,
-} from "../../data/expectedCost2026Scenarios";
+import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseExpectedCostCsv } from "../../utils/expectedCostCsv";
 import {
   calculateTradeTransit,
@@ -15,6 +31,15 @@ import {
   tradeTransitToLegacyInputs,
   type TradeTransitInputs,
 } from "../../utils/tradeTransitCalc";
+import {
+  applySharedRatesToLine,
+  createTradeTransitLine,
+  createTradeTransitRequest,
+  scenariosToTradeTransitRequest,
+  sharedRatesFromInputs,
+  summarizeTradeTransitRequest,
+  type TradeTransitRequest,
+} from "../../utils/tradeTransitRequest";
 import {
   DEFAULT_TRADE_TRANSIT_INPUTS,
   ImportFinanceCalculatorPanel,
@@ -35,6 +60,9 @@ function marginTone(pct: number | null | undefined): string {
 const darkSelect =
   "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50";
 
+const darkInput =
+  "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500";
+
 export function ImportFinanceCalculatorWorkspace({
   enabled = true,
   showRecentShipments = true,
@@ -51,10 +79,12 @@ export function ImportFinanceCalculatorWorkspace({
     saveDraft,
   } = useImportFinanceData(enabled);
 
-  const [inputs, setInputs] = useState<TradeTransitInputs>(
-    DEFAULT_TRADE_TRANSIT_INPUTS,
+  const [request, setRequest] = useState<TradeTransitRequest>(() =>
+    createTradeTransitRequest(""),
   );
-  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [activeLineId, setActiveLineId] = useState<string>(
+    () => request.lines[0]?.id ?? "",
+  );
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
   const [csvScenarios, setCsvScenarios] = useState<
@@ -69,48 +99,138 @@ export function ImportFinanceCalculatorWorkspace({
     ),
   ];
 
+  const activeLine =
+    request.lines.find((line) => line.id === activeLineId) ?? request.lines[0];
+
   const activeScenario = scenarioOptions.find((s) => s.id === selectedScenarioId);
 
+  const summary = useMemo(
+    () => summarizeTradeTransitRequest(request, constants),
+    [request, constants],
+  );
+
   useEffect(() => {
-    setInputs((prev) => ({
+    setRequest((prev) => ({
       ...prev,
-      ...customsRatesFromConstants(constants),
+      lines: prev.lines.map((line) => ({
+        ...line,
+        inputs: {
+          ...line.inputs,
+          ...customsRatesFromConstants(constants),
+        },
+      })),
     }));
   }, [constants]);
 
   useEffect(() => {
-    if (!selectedProductId && products.length > 0) {
-      const first = products[0];
-      setSelectedProductId(first.id);
-      setInputs((prev) => ({
-        ...prev,
-        baseCustomsReferenceUsd: first.base_customs_reference_usd,
-      }));
+    if (!activeLine && request.lines[0]) {
+      setActiveLineId(request.lines[0].id);
     }
-  }, [products, selectedProductId]);
+  }, [activeLine, request.lines]);
 
-  function handleProductChange(productId: string) {
-    setSelectedProductId(productId);
+  function updateActiveLine(
+    patch: Partial<TradeTransitInputs> & {
+      productName?: string;
+      productId?: string | null;
+      chemicalTypeId?: string | null;
+    },
+  ) {
+    if (!activeLine) return;
+    const { productName, productId, chemicalTypeId, ...inputPatch } = patch;
     setLoadedShipmentId(null);
     setSelectedScenarioId("");
-    const product = products.find((p) => p.id === productId);
-    if (product) {
-      setInputs((prev) => ({
-        ...prev,
-        baseCustomsReferenceUsd: product.base_customs_reference_usd,
-      }));
-    }
+    setRequest((prev) => ({
+      ...prev,
+      lines: prev.lines.map((line) =>
+        line.id === activeLine.id
+          ? {
+              ...line,
+              productName: productName ?? line.productName,
+              productId: productId !== undefined ? productId : line.productId,
+              chemicalTypeId:
+                chemicalTypeId !== undefined ? chemicalTypeId : line.chemicalTypeId,
+              inputs: { ...line.inputs, ...inputPatch },
+            }
+          : line,
+      ),
+    }));
   }
 
-  function applyScenario(scenario: (typeof scenarioOptions)[number]) {
+  function addProductLine() {
+    const template = activeLine ?? request.lines[0];
+    const shared = template
+      ? sharedRatesFromInputs(template.inputs)
+      : sharedRatesFromInputs(DEFAULT_TRADE_TRANSIT_INPUTS);
+    const nextIndex = request.lines.length + 1;
+    const line = applySharedRatesToLine(
+      createTradeTransitLine(`Product ${nextIndex}`, {
+        ...customsRatesFromConstants(constants),
+      }),
+      shared,
+    );
+    setRequest((prev) => ({
+      ...prev,
+      lines: [...prev.lines, line],
+    }));
+    setActiveLineId(line.id);
+    setSelectedScenarioId("");
+    setLoadedShipmentId(null);
+  }
+
+  function removeActiveLine() {
+    if (request.lines.length <= 1) return;
+    const nextLines = request.lines.filter((line) => line.id !== activeLineId);
+    setRequest((prev) => ({ ...prev, lines: nextLines }));
+    setActiveLineId(nextLines[0]?.id ?? "");
+    setSelectedScenarioId("");
+    setLoadedShipmentId(null);
+  }
+
+  function handlePmsProductSelect(chemical: ChemicalFullData) {
+    const catalogId = catalogProductValue(chemical);
+    const productName = chemicalSearchPrimaryLabel(chemical);
+    const matchedFinance = products.find(
+      (p) =>
+        p.product_name.trim().toLowerCase() === productName.trim().toLowerCase(),
+    );
+    updateActiveLine({
+      chemicalTypeId: catalogId,
+      productName,
+      productId: matchedFinance?.id ?? null,
+      baseCustomsReferenceUsd: matchedFinance?.base_customs_reference_usd,
+    });
+  }
+
+  function handlePmsProductClear() {
+    updateActiveLine({
+      chemicalTypeId: null,
+      productId: null,
+    });
+  }
+
+  function applyScenarioToActiveLine(
+    scenario: (typeof scenarioOptions)[number],
+  ) {
+    if (!activeLine) return;
     setSelectedScenarioId(scenario.id);
     setLoadedShipmentId(null);
-    setInputs((prev) => ({
+    setRequest((prev) => ({
       ...prev,
-      ...scenario.inputs,
-      ...customsRatesFromConstants(constants),
-      bankChargePctOnCapital: scenario.inputs.bankChargePctOnCapital,
-      profitTaxPctOnPreLanded: scenario.inputs.profitTaxPctOnPreLanded,
+      lines: prev.lines.map((line) =>
+        line.id === activeLine.id
+          ? {
+              ...line,
+              productName: scenario.name,
+              inputs: {
+                ...line.inputs,
+                ...scenario.inputs,
+                ...customsRatesFromConstants(constants),
+                bankChargePctOnCapital: scenario.inputs.bankChargePctOnCapital,
+                profitTaxPctOnPreLanded: scenario.inputs.profitTaxPctOnPreLanded,
+              },
+            }
+          : line,
+      ),
     }));
   }
 
@@ -120,7 +240,18 @@ export function ImportFinanceCalculatorWorkspace({
       return;
     }
     const scenario = scenarioOptions.find((s) => s.id === scenarioId);
-    if (scenario) applyScenario(scenario);
+    if (scenario) applyScenarioToActiveLine(scenario);
+  }
+
+  function loadFullScenarioRequest(
+    scenarios: Array<{ id: string; name: string; inputs: TradeTransitInputs }>,
+    clientName: string,
+  ) {
+    const next = scenariosToTradeTransitRequest(scenarios, clientName);
+    setRequest(next);
+    setActiveLineId(next.lines[0]?.id ?? "");
+    setSelectedScenarioId("");
+    setLoadedShipmentId(null);
   }
 
   async function handleCsvUpload(file: File) {
@@ -133,36 +264,99 @@ export function ImportFinanceCalculatorWorkspace({
       return;
     }
     setCsvScenarios(parsed);
-    applyScenario(parsed[0]);
+    const clientName =
+      request.clientName.trim() ||
+      file.name.replace(/\.csv$/i, "").trim() ||
+      "Imported client";
+    loadFullScenarioRequest(parsed, clientName);
+  }
+
+  function loadExpectedCost2026Sample() {
+    loadFullScenarioRequest(
+      EXPECTED_COST_2026_SCENARIOS,
+      request.clientName.trim() || "2026 Expected cost",
+    );
   }
 
   function handleLoadShipment(row: ImportShipmentRow) {
-    setSelectedProductId(row.product_id);
+    const product = products.find((p) => p.id === row.product_id);
+    const line = createTradeTransitLine(product?.product_name ?? "Loaded product", {
+      ...legacyShipmentToTradeTransit(row),
+      productId: row.product_id,
+      chemicalTypeId: row.chemical_type_id ?? null,
+    });
+    setRequest((prev) => ({
+      ...prev,
+      lines: [line],
+    }));
+    setActiveLineId(line.id);
     setSelectedScenarioId("");
-    setInputs(legacyShipmentToTradeTransit(row));
     setLoadedShipmentId(row.id);
   }
 
   async function handleSaveDraft() {
-    if (!selectedProductId) {
-      alert("Select a product from the database before saving.");
+    const clientLabel = request.clientName.trim() || "Unnamed client";
+    const unlinked = request.lines.filter((line) => !line.chemicalTypeId);
+    if (unlinked.length > 0) {
+      const names = unlinked.map((l) => l.productName).join(", ");
+      const proceed = window.confirm(
+        `${unlinked.length} product(s) are not linked to PMS catalog (${names}). Save the ${request.lines.length - unlinked.length} linked line(s) only?`,
+      );
+      if (!proceed) return;
+    }
+
+    const linkedLines = request.lines.filter((line) => line.chemicalTypeId);
+    if (linkedLines.length === 0) {
+      alert("Pick at least one product from the PMS catalog before saving.");
       return;
     }
-    try {
-      const legacyInputs = tradeTransitToLegacyInputs(
-        inputs,
-        calculateTradeTransit(inputs, constants),
-      );
-      const row = await saveDraft(selectedProductId, legacyInputs, constants);
-      setLoadedShipmentId(row.id);
+
+    const missingCustomsRef = linkedLines.filter(
+      (line) => !line.inputs.baseCustomsReferenceUsd || line.inputs.baseCustomsReferenceUsd <= 0,
+    );
+    if (missingCustomsRef.length > 0) {
       alert(
-        `Pipeline snapshot saved.\n` +
-          `Landed: ${formatNumber(Number(row.final_landed_unit_cost_etb_per_kg ?? 0), 2)} ETB/kg · ` +
-          `Margin: ${formatNumber(Number(row.gross_margin_pct ?? 0), 1)}%`,
+        `Set customs reference (USD/kg) for: ${missingCustomsRef.map((l) => l.productName).join(", ")}`,
+      );
+      return;
+    }
+
+    try {
+      let financeProducts = products;
+      for (const line of linkedLines) {
+        let productId = line.productId;
+        if (!productId) {
+          const resolved = await resolveImportFinanceProductId(
+            financeProducts,
+            line.productName,
+            line.inputs.baseCustomsReferenceUsd,
+          );
+          productId = resolved.id;
+          if (!financeProducts.some((p) => p.id === resolved.id)) {
+            financeProducts = [...financeProducts, resolved];
+          }
+        }
+
+        const legacyInputs = tradeTransitToLegacyInputs(
+          line.inputs,
+          calculateTradeTransit(line.inputs, constants),
+        );
+        await saveDraft(productId, legacyInputs, constants, {
+          clientName: clientLabel,
+          requestRef: request.requestRef,
+          chemicalTypeId: line.chemicalTypeId,
+        });
+      }
+      alert(
+        `Saved ${linkedLines.length} pipeline line(s) for client "${clientLabel}".`,
       );
     } catch {
-      /* error state shown in banner */
+      /* error banner */
     }
+  }
+
+  if (!activeLine) {
+    return null;
   }
 
   return (
@@ -183,11 +377,159 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
+      <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[200px] flex-1">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
+              <Building2 className="h-3.5 w-3.5 text-cyan-500" />
+              Client
+            </label>
+            <input
+              type="text"
+              value={request.clientName}
+              onChange={(e) =>
+                setRequest((prev) => ({ ...prev, clientName: e.target.value }))
+              }
+              placeholder="Customer / buyer name"
+              className={darkInput}
+            />
+          </div>
+          <div className="min-w-[160px] flex-1">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
+              Request ref
+            </label>
+            <input
+              type="text"
+              value={request.requestRef}
+              onChange={(e) =>
+                setRequest((prev) => ({ ...prev, requestRef: e.target.value }))
+              }
+              placeholder="PO / quote # (optional)"
+              className={darkInput}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={loadExpectedCost2026Sample}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-200 hover:bg-emerald-500/20 transition"
+          >
+            <Users className="h-4 w-4" />
+            Load 2026 sample (2 products)
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-full sm:w-auto sm:mr-2">
+            Products on this request
+          </p>
+          {request.lines.map((line) => {
+            const lineResult = summary.lines.find((s) => s.lineId === line.id);
+            const isActive = line.id === activeLineId;
+            return (
+              <button
+                key={line.id}
+                type="button"
+                onClick={() => {
+                  setActiveLineId(line.id);
+                  setSelectedScenarioId("");
+                }}
+                className={`rounded-lg px-3 py-2 text-left text-sm border transition ${
+                  isActive
+                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                    : "border-white/10 bg-slate-900/80 text-slate-300 hover:border-white/20"
+                }`}
+              >
+                <span className="font-medium block">{line.productName}</span>
+                <span className="text-[10px] tabular-nums text-slate-500">
+                  {line.inputs.quantityKg.toLocaleString()} kg
+                  {lineResult
+                    ? ` · ${formatNumber(lineResult.result.stage3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg`
+                    : ""}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addProductLine}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-white/20 px-3 py-2 text-sm text-slate-400 hover:border-cyan-500/40 hover:text-cyan-300 transition"
+          >
+            <Plus className="h-4 w-4" />
+            Add product
+          </button>
+          {request.lines.length > 1 && (
+            <button
+              type="button"
+              onClick={removeActiveLine}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 px-3 py-2 text-sm text-rose-300/90 hover:bg-rose-500/10 transition"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove active
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-500/80 mb-2">
+          Request summary — {request.clientName.trim() || "Unnamed client"}
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-xs text-left">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
+                <th className="py-2 pr-3">Product</th>
+                <th className="py-2 pr-3 text-right">Qty</th>
+                <th className="py-2 pr-3 text-right">Landed/kg</th>
+                <th className="py-2 pr-3 text-right">Selling/kg</th>
+                <th className="py-2 pr-3 text-right">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.lines.map(({ lineId, productName, result }) => (
+                <tr key={lineId} className="border-b border-white/5 text-slate-300">
+                  <td className="py-2 pr-3">{productName}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {request.lines
+                      .find((l) => l.id === lineId)
+                      ?.inputs.quantityKg.toLocaleString()}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-emerald-400">
+                    {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 2)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatNumber(result.stage4.targetSellingPriceEtbPerKg, 2)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatEtb(result.stage4.totalExpectedRevenueEtb, 0)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="font-semibold text-cyan-100">
+                <td className="py-2 pr-3">Total</td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {summary.totals.quantityKg.toLocaleString()}
+                </td>
+                <td className="py-2 pr-3 text-right text-slate-500">—</td>
+                <td className="py-2 pr-3 text-right text-slate-500">—</td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {formatEtb(summary.totals.expectedRevenueEtb, 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-[10px] text-slate-500 tabular-nums">
+          Combined landed investment {formatEtb(summary.totals.landedCostEtb, 0)} ·
+          customs {formatEtb(summary.totals.customsPaidEtb, 0)}
+        </p>
+      </div>
+
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
         <div className="min-w-[200px] flex-1">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
-            2026 expected cost scenario
+            Scenario for active product
           </label>
           <select
             value={selectedScenarioId}
@@ -202,30 +544,17 @@ export function ImportFinanceCalculatorWorkspace({
             ))}
           </select>
         </div>
-        <div className="min-w-[200px] flex-1">
+        <div className="min-w-[240px] flex-[2]">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <Database className="h-3.5 w-3.5 text-cyan-500" />
-            Product (Supabase)
+            PMS product (active line)
           </label>
-          <select
-            value={selectedProductId}
-            onChange={(e) => handleProductChange(e.target.value)}
-            disabled={loading || products.length === 0}
-            className={darkSelect}
-          >
-            <option value="">
-              {loading
-                ? "Loading products…"
-                : products.length === 0
-                  ? "No products — run SQL seed"
-                  : "Select product…"}
-            </option>
-            {products.map((p: ImportFinanceProduct) => (
-              <option key={p.id} value={p.id}>
-                {p.product_name} (ref {p.base_customs_reference_usd} USD/kg)
-              </option>
-            ))}
-          </select>
+          <PmsCatalogProductSearch
+            value={activeLine.chemicalTypeId}
+            onSelect={handlePmsProductSelect}
+            onClear={handlePmsProductClear}
+            disabled={loading}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-slate-400">Import CSV</span>
@@ -266,7 +595,7 @@ export function ImportFinanceCalculatorWorkspace({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={saving || !selectedProductId || Boolean(setupHint)}
+            disabled={saving || Boolean(setupHint)}
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.25)] disabled:opacity-50 transition"
           >
             {saving ? (
@@ -274,7 +603,7 @@ export function ImportFinanceCalculatorWorkspace({
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Save pipeline to database
+            Save all linked lines
           </button>
         </div>
       </div>
@@ -282,18 +611,12 @@ export function ImportFinanceCalculatorWorkspace({
       {activeScenario && (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs text-slate-400">
           <p className="font-medium text-emerald-200/90">
-            Loaded: {activeScenario.name}
-          </p>
-          <p className="mt-1 tabular-nums">
-            Sheet reference — landed{" "}
-            {formatNumber(activeScenario.expected.unitCostEtbPerKg, 2)} ETB/kg ·
-            customs {formatEtb(activeScenario.expected.totalCustomsFeeEtb, 0)} ·
-            total {formatEtb(activeScenario.expected.totalLandedCostEtb, 0)}
+            Scenario on {activeLine.productName}: {activeScenario.name}
           </p>
           <p className="mt-1 tabular-nums text-slate-500">
             Calculator — landed{" "}
             {formatNumber(
-              calculateTradeTransit(inputs, constants).stage3
+              calculateTradeTransit(activeLine.inputs, constants).stage3
                 .finalLandedUnitCostEtbPerKg,
               2,
             )}{" "}
@@ -304,18 +627,15 @@ export function ImportFinanceCalculatorWorkspace({
 
       {loadedShipmentId && (
         <p className="text-xs text-cyan-400/90">
-          Loaded snapshot {loadedShipmentId.slice(0, 8)}… — edit and save to
-          write a new row.
+          Loaded snapshot {loadedShipmentId.slice(0, 8)}… into single-product
+          request — add more products or save linked lines.
         </p>
       )}
 
       <ImportFinanceCalculatorPanel
-        inputs={inputs}
-        onChange={(patch) => {
-          setLoadedShipmentId(null);
-          setSelectedScenarioId("");
-          setInputs((prev) => ({ ...prev, ...patch }));
-        }}
+        key={activeLine.id}
+        inputs={activeLine.inputs}
+        onChange={updateActiveLine}
         constants={constants as FinanceConstants}
       />
 
@@ -324,7 +644,7 @@ export function ImportFinanceCalculatorWorkspace({
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Saved pipeline snapshots
             <span className="ml-2 text-xs font-normal text-slate-500">
-              click to load
+              click to load one product
             </span>
           </h3>
           <table className="w-full min-w-[720px] text-sm text-left">
@@ -350,9 +670,7 @@ export function ImportFinanceCalculatorWorkspace({
                     key={s.id}
                     onClick={() => handleLoadShipment(s)}
                     className={`border-b border-white/5 cursor-pointer transition ${
-                      isLoaded
-                        ? "bg-cyan-500/10"
-                        : "hover:bg-white/5"
+                      isLoaded ? "bg-cyan-500/10" : "hover:bg-white/5"
                     }`}
                   >
                     <td className="py-2.5 pr-3 text-slate-200">

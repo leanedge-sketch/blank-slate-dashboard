@@ -28,8 +28,8 @@ export function ImportFinancePage() {
               </h1>
               <p className="text-sm text-slate-400 max-w-2xl leading-relaxed">
                 Simulate global supply chain costs from origin through Moyale
-                customs to the Addis Ababa warehouse. Live margin outlook against
-                your target selling price.
+                customs to the Addis Ababa warehouse. Build one client request
+                with multiple products — each with its own pipeline and margin.
               </p>
             </div>
             <button

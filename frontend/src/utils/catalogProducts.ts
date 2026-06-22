@@ -12,6 +12,21 @@ export function catalogProductValue(c: ChemicalFullData): string {
   return c.uuid_id ? String(c.uuid_id) : String(c.id);
 }
 
+/** Lowercase search blob for vendor, trade name, generic name, and related fields. */
+export function chemicalCatalogSearchText(c: ChemicalFullData): string {
+  return [
+    c.product_name,
+    c.vendor,
+    c.generic_name,
+    c.product_category,
+    c.sub_category,
+    c.hs_code,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 export function chemicalTypeOptionValue(ct: ChemicalType): string {
   const uuid = (ct.metadata as { uuid_id?: string } | null | undefined)?.uuid_id;
   return uuid ? String(uuid) : String(ct.id);
