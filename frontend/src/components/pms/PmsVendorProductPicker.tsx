@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Loader2, Search, X } from "lucide-react";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
@@ -52,6 +53,13 @@ export function PmsVendorProductPicker({
 }: PmsVendorProductPickerProps) {
   const { chemicals: catalogChemicals, refreshCatalog } = useProductCatalog();
   const rootRef = useRef<HTMLDivElement>(null);
+  const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLUListElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const [vendors, setVendors] = useState<string[]>([]);
   const [vendorFilter, setVendorFilter] = useState("");
   const [vendorProducts, setVendorProducts] = useState<ChemicalFullData[]>([]);
@@ -156,9 +164,10 @@ export function PmsVendorProductPicker({
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -194,6 +203,31 @@ export function PmsVendorProductPicker({
 
     return dedupeChemicals(pool).slice(0, 30);
   }, [vendorFilter, vendorProducts, catalogChemicals, query, remoteResults]);
+
+  useLayoutEffect(() => {
+    if (!open || !searchAnchorRef.current) {
+      setDropdownStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const rect = searchAnchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDropdownStyle({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, query, suggestions.length, vendorFilter]);
 
   const selectOptions = useMemo(() => {
     if (!vendorFilter.trim()) return [];
@@ -301,7 +335,7 @@ export function PmsVendorProductPicker({
         </div>
       )}
 
-      <div>
+      <div ref={searchAnchorRef}>
         <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
           {vendorFilter.trim() ? "Search within vendor" : "Search catalog"}
         </label>
@@ -342,51 +376,65 @@ export function PmsVendorProductPicker({
             </button>
           ) : null}
         </div>
-
-        {open && !disabled && (
-          <div className="relative z-[100]">
-            <ul className="absolute left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-2xl py-1">
-              {suggestions.length === 0 ? (
-                <li className="px-3 py-3 text-sm text-slate-500">
-                  {loadingVendorProducts
-                    ? "Loading vendor catalog…"
-                    : vendorFilter.trim()
-                      ? "No chemicals match this vendor and search."
-                      : query.trim()
-                        ? searching
-                          ? "Searching…"
-                          : "No matching products."
-                        : "Type to search or pick a vendor above."}
-                </li>
-              ) : (
-                suggestions.map((chemical) => {
-                  const id = catalogProductValue(chemical);
-                  const isSelected = value === id;
-                  return (
-                    <li key={id}>
-                      <button
-                        type="button"
-                        className={`w-full px-3 py-2 text-left text-sm hover:bg-cyan-500/10 focus:bg-cyan-500/10 focus:outline-none ${
-                          isSelected ? "bg-cyan-500/15" : ""
-                        }`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => pick(chemical)}
-                      >
-                        <span className="font-medium text-slate-100">
-                          {chemicalSearchPrimaryLabel(chemical)}
-                        </span>
-                        <span className="mt-0.5 block text-xs text-slate-500">
-                          {chemicalSearchSecondaryLabel(chemical)}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          </div>
-        )}
       </div>
+
+      {open &&
+        !disabled &&
+        dropdownStyle &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <ul
+            ref={dropdownRef}
+            role="listbox"
+            style={{
+              position: "fixed",
+              top: dropdownStyle.top,
+              left: dropdownStyle.left,
+              width: dropdownStyle.width,
+              zIndex: 9999,
+            }}
+            className="max-h-56 overflow-y-auto rounded-lg border border-slate-600 bg-slate-900 shadow-2xl shadow-black/50 py-1"
+          >
+            {suggestions.length === 0 ? (
+              <li className="px-3 py-3 text-sm text-slate-500">
+                {loadingVendorProducts
+                  ? "Loading vendor catalog…"
+                  : vendorFilter.trim()
+                    ? "No chemicals match this vendor and search."
+                    : query.trim()
+                      ? searching
+                        ? "Searching…"
+                        : "No matching products."
+                      : "Type to search or pick a vendor above."}
+              </li>
+            ) : (
+              suggestions.map((chemical) => {
+                const id = catalogProductValue(chemical);
+                const isSelected = value === id;
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-cyan-500/10 focus:bg-cyan-500/10 focus:outline-none ${
+                        isSelected ? "bg-cyan-500/15" : ""
+                      }`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pick(chemical)}
+                    >
+                      <span className="font-medium text-slate-100">
+                        {chemicalSearchPrimaryLabel(chemical)}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {chemicalSearchSecondaryLabel(chemical)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>,
+          document.body,
+        )}
 
       {value && selected ? (
         <p className="text-[10px] text-slate-500">
