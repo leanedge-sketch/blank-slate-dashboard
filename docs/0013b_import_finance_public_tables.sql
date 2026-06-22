@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.finance_constants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   singleton boolean NOT NULL DEFAULT true UNIQUE,
   customs_duty_pct numeric NOT NULL DEFAULT 0.05,
-  scan_fee_pct numeric NOT NULL DEFAULT 0.0007,
+  scan_fee_pct numeric NOT NULL DEFAULT 0.007,
   social_fee_pct numeric NOT NULL DEFAULT 0.03,
   wht_pct numeric NOT NULL DEFAULT 0.03,
   vat_pct numeric NOT NULL DEFAULT 0.15,

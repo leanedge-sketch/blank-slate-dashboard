@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
-import { DEFAULT_FINANCE_CONSTANTS } from "./importFinanceCalc";
+import { DEFAULT_FINANCE_CONSTANTS, normalizeScanFeePct } from "./importFinanceCalc";
 import {
   calculateSellingPriceFromTargetMargin,
   calculateTradeTransit,
@@ -60,6 +60,13 @@ describe("calculateCustomsDutyAssessment", () => {
 
     expect(result.scanFeeEtb).toBe(19027.01);
     expect(result.totalCustomsFeeEtb).toBe(758362.18);
+  });
+});
+
+describe("normalizeScanFeePct", () => {
+  it("maps legacy DB value 0.0007 to official sheet multiplier 0.007", () => {
+    expect(normalizeScanFeePct(0.0007)).toBe(0.007);
+    expect(normalizeScanFeePct(0.007)).toBe(0.007);
   });
 });
 

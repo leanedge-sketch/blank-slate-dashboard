@@ -3,6 +3,7 @@ import {
   calculateImportFinance,
   DEFAULT_FINANCE_CONSTANTS,
   LOCAL_CLEARANCE_PER_KG_ETB,
+  normalizeScanFeePct,
   type FinanceConstants,
   type ImportFinanceInputs,
   type ImportFinanceResult,
@@ -68,7 +69,9 @@ function mapConstantsRow(
 ): FinanceConstants {
   return {
     customsDutyPct: Number(row.customs_duty_pct ?? DEFAULT_FINANCE_CONSTANTS.customsDutyPct),
-    scanFeePct: Number(row.scan_fee_pct ?? DEFAULT_FINANCE_CONSTANTS.scanFeePct),
+    scanFeePct: normalizeScanFeePct(
+      Number(row.scan_fee_pct ?? DEFAULT_FINANCE_CONSTANTS.scanFeePct),
+    ),
     socialFeePct: Number(row.social_fee_pct ?? DEFAULT_FINANCE_CONSTANTS.socialFeePct),
     whtPct: Number(row.wht_pct ?? DEFAULT_FINANCE_CONSTANTS.whtPct),
     vatPct: Number(row.vat_pct ?? DEFAULT_FINANCE_CONSTANTS.vatPct),

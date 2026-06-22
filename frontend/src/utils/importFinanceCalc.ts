@@ -22,6 +22,17 @@ export const DEFAULT_FINANCE_CONSTANTS: FinanceConstants = {
 
 export const LOCAL_CLEARANCE_PER_KG_ETB = 20;
 
+/**
+ * Legacy DB seed stored 0.0007 (true 0.07%). Official sheet label is 0.07%
+ * but applies multiplier 0.007 on CIF — normalize on read from Supabase.
+ */
+export function normalizeScanFeePct(scanFeePct: number): number {
+  if (Math.abs(scanFeePct - 0.0007) < 1e-9) {
+    return 0.007;
+  }
+  return scanFeePct;
+}
+
 export interface ImportFinanceInputs {
   quantityKg: number;
   officialRate: number;

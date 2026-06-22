@@ -1,5 +1,6 @@
 import {
   DEFAULT_FINANCE_CONSTANTS,
+  normalizeScanFeePct,
   type FinanceConstants,
 } from "./importFinanceCalc";
 import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
@@ -59,7 +60,7 @@ export function customsRatesFromConstants(
   return {
     cifBufferPct: constants.freightInsuranceBufferPct,
     customsDutyPct: constants.customsDutyPct,
-    scanFeePct: constants.scanFeePct,
+    scanFeePct: normalizeScanFeePct(constants.scanFeePct),
     socialFeePct: constants.socialFeePct,
     whtPct: constants.whtPct,
     vatPct: constants.vatPct,
