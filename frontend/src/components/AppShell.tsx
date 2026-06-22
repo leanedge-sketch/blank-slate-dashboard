@@ -1,7 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Container, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { useImportFinanceDock } from "../contexts/ImportFinanceDockContext";
 import { AppBuildBadge } from "./AppBuildBadge";
 import { UserProfileMenu } from "./UserProfileMenu";
 import { WorkspaceDock } from "./WorkspaceDock";
@@ -13,7 +12,6 @@ import { WorkspaceDock } from "./WorkspaceDock";
  */
 export function AppShell() {
   const { user, loading, signOut } = useAuth();
-  const { openDock } = useImportFinanceDock();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -40,15 +38,6 @@ export function AppShell() {
               <span className="app-nav-loading">Loading…</span>
             ) : user ? (
               <>
-                <button
-                  type="button"
-                  className="app-import-finance-btn"
-                  onClick={openDock}
-                  title="Procurement Pipeline"
-                >
-                  <Container className="h-4 w-4" aria-hidden />
-                  <span className="hidden sm:inline">Trade &amp; Transit</span>
-                </button>
                 <UserProfileMenu />
                 <button
                   type="button"
