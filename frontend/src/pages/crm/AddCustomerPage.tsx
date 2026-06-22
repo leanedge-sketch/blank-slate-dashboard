@@ -1,7 +1,11 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
-import { api, Customer, Interaction, buildCustomerProfile } from "../../services/api";
+import { api, Customer, buildCustomerProfile } from "../../services/api";
+import {
+  PipelineDealModeTabs,
+  type DealLinkMode,
+} from "../../components/sales/PipelineDealLinkFields";
 
 type InitialPipelineStage = "Lead ID" | "Discovery" | "Sample";
 
@@ -15,6 +19,11 @@ export function AddCustomerPage() {
     customer_name: "",
     initial_pipeline_stage: "Lead ID",
   });
+  const [pipelineDealMode, setPipelineDealMode] =
+    useState<DealLinkMode>("new");
+  const [existingCustomers, setExistingCustomers] = useState<Customer[]>([]);
+  const [selectedExistingCustomerId, setSelectedExistingCustomerId] =
+    useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -24,8 +33,29 @@ export function AddCustomerPage() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    api
+      .get<{ customers: Customer[] }>("/crm/customers", { params: { limit: 500 } })
+      .then((res) => setExistingCustomers(res.data.customers ?? []))
+      .catch(() => setExistingCustomers([]));
+  }, []);
+
+  function handleContinueExistingCustomer() {
+    if (!selectedExistingCustomerId) {
+      setError("Select an existing customer to continue their pipeline.");
+      return;
+    }
+    navigate(
+      `/sales/pipeline?customer=${selectedExistingCustomerId}&new=true&deal_mode=existing`,
+    );
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (pipelineDealMode === "existing") {
+      handleContinueExistingCustomer();
+      return;
+    }
     if (!form.customer_name.trim()) {
       setError("Customer name is required.");
       return;
@@ -129,6 +159,53 @@ export function AddCustomerPage() {
 
       {!createdCustomer ? (
         <section className="card">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Pipeline deal</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Same company & product again? Use Old pipeline — do not create a duplicate.
+              </p>
+            </div>
+            <PipelineDealModeTabs
+              mode={pipelineDealMode}
+              onChange={setPipelineDealMode}
+              canContinueExisting={existingCustomers.length > 0}
+            />
+          </div>
+
+          {pipelineDealMode === "existing" ? (
+            <div className="form space-y-4">
+              <div className="form-field">
+                <label htmlFor="existing_customer">Existing customer</label>
+                <select
+                  id="existing_customer"
+                  value={selectedExistingCustomerId}
+                  onChange={(e) => setSelectedExistingCustomerId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value="">Select customer…</option>
+                  {existingCustomers.map((c) => (
+                    <option key={c.customer_id} value={c.customer_id}>
+                      {c.customer_name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Opens the sales pipeline form in <strong>Old pipeline</strong> mode
+                  so you can advance the existing deal.
+                </p>
+              </div>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  onClick={handleContinueExistingCustomer}
+                  disabled={!selectedExistingCustomerId}
+                >
+                  Continue existing pipeline
+                </button>
+              </div>
+            </div>
+          ) : (
           <form className="form" onSubmit={handleSubmit}>
             <div className="form-field">
               <label htmlFor="customer_name">Customer name</label>
@@ -173,6 +250,7 @@ export function AddCustomerPage() {
               </button>
             </div>
           </form>
+          )}
         </section>
       ) : (
         <>

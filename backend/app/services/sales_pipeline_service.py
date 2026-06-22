@@ -557,6 +557,24 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
 
     validate_pipeline_business_model(payload.get("business_model"))
 
+    customer_id = payload.get("customer_id")
+    chemical_type_id = payload.get("chemical_type_id")
+    if customer_id and chemical_type_id:
+        existing_deals = list_sales_pipelines(
+            limit=5,
+            offset=0,
+            customer_id=str(customer_id),
+            chemical_type_id=str(chemical_type_id),
+            latest_per_deal=True,
+        )
+        if existing_deals:
+            deal = existing_deals[0]
+            raise ValueError(
+                f"A pipeline already exists for this customer and product "
+                f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
+                f"that deal instead of creating a duplicate."
+            )
+
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)
 

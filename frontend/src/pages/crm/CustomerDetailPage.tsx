@@ -20,6 +20,10 @@ import {
   PIPELINE_STAGE_ORDER,
 } from "../../utils/pipelineProduct";
 import {
+  PipelineDealModeTabs,
+  type DealLinkMode,
+} from "../../components/sales/PipelineDealLinkFields";
+import {
   fetchAllCustomerInteractions,
   isPipelineArchiveRow,
 } from "../../utils/interactions";
@@ -60,6 +64,7 @@ export function CustomerDetailPage() {
   const [tdsList, setTdsList] = useState<Tds[]>([]);
   const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
   const [selectedDealId, setSelectedDealId] = useState<string>("");
+  const [pipelineDealMode, setPipelineDealMode] = useState<DealLinkMode>("existing");
   const navigate = useNavigate();
 
   const productLabelOptions = {
@@ -793,7 +798,7 @@ export function CustomerDetailPage() {
         {/* Sales Pipeline Section */}
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-emerald-600" />
@@ -812,21 +817,42 @@ export function CustomerDetailPage() {
                 >
                   {syncingPipelines ? "Syncing…" : "Sync from CRM history"}
                 </button>
-                <button
-                  onClick={() =>
-                    navigate(`/sales/pipeline?customer=${customerId}&new=true`)
-                  }
-                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
-                >
-                  <Plus size={16} />
-                  Add product deal
-                </button>
                 <Link
                   to="/sales/pipeline"
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   View All
                 </Link>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-100">
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  Add order / product deal
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Old pipeline continues the same deal. New pipeline starts fresh at Lead ID.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <PipelineDealModeTabs
+                  mode={pipelineDealMode}
+                  onChange={setPipelineDealMode}
+                  canContinueExisting={pipelines.length > 0}
+                />
+                <button
+                  onClick={() =>
+                    navigate(
+                      `/sales/pipeline?customer=${customerId}&new=true&deal_mode=${pipelineDealMode}`,
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
+                >
+                  <Plus size={16} />
+                  {pipelineDealMode === "existing"
+                    ? "Continue pipeline"
+                    : "New pipeline deal"}
+                </button>
               </div>
             </div>
           </div>

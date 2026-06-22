@@ -4,10 +4,13 @@ import {
   api,
   fetchTDS,
   createTDS,
+  updateTDS,
+  deleteTDS,
   fetchChemicalFullData,
   generateTdsDescription,
   Tds,
   TdsCreate,
+  TdsUpdate,
   ChemicalFullData,
 } from "../../services/api";
 import {
@@ -20,6 +23,9 @@ import {
   Sparkles,
   Table2,
   Search,
+  Pencil,
+  Trash2,
+  Save,
 } from "lucide-react";
 import { TDS_MASTER_COLUMNS } from "../../utils/tdsMasterColumns";
 import { resolveTdsDocumentUrl } from "../../utils/tdsDocument";
@@ -35,6 +41,41 @@ import {
 } from "../../utils/chemicalMasterColumns";
 
 type TdsTab = "catalog" | "add";
+
+type TdsEditDraft = {
+  brand: string;
+  grade: string;
+  owner: string;
+  source: string;
+  productDescription: string;
+  chemical_type_id: string | null;
+};
+
+function emptyEditDraft(): TdsEditDraft {
+  return {
+    brand: "",
+    grade: "",
+    owner: "",
+    source: "",
+    productDescription: "",
+    chemical_type_id: null,
+  };
+}
+
+function draftFromTds(tds: Tds): TdsEditDraft {
+  const meta =
+    tds.metadata && typeof tds.metadata === "object"
+      ? (tds.metadata as Record<string, unknown>)
+      : null;
+  return {
+    brand: tds.brand || "",
+    grade: tds.grade || "",
+    owner: tds.owner || "",
+    source: tds.source || "",
+    productDescription: getTdsProductDescription(meta),
+    chemical_type_id: tds.chemical_type_id || null,
+  };
+}
 
 function resolveProductForTds(
   tds: Tds,
@@ -97,6 +138,11 @@ export function TDSPage() {
   const [productDescription, setProductDescription] = useState("");
   const [generatingDescription, setGeneratingDescription] = useState(false);
   const [aiDescriptionSnapshot, setAiDescriptionSnapshot] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<TdsEditDraft>(emptyEditDraft());
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadTDS() {
     try {
@@ -352,6 +398,74 @@ export function TDSPage() {
     }
   }
 
+  function startEdit(tds: Tds) {
+    setEditingId(tds.id);
+    setEditDraft(draftFromTds(tds));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft(emptyEditDraft());
+  }
+
+  async function handleSaveEdit(tds: Tds) {
+    try {
+      setSavingId(tds.id);
+      const meta =
+        tds.metadata && typeof tds.metadata === "object"
+          ? { ...(tds.metadata as Record<string, unknown>) }
+          : {};
+      const trimmedDescription = editDraft.productDescription.trim();
+      if (trimmedDescription) {
+        meta.product_description = trimmedDescription;
+      }
+
+      const payload: TdsUpdate = {
+        brand: editDraft.brand.trim() || null,
+        grade: editDraft.grade.trim() || null,
+        owner: editDraft.owner.trim() || null,
+        source: editDraft.source.trim() || null,
+        chemical_type_id: editDraft.chemical_type_id,
+        metadata: Object.keys(meta).length > 0 ? meta : undefined,
+      };
+
+      await updateTDS(tds.id, payload);
+      cancelEdit();
+      await loadTDS();
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err as Error)?.message ||
+        "Failed to update TDS record";
+      alert(String(message));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleDelete(tds: Tds) {
+    const label = [tds.brand, tds.grade].filter(Boolean).join(" · ") || tds.id;
+    if (!confirm(`Delete TDS record "${label}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      setDeletingId(tds.id);
+      if (editingId === tds.id) cancelEdit();
+      await deleteTDS(tds.id);
+      await loadTDS();
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err as Error)?.message ||
+        "Failed to delete TDS record";
+      alert(String(message));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
       <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-slate-50 shadow-lg">
@@ -420,16 +534,29 @@ export function TDSPage() {
 
         {activeTab === "catalog" && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <p className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">
-              {total === 0
-                ? "No TDS records yet — use the Add TDS tab to upload your first document."
-                : (
-                  <>
-                    Showing <strong>{tdsList.length}</strong> of <strong>{total}</strong> TDS
-                    records
-                  </>
-                )}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-slate-600 border-b border-slate-100">
+              <p>
+                {total === 0
+                  ? "No TDS records yet — create one to populate the catalog."
+                  : (
+                    <>
+                      Showing <strong>{tdsList.length}</strong> of{" "}
+                      <strong>{total}</strong> TDS records
+                    </>
+                  )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelEdit();
+                  setActiveTab("add");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-shadow"
+              >
+                <Plus className="w-4 h-4" />
+                Create
+              </button>
+            </div>
             {loading ? (
               <div className="flex justify-center py-16">
                 <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
@@ -447,16 +574,19 @@ export function TDSPage() {
                           {col.label}
                         </th>
                       ))}
+                      <th className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap text-right sticky right-0 bg-slate-50 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {tdsList.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={TDS_MASTER_COLUMNS.length}
+                          colSpan={TDS_MASTER_COLUMNS.length + 1}
                           className="px-4 py-16 text-center text-slate-500"
                         >
-                          Empty catalog — add a TDS from the Add TDS tab.
+                          Empty catalog — click Create to add a TDS.
                         </td>
                       </tr>
                     ) : (
@@ -468,10 +598,31 @@ export function TDSPage() {
                             : null;
                         const docUrl = resolveTdsDocumentUrl(meta);
                         const description = getTdsProductDescription(meta);
+                        const isEditing = editingId === tds.id;
+                        const isSaving = savingId === tds.id;
+                        const isDeleting = deletingId === tds.id;
+
                         return (
-                          <tr key={tds.id} className="hover:bg-emerald-50/40">
+                          <tr
+                            key={tds.id}
+                            className={`hover:bg-emerald-50/40 ${isEditing ? "bg-emerald-50/60" : ""}`}
+                          >
                             <td className="px-4 py-3 font-medium text-slate-900">
-                              {tds.brand || "—"}
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.brand}
+                                  onChange={(e) =>
+                                    setEditDraft((d) => ({
+                                      ...d,
+                                      brand: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full min-w-[120px] rounded border border-slate-300 px-2 py-1 text-sm"
+                                />
+                              ) : (
+                                tds.brand || "—"
+                              )}
                             </td>
                             <td className="px-4 py-3 text-slate-700">
                               {product?.product_name || product?.generic_name || "—"}
@@ -479,11 +630,75 @@ export function TDSPage() {
                             <td className="px-4 py-3 text-slate-700">
                               {product?.vendor || "—"}
                             </td>
-                            <td className="px-4 py-3 text-slate-700">{tds.grade || "—"}</td>
-                            <td className="px-4 py-3 text-slate-700">{tds.owner || "—"}</td>
-                            <td className="px-4 py-3 text-slate-700">{tds.source || "—"}</td>
-                            <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                              {description || "—"}
+                            <td className="px-4 py-3 text-slate-700">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.grade}
+                                  onChange={(e) =>
+                                    setEditDraft((d) => ({
+                                      ...d,
+                                      grade: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full min-w-[100px] rounded border border-slate-300 px-2 py-1 text-sm"
+                                />
+                              ) : (
+                                tds.grade || "—"
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.owner}
+                                  onChange={(e) =>
+                                    setEditDraft((d) => ({
+                                      ...d,
+                                      owner: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full min-w-[100px] rounded border border-slate-300 px-2 py-1 text-sm"
+                                />
+                              ) : (
+                                tds.owner || "—"
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editDraft.source}
+                                  onChange={(e) =>
+                                    setEditDraft((d) => ({
+                                      ...d,
+                                      source: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full min-w-[100px] rounded border border-slate-300 px-2 py-1 text-sm"
+                                />
+                              ) : (
+                                tds.source || "—"
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 max-w-xs">
+                              {isEditing ? (
+                                <textarea
+                                  value={editDraft.productDescription}
+                                  onChange={(e) =>
+                                    setEditDraft((d) => ({
+                                      ...d,
+                                      productDescription: e.target.value,
+                                    }))
+                                  }
+                                  rows={2}
+                                  className="w-full min-w-[180px] rounded border border-slate-300 px-2 py-1 text-sm resize-y"
+                                />
+                              ) : (
+                                <span className="truncate block max-w-xs">
+                                  {description || "—"}
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3">
                               {docUrl ? (
@@ -503,6 +718,65 @@ export function TDSPage() {
                               {tds.created_at
                                 ? new Date(tds.created_at).toLocaleDateString()
                                 : "—"}
+                            </td>
+                            <td
+                              className={`px-4 py-3 whitespace-nowrap text-right sticky right-0 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] ${
+                                isEditing ? "bg-emerald-50" : "bg-white"
+                              }`}
+                            >
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleSaveEdit(tds)}
+                                      disabled={isSaving}
+                                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    >
+                                      {isSaving ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Save className="w-3.5 h-3.5" />
+                                      )}
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEdit}
+                                      disabled={isSaving}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEdit(tds)}
+                                      disabled={!!editingId || isDeleting}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDelete(tds)}
+                                      disabled={!!editingId || isDeleting}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                                    >
+                                      {isDeleting ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      )}
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

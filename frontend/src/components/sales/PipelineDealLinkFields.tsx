@@ -22,6 +22,89 @@ export function emptyProductDealLink(): ProductDealLink {
   return { mode: "new", existingPipelineId: null };
 }
 
+/** Match an open deal for this customer + catalog product (or company umbrella). */
+export function findPipelineForProduct(
+  pipelines: SalesPipeline[],
+  productId: string | null,
+): SalesPipeline | undefined {
+  if (productId) {
+    return pipelines.find((p) => p.chemical_type_id === productId);
+  }
+  return pipelines.find((p) => !p.chemical_type_id && !p.tds_id);
+}
+
+export function suggestProductDealLink(
+  pipelines: SalesPipeline[],
+  productId: string | null,
+): ProductDealLink {
+  const match = findPipelineForProduct(pipelines, productId);
+  if (match) {
+    return { mode: "existing", existingPipelineId: match.id };
+  }
+  return emptyProductDealLink();
+}
+
+export function customerHasMatchingPipelines(
+  pipelines: SalesPipeline[],
+  productIds: string[],
+): boolean {
+  if (productIds.length === 0) {
+    return findPipelineForProduct(pipelines, null) !== undefined;
+  }
+  return productIds.some((id) => findPipelineForProduct(pipelines, id) !== undefined);
+}
+
+interface PipelineDealModeTabsProps {
+  mode: DealLinkMode;
+  onChange: (mode: DealLinkMode) => void;
+  /** When false, Old pipeline tab is disabled (no deals for this customer yet). */
+  canContinueExisting?: boolean;
+  className?: string;
+}
+
+export function PipelineDealModeTabs({
+  mode,
+  onChange,
+  canContinueExisting = true,
+  className = "",
+}: PipelineDealModeTabsProps) {
+  return (
+    <div
+      className={`inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 ${className}`}
+      role="tablist"
+      aria-label="Pipeline deal mode"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "existing"}
+        disabled={!canContinueExisting}
+        onClick={() => canContinueExisting && onChange("existing")}
+        className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+          mode === "existing"
+            ? "bg-white text-emerald-800 shadow-sm border border-emerald-200"
+            : "text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+        }`}
+      >
+        Old pipeline
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "new"}
+        onClick={() => onChange("new")}
+        className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+          mode === "new"
+            ? "bg-white text-blue-800 shadow-sm border border-blue-200"
+            : "text-slate-600 hover:text-slate-900"
+        }`}
+      >
+        New pipeline
+      </button>
+    </div>
+  );
+}
+
 interface PipelineDealLinkFieldsProps {
   link: ProductDealLink;
   onChange: (link: ProductDealLink) => void;
@@ -34,6 +117,8 @@ interface PipelineDealLinkFieldsProps {
   };
   /** Highlight pipelines that match this product */
   preferProductId?: string | null;
+  /** Hide tabs when parent renders global tabs */
+  hideModeTabs?: boolean;
 }
 
 export function PipelineDealLinkFields({
@@ -43,9 +128,15 @@ export function PipelineDealLinkFields({
   productId,
   labelOptions,
   preferProductId,
+  hideModeTabs = false,
 }: PipelineDealLinkFieldsProps) {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<PipelineStage | "">("");
+
+  const matchedPipeline = useMemo(
+    () => findPipelineForProduct(customerPipelines, preferProductId ?? productId ?? null),
+    [customerPipelines, preferProductId, productId],
+  );
 
   const filteredPipelines = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -75,38 +166,46 @@ export function PipelineDealLinkFields({
     return `${product} · ${p.stage}${p.version_number ? ` (v${p.version_number})` : ""}`;
   }
 
+  function setMode(mode: DealLinkMode) {
+    if (mode === "new") {
+      onChange({ mode: "new", existingPipelineId: null });
+      return;
+    }
+    onChange({
+      mode: "existing",
+      existingPipelineId:
+        link.existingPipelineId ?? matchedPipeline?.id ?? null,
+    });
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-3">
       <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
         Pipeline for this product
       </p>
-      <div className="flex flex-wrap gap-4 text-sm">
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <input
-            type="radio"
-            name={`deal-link-${productId ?? DEAL_LINK_KEY_NONE}`}
-            checked={link.mode === "new"}
-            onChange={() =>
-              onChange({ mode: "new", existingPipelineId: null })
-            }
-          />
-          <span>New pipeline deal</span>
-        </label>
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <input
-            type="radio"
-            name={`deal-link-${productId ?? DEAL_LINK_KEY_NONE}`}
-            checked={link.mode === "existing"}
-            onChange={() =>
-              onChange({
-                mode: "existing",
-                existingPipelineId: link.existingPipelineId,
-              })
-            }
-          />
-          <span>Part of an existing pipeline</span>
-        </label>
-      </div>
+
+      {!hideModeTabs && (
+        <PipelineDealModeTabs
+          mode={link.mode}
+          onChange={setMode}
+          canContinueExisting={customerPipelines.length > 0}
+        />
+      )}
+
+      {link.mode === "existing" && matchedPipeline && (
+        <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          Recommended: continue{" "}
+          <strong>{pipelineOptionLabel(matchedPipeline)}</strong> — same company
+          and product.
+        </p>
+      )}
+
+      {link.mode === "new" && matchedPipeline && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          A pipeline already exists for this product. Choose{" "}
+          <strong>Old pipeline</strong> to advance stages instead of duplicating.
+        </p>
+      )}
 
       {link.mode === "existing" && (
         <div className="space-y-2">
@@ -157,7 +256,7 @@ export function PipelineDealLinkFields({
           </select>
           {customerPipelines.length === 0 && (
             <p className="text-xs text-amber-700">
-              No pipelines for this customer yet. Choose &quot;New pipeline deal&quot;.
+              No pipelines for this customer yet. Choose &quot;New pipeline&quot;.
             </p>
           )}
           {customerPipelines.length > 0 && sortedPipelines.length === 0 && (

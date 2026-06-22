@@ -54,9 +54,13 @@ import {
 } from "../../utils/pipelineProductDeals";
 import {
   PipelineDealLinkFields,
+  PipelineDealModeTabs,
   DEAL_LINK_KEY_NONE,
-  emptyProductDealLink,
+  suggestProductDealLink,
+  customerHasMatchingPipelines,
+  findPipelineForProduct,
   type ProductDealLink,
+  type DealLinkMode,
 } from "../../components/sales/PipelineDealLinkFields";
 import {
   amountChangeReasonRequired,
@@ -219,6 +223,7 @@ export function SalesPipelinePage() {
   const [contactPerLeadEntries, setContactPerLeadEntries] = useState<string[]>(
     [""],
   );
+  const [globalDealMode, setGlobalDealMode] = useState<DealLinkMode>("existing");
 
   const pipelineLabelOptions = {
     chemicalFullData,
@@ -230,8 +235,37 @@ export function SalesPipelinePage() {
     return productId ?? DEAL_LINK_KEY_NONE;
   }
 
-  function suggestDealLink(_productId: string | null): ProductDealLink {
-    return emptyProductDealLink();
+  function suggestDealLink(productId: string | null): ProductDealLink {
+    return suggestProductDealLink(customerPipelines, productId);
+  }
+
+  function applyGlobalDealMode(mode: DealLinkMode) {
+    setGlobalDealMode(mode);
+    setProductDealLinks((prev) => {
+      const next: Record<string, ProductDealLink> = { ...prev };
+      const keys =
+        selectedProductIds.length > 0
+          ? selectedProductIds
+          : [DEAL_LINK_KEY_NONE];
+      for (const key of keys) {
+        const productId = key === DEAL_LINK_KEY_NONE ? null : key;
+        if (mode === "new") {
+          next[key] = { mode: "new", existingPipelineId: null };
+        } else {
+          next[key] = suggestProductDealLink(customerPipelines, productId);
+        }
+      }
+      return next;
+    });
+    if (mode === "existing" && customerPipelines.length > 0) {
+      const productId = selectedProductIds[0] ?? null;
+      const match = findPipelineForProduct(customerPipelines, productId);
+      if (match?.stage) {
+        setFormData((prev) => ({ ...prev, stage: match.stage }));
+      }
+    } else if (mode === "new") {
+      setFormData((prev) => ({ ...prev, stage: "Lead ID" }));
+    }
   }
 
   function buildDealUpdateFromSpec(
@@ -305,7 +339,7 @@ export function SalesPipelinePage() {
         const res = await fetchSalesPipelines({
           customer_id: formData.customer_id,
           limit: 1000,
-          latest_per_deal: false,
+          latest_per_deal: true,
         });
         if (cancelled) return;
         setCustomerPipelines(res.pipelines || []);
@@ -326,15 +360,22 @@ export function SalesPipelinePage() {
     setProductDealLinks((prev) => {
       const next = { ...prev };
       for (const id of selectedProductIds) {
-        if (!next[id]) next[id] = suggestDealLink(id);
+        if (!next[id]) next[id] = suggestProductDealLink(customerPipelines, id);
       }
       if (selectedProductIds.length === 0 && !next[DEAL_LINK_KEY_NONE]) {
-        next[DEAL_LINK_KEY_NONE] = suggestDealLink(null);
+        next[DEAL_LINK_KEY_NONE] = suggestProductDealLink(customerPipelines, null);
       }
       return next;
     });
+    const hasMatch = customerHasMatchingPipelines(
+      customerPipelines,
+      selectedProductIds,
+    );
+    if (hasMatch) {
+      setGlobalDealMode("existing");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerPipelines]);
+  }, [customerPipelines, selectedProductIds]);
 
   function specForCreate(productId: string | null): ProductDealSpec {
     if (productId) {
@@ -601,6 +642,9 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
+    setGlobalDealMode(
+      searchParams.get("deal_mode") === "new" ? "new" : "existing",
+    );
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);
     setShowCreateForm(true);
@@ -905,7 +949,9 @@ export function SalesPipelinePage() {
         }
 
         if (!reasonForStageChange.trim()) {
-          alert("A reason is required when creating a new pipeline deal.");
+          alert(
+            "A reason is required when opening or updating a pipeline deal.",
+          );
           return;
         }
 
@@ -964,12 +1010,35 @@ export function SalesPipelinePage() {
             link.mode === "existing" ? link.existingPipelineId : null;
 
           if (targetPipelineId) {
+            const existingPipeline = customerPipelines.find(
+              (p) => p.id === targetPipelineId,
+            );
+            const stageChanged =
+              !!existingPipeline && existingPipeline.stage !== createStage;
+            if (
+              stageChanged &&
+              stageChangeReasonRequired(
+                existingPipeline!.stage,
+                createStage,
+              ) &&
+              !reasonForStageChange.trim()
+            ) {
+              alert(
+                "A reason is required when advancing or changing pipeline stage.",
+              );
+              return;
+            }
             console.log(
-              "Updating existing pipeline (user chose link to existing):",
+              "Updating existing pipeline (continue old deal):",
               targetPipelineId,
               updateData,
             );
-            await updateSalesPipeline(targetPipelineId, updateData);
+            await updateSalesPipeline(targetPipelineId, {
+              ...updateData,
+              stage: createStage,
+              reason_for_stage_change: reasonForStageChange.trim(),
+              reason_for_amount_change: reasonForAmountChange.trim() || null,
+            });
             continue;
           }
 
@@ -1250,12 +1319,40 @@ export function SalesPipelinePage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              {isCreateLeadPipelineForm(editingPipeline) && formData.customer_id && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Same company & product?
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      <strong>Old pipeline</strong> continues existing stages.
+                      <strong className="ml-1">New pipeline</strong> starts a
+                      separate deal.
+                    </p>
+                  </div>
+                  <PipelineDealModeTabs
+                    mode={globalDealMode}
+                    onChange={applyGlobalDealMode}
+                    canContinueExisting={customerPipelines.length > 0}
+                  />
+                </div>
+              )}
               {isCreateLeadPipelineForm(editingPipeline) && (
                 <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
-                  New deals default to <strong>Lead ID</strong> — change stage below only if
-                  needed. For each product, link to an <strong>existing</strong> pipeline when
-                  CRM already created one (recommended), or choose new. Saving never creates a
-                  second deal for the same customer + product.
+                  {globalDealMode === "existing" ? (
+                    <>
+                      Continuing an <strong>old pipeline</strong> — pick the
+                      matching deal below and set the next stage. No duplicate
+                      row is created.
+                    </>
+                  ) : (
+                    <>
+                      Starting a <strong>new pipeline</strong> at{" "}
+                      <strong>{formData.stage || "Lead ID"}</strong>. Use this
+                      only for a genuinely new order or product line.
+                    </>
+                  )}
                 </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1378,7 +1475,9 @@ export function SalesPipelinePage() {
                   {isCreateLeadPipelineForm(editingPipeline) && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Reason for creating this deal{" "}
+                        {globalDealMode === "existing"
+                          ? "Reason for this update"
+                          : "Reason for creating this deal"}{" "}
                         <span className="text-red-500">*</span>
                       </label>
                       <textarea
@@ -1521,16 +1620,31 @@ export function SalesPipelinePage() {
                                 productDealLinks[productId] ??
                                 suggestDealLink(productId)
                               }
-                              onChange={(link) =>
+                              onChange={(link) => {
                                 setProductDealLinks((prev) => ({
                                   ...prev,
                                   [productId]: link,
-                                }))
-                              }
+                                }));
+                                if (
+                                  link.mode === "existing" &&
+                                  link.existingPipelineId
+                                ) {
+                                  const picked = customerPipelines.find(
+                                    (p) => p.id === link.existingPipelineId,
+                                  );
+                                  if (picked?.stage) {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      stage: picked.stage,
+                                    }));
+                                  }
+                                }
+                              }}
                               customerPipelines={customerPipelines}
                               productId={productId}
                               preferProductId={productId}
                               labelOptions={pipelineLabelOptions}
+                              hideModeTabs
                             />
                             <ProductDealSpecFields
                               spec={spec}
@@ -1558,14 +1672,29 @@ export function SalesPipelinePage() {
                           productDealLinks[DEAL_LINK_KEY_NONE] ??
                           suggestDealLink(null)
                         }
-                        onChange={(link) =>
+                        onChange={(link) => {
                           setProductDealLinks((prev) => ({
                             ...prev,
                             [DEAL_LINK_KEY_NONE]: link,
-                          }))
-                        }
+                          }));
+                          if (
+                            link.mode === "existing" &&
+                            link.existingPipelineId
+                          ) {
+                            const picked = customerPipelines.find(
+                              (p) => p.id === link.existingPipelineId,
+                            );
+                            if (picked?.stage) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                stage: picked.stage,
+                              }));
+                            }
+                          }
+                        }}
                         customerPipelines={customerPipelines}
                         labelOptions={pipelineLabelOptions}
+                        hideModeTabs
                       />
                     </div>
                   )}
