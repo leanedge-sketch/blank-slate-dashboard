@@ -44,10 +44,15 @@ import {
   DEFAULT_TRADE_TRANSIT_INPUTS,
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
+import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
+
+export type TradeTransitWorkspaceSection = "trade" | "products" | "summary" | "all";
 
 type ImportFinanceCalculatorWorkspaceProps = {
   enabled?: boolean;
   showRecentShipments?: boolean;
+  activeSection?: TradeTransitWorkspaceSection;
+  historyOnly?: boolean;
 };
 
 function marginTone(pct: number | null | undefined): string {
@@ -66,6 +71,8 @@ const darkInput =
 export function ImportFinanceCalculatorWorkspace({
   enabled = true,
   showRecentShipments = true,
+  activeSection = "all",
+  historyOnly = false,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const {
     constants,
@@ -359,6 +366,20 @@ export function ImportFinanceCalculatorWorkspace({
     return null;
   }
 
+  const showTrade =
+    activeSection === "all" || activeSection === "trade";
+  const showProducts =
+    activeSection === "all" || activeSection === "products";
+  const showSummary =
+    activeSection === "all" || activeSection === "summary";
+  const showTooling = showProducts && !historyOnly;
+  const showCalculator = showProducts && !historyOnly;
+  const showShipments =
+    showRecentShipments &&
+    (historyOnly ||
+      (shipments.length > 0 &&
+        (activeSection === "all" || activeSection === "products")));
+
   return (
     <div className="space-y-6">
       {(error || setupHint) && (
@@ -377,6 +398,7 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
+      {showTrade && (
       <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px] flex-1">
@@ -417,8 +439,12 @@ export function ImportFinanceCalculatorWorkspace({
             Load 2026 sample (2 products)
           </button>
         </div>
+      </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-4">
+      {showProducts && (
+      <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-full sm:w-auto sm:mr-2">
             Products on this request
           </p>
@@ -469,62 +495,17 @@ export function ImportFinanceCalculatorWorkspace({
           )}
         </div>
       </div>
+      )}
 
-      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-500/80 mb-2">
-          Request summary — {request.clientName.trim() || "Unnamed client"}
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-xs text-left">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
-                <th className="py-2 pr-3">Product</th>
-                <th className="py-2 pr-3 text-right">Qty</th>
-                <th className="py-2 pr-3 text-right">Landed/kg</th>
-                <th className="py-2 pr-3 text-right">Selling/kg</th>
-                <th className="py-2 pr-3 text-right">Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.lines.map(({ lineId, productName, result }) => (
-                <tr key={lineId} className="border-b border-white/5 text-slate-300">
-                  <td className="py-2 pr-3">{productName}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {request.lines
-                      .find((l) => l.id === lineId)
-                      ?.inputs.quantityKg.toLocaleString()}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums text-emerald-400">
-                    {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 2)}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {formatNumber(result.stage4.targetSellingPriceEtbPerKg, 2)}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {formatEtb(result.stage4.totalExpectedRevenueEtb, 0)}
-                  </td>
-                </tr>
-              ))}
-              <tr className="font-semibold text-cyan-100">
-                <td className="py-2 pr-3">Total</td>
-                <td className="py-2 pr-3 text-right tabular-nums">
-                  {summary.totals.quantityKg.toLocaleString()}
-                </td>
-                <td className="py-2 pr-3 text-right text-slate-500">—</td>
-                <td className="py-2 pr-3 text-right text-slate-500">—</td>
-                <td className="py-2 pr-3 text-right tabular-nums">
-                  {formatEtb(summary.totals.expectedRevenueEtb, 0)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-[10px] text-slate-500 tabular-nums">
-          Combined landed investment {formatEtb(summary.totals.landedCostEtb, 0)} ·
-          customs {formatEtb(summary.totals.customsPaidEtb, 0)}
-        </p>
-      </div>
+      {showSummary && (
+        <TradeTransitRequestSummaryTable
+          clientName={request.clientName}
+          request={request}
+          summary={summary}
+        />
+      )}
 
+      {showTooling && (
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
         <div className="min-w-[200px] flex-1">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
@@ -607,8 +588,9 @@ export function ImportFinanceCalculatorWorkspace({
           </button>
         </div>
       </div>
+      )}
 
-      {activeScenario && (
+      {showCalculator && activeScenario && (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs text-slate-400">
           <p className="font-medium text-emerald-200/90">
             Scenario on {activeLine.productName}: {activeScenario.name}
@@ -625,21 +607,23 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
-      {loadedShipmentId && (
+      {showCalculator && loadedShipmentId && (
         <p className="text-xs text-cyan-400/90">
           Loaded snapshot {loadedShipmentId.slice(0, 8)}… into single-product
           request — add more products or save linked lines.
         </p>
       )}
 
+      {showCalculator && (
       <ImportFinanceCalculatorPanel
         key={activeLine.id}
         inputs={activeLine.inputs}
         onChange={updateActiveLine}
         constants={constants as FinanceConstants}
       />
+      )}
 
-      {showRecentShipments && shipments.length > 0 && (
+      {showShipments && (
         <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-x-auto">
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Saved pipeline snapshots
@@ -647,6 +631,12 @@ export function ImportFinanceCalculatorWorkspace({
               click to load one product
             </span>
           </h3>
+          {shipments.length === 0 ? (
+            <p className="text-sm text-slate-500 py-6 text-center">
+              No saved snapshots yet. Complete a calculation and use Save all
+              linked lines.
+            </p>
+          ) : (
           <table className="w-full min-w-[720px] text-sm text-left">
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
@@ -727,6 +717,7 @@ export function ImportFinanceCalculatorWorkspace({
               })}
             </tbody>
           </table>
+          )}
         </div>
       )}
     </div>
