@@ -173,7 +173,12 @@ export function roundFinancial(value: number, decimalPlaces = 4): number {
   return Math.round(value * factor) / factor;
 }
 
-/** True gross margin: sellingPrice = unitCost / (1 − marginDecimal). */
+/**
+ * Legacy Excel market strategy pricing (UI label: "20% margin").
+ * profitPerKg = (unitCost / (1 − margin)) × (margin / 2)
+ * sellingPrice = unitCost + profitPerKg
+ * At 20%: profit = (unitCost / 0.8) × 0.1
+ */
 export function calculateSellingPriceFromTargetMargin(
   unitCost: number,
   targetMarginDecimal: number,
@@ -191,12 +196,19 @@ export function calculateSellingPriceFromTargetMargin(
   }
 
   const divisor = 1 - targetMarginDecimal;
-  const sellingPrice = roundFinancial(unitCost / divisor, decimalPlaces);
-  const marginValue = roundFinancial(sellingPrice - unitCost, decimalPlaces);
+  const marginValue = roundFinancial(
+    (unitCost / divisor) * (targetMarginDecimal / 2),
+    2,
+  );
+  const sellingPrice = roundFinancial(unitCost + marginValue, 2);
   const grossMarginDecimal =
     sellingPrice > 0 ? roundFinancial(marginValue / sellingPrice, 6) : 0;
 
-  return { sellingPrice, marginValue, grossMarginDecimal };
+  return {
+    sellingPrice: roundFinancial(sellingPrice, decimalPlaces),
+    marginValue: roundFinancial(marginValue, decimalPlaces),
+    grossMarginDecimal,
+  };
 }
 
 export function calculateMarginFromSellingPrice(
@@ -444,7 +456,7 @@ export function calculateTradeTransit(
       targetSellingPriceEtbPerKg: targetPrice,
       profitPerKgEtb,
       grossMarginPct,
-      totalExpectedRevenueEtb: targetPrice * qty,
+      totalExpectedRevenueEtb: roundFinancial(targetPrice * qty, 2),
       sellingPriceMode: inputs.sellingPriceMode,
       targetMarginPct: inputs.targetMarginPct,
     },

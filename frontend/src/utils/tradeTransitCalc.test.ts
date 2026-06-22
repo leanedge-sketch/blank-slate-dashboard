@@ -85,14 +85,13 @@ describe("calculateTradeTransit stage 3 landed cost", () => {
     ).toBe(275.76);
   });
 
-  it("feeds Stage 4 margin pricing from landed unit cost", () => {
+  it("feeds Stage 4 legacy margin pricing from landed unit cost", () => {
     const result = calculateTradeTransit(DEFAULT_TRADE_TRANSIT_INPUTS);
 
     expect(result.stage4.unitCostEtbPerKg).toBeCloseTo(275.7577, 2);
-    expect(result.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(344.6971, 1);
-    expect(
-      Math.round(result.stage4.targetSellingPriceEtbPerKg * 10) / 10,
-    ).toBe(344.7);
+    expect(result.stage4.profitPerKgEtb).toBe(34.47);
+    expect(result.stage4.targetSellingPriceEtbPerKg).toBe(310.23);
+    expect(result.stage4.totalExpectedRevenueEtb).toBe(6_204_600);
   });
 });
 
@@ -118,31 +117,30 @@ describe("calculateTradeTransit stage 2", () => {
 });
 
 describe("calculateSellingPriceFromTargetMargin", () => {
-  const unitCost = 275.7576768;
+  const unitCost = 275.76;
   const targetMarginDecimal = 0.2;
 
-  it("computes true gross margin price from unit cost (20% target, full precision)", () => {
+  it("uses legacy Excel formula at 20% margin label", () => {
     const result = calculateSellingPriceFromTargetMargin(
       unitCost,
       targetMarginDecimal,
-      7,
+      2,
     );
 
-    expect(result.sellingPrice).toBeCloseTo(344.697096, 6);
-    expect(result.marginValue).toBeCloseTo(68.9394192, 6);
-    expect(result.grossMarginDecimal).toBeCloseTo(0.2, 6);
+    expect(result.marginValue).toBe(34.47);
+    expect(result.sellingPrice).toBe(310.23);
+    expect(result.grossMarginDecimal).toBeCloseTo(34.47 / 310.23, 4);
   });
 
-  it("rounds to 4 decimal places for ledger storage", () => {
+  it("rounds profit and price to 2 decimal places for ledger storage", () => {
     const result = calculateSellingPriceFromTargetMargin(
-      unitCost,
+      275.7576768,
       targetMarginDecimal,
-      4,
+      2,
     );
 
-    expect(result.sellingPrice).toBe(344.6971);
-    expect(result.marginValue).toBe(68.9394);
-    expect(result.grossMarginDecimal).toBeCloseTo(0.2, 2);
+    expect(result.marginValue).toBe(34.47);
+    expect(result.sellingPrice).toBe(310.23);
   });
 
   it("rejects margin at or above 100%", () => {
