@@ -105,7 +105,8 @@ export function ChemicalsPage() {
   const [vendorProducts, setVendorProducts] = useState<ChemicalFullData[]>([]);
   const [loadingVendorProducts, setLoadingVendorProducts] = useState(false);
   const [selectedVendorProductId, setSelectedVendorProductId] = useState("");
-  const [createNewProductMode, setCreateNewProductMode] = useState(false);
+  const [showNewVendorOnCreate, setShowNewVendorOnCreate] = useState(false);
+  const [newVendorName, setNewVendorName] = useState("");
   const [filterSector, setFilterSector] = useState("");
   const [filterIndustry, setFilterIndustry] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
@@ -302,8 +303,9 @@ export function ChemicalsPage() {
 
   function resetCreateProductSelection() {
     setSelectedVendorProductId("");
-    setCreateNewProductMode(false);
     setVendorProducts([]);
+    setShowNewVendorOnCreate(false);
+    setNewVendorName("");
   }
 
   function handleVendorChange(vendor: string) {
@@ -327,8 +329,40 @@ export function ChemicalsPage() {
       product_description: "",
     }));
     setSelectedVendorProductId("");
-    setCreateNewProductMode(false);
     void loadVendorProducts(vendor);
+  }
+
+  async function applyNewVendorOnCreate() {
+    const value = newVendorName.trim();
+    if (!value) {
+      alert("Enter a supplier / vendor name");
+      return;
+    }
+    try {
+      const newPartner = await createPartner({ partner: value });
+      setVendors((prev) => {
+        if (prev.some((v) => v.id === newPartner.id)) return prev;
+        return [...prev, { id: newPartner.id, vendor: newPartner.partner || value }].sort(
+          (a, b) => a.vendor.localeCompare(b.vendor),
+        );
+      });
+      const vendorLabel = newPartner.partner || value;
+      setFormData((prev) => ({
+        ...prev,
+        vendor: vendorLabel,
+        partner_id: newPartner.id,
+      }));
+      setShowNewVendorOnCreate(false);
+      setNewVendorName("");
+      setSelectedVendorProductId("");
+      void loadVendorProducts(vendorLabel);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Failed to create vendor";
+      alert(String(message));
+    }
   }
 
   function applyVendorProductToCreateForm(product: ChemicalFullData) {
@@ -352,7 +386,6 @@ export function ChemicalsPage() {
       typical_application: product.typical_application || "",
       product_description: product.product_description || "",
     }));
-    setCreateNewProductMode(false);
     setSelectedVendorProductId(product.id != null ? String(product.id) : "");
   }
 
@@ -965,7 +998,7 @@ export function ChemicalsPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-xl font-bold text-slate-900 mb-1">Create New Chemical</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Select a supplier first, then pick one of their products or enter a new product name.
+              Pick a supplier, enter a <strong>product name</strong>, and fill industry (required).
               A unique Ref # is assigned automatically when you save.
             </p>
             <form onSubmit={handleCreate} className="space-y-4">
@@ -973,74 +1006,91 @@ export function ChemicalsPage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Supplier / Vendor {vendors.length > 0 && `(${vendors.length})`}
+                    <span className="text-rose-500"> *</span>
                   </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.vendor || ""}
-                      onChange={(e) => handleVendorChange(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select supplier…</option>
-                      {vendors.map((v) => (
-                        <option key={v.id} value={v.vendor}>
-                          {v.vendor}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("vendor")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors shrink-0"
-                      title="Add new vendor"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
+                  {!showNewVendorOnCreate ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={formData.vendor || ""}
+                        onChange={(e) => handleVendorChange(e.target.value)}
+                        required
+                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select supplier…</option>
+                        {vendors.map((v) => (
+                          <option key={v.id} value={v.vendor}>
+                            {v.vendor}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewVendorOnCreate(true)}
+                        className="shrink-0 px-3 py-2 rounded-lg border border-indigo-300 text-indigo-700 text-sm font-medium hover:bg-indigo-50"
+                      >
+                        + New
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newVendorName}
+                        onChange={(e) => setNewVendorName(e.target.value)}
+                        placeholder="New supplier name"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void applyNewVendorOnCreate()}
+                        className="shrink-0 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNewVendorOnCreate(false);
+                          setNewVendorName("");
+                        }}
+                        className="shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Product <span className="text-rose-500">*</span>
+                    Product name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.product_name || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, product_name: e.target.value })
+                    }
+                    placeholder="Enter new product name"
+                    autoComplete="off"
+                    required
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Type a new product name here. Use the optional pre-fill below to copy
+                    fields from an existing supplier product.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Pre-fill from supplier catalog{" "}
+                    <span className="font-normal text-slate-500">(optional)</span>
                   </label>
                   <select
-                    value={createNewProductMode ? "__new__" : selectedVendorProductId}
+                    value={selectedVendorProductId}
                     onChange={(e) => {
                       const value = e.target.value;
-                      if (value === "__new__") {
-                        setCreateNewProductMode(true);
-                        setSelectedVendorProductId("");
-                        setFormData((prev) => ({
-                          ...prev,
-                          product_name: "",
-                          sector: "",
-                          industry: "",
-                          product_category: "",
-                          product_type: "",
-                          packing: "",
-                          hs_code: "",
-                          country_of_origin: "",
-                          typical_application: "",
-                          product_description: "",
-                          generic_name: "",
-                        }));
-                        return;
-                      }
                       if (!value) {
-                        setCreateNewProductMode(false);
                         setSelectedVendorProductId("");
-                        setFormData((prev) => ({
-                          ...prev,
-                          product_name: "",
-                          sector: "",
-                          industry: "",
-                          product_category: "",
-                          product_type: "",
-                          packing: "",
-                          hs_code: "",
-                          country_of_origin: "",
-                          typical_application: "",
-                          product_description: "",
-                          generic_name: "",
-                        }));
                         return;
                       }
                       const product = vendorProducts.find((p) => String(p.id) === value);
@@ -1055,8 +1105,8 @@ export function ChemicalsPage() {
                         : loadingVendorProducts
                           ? "Loading products…"
                           : vendorProducts.length > 0
-                            ? "Select product…"
-                            : "No products for this supplier yet"}
+                            ? "Choose existing product to pre-fill…"
+                            : "No existing products — enter name above"}
                     </option>
                     {vendorProducts.map((p) => (
                       <option key={p.id} value={String(p.id)}>
@@ -1065,28 +1115,12 @@ export function ChemicalsPage() {
                         {p.id != null ? ` (Ref #${p.id})` : ""}
                       </option>
                     ))}
-                    {formData.vendor?.trim() ? (
-                      <option value="__new__">+ Enter new product name…</option>
-                    ) : null}
                   </select>
-                  {createNewProductMode ? (
-                    <input
-                      type="text"
-                      value={formData.product_name || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, product_name: e.target.value })
-                      }
-                      placeholder="New product name"
-                      autoComplete="off"
-                      className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  ) : null}
                   {formData.vendor?.trim() && !loadingVendorProducts ? (
                     <p className="mt-1 text-xs text-slate-500">
                       {vendorProducts.length > 0
-                        ? `${vendorProducts.length} product(s) for this supplier. Pick one to pre-fill, or add a new name.`
-                        : "No existing products for this supplier — use “Enter new product name”."}
+                        ? `${vendorProducts.length} existing product(s) for this supplier.`
+                        : "No catalog rows yet for this supplier — your new name will create the first one."}
                     </p>
                   ) : null}
                 </div>
