@@ -41,8 +41,8 @@ export function RequestProductLineTabs({
   }, [activeLineId]);
 
   return (
-    <div className="sticky top-0 z-30 space-y-3 pb-1">
-      <div className="rounded-xl border border-white/10 bg-slate-950/95 backdrop-blur-md p-4 shadow-lg shadow-black/20">
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/10 bg-slate-900/80 p-4">
         <div className="flex items-center justify-between gap-3 mb-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Products on this request

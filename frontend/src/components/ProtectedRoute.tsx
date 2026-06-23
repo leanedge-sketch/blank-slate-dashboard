@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -10,15 +10,43 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading, employeeLoading, isEmployee, recheckEmployeeAccess } =
     useAuth();
   const [rechecking, setRechecking] = useState(false);
+  const autoRetriedRef = useRef(false);
+
+  // After login, a transient API failure can leave the user signed in but not
+  // marked as employee — retry once before showing the denial screen.
+  useEffect(() => {
+    if (
+      user &&
+      !isEmployee &&
+      !employeeLoading &&
+      !rechecking &&
+      !autoRetriedRef.current
+    ) {
+      autoRetriedRef.current = true;
+      setRechecking(true);
+      void recheckEmployeeAccess().finally(() => setRechecking(false));
+    }
+  }, [user, isEmployee, employeeLoading, rechecking, recheckEmployeeAccess]);
+
+  useEffect(() => {
+    if (!user) {
+      autoRetriedRef.current = false;
+    }
+  }, [user]);
+
+  const accessStillPending =
+    employeeLoading ||
+    rechecking ||
+    (user && !isEmployee && !autoRetriedRef.current);
 
   // Only block the app before we know the user is an employee (not on token refresh / re-check).
-  if (loading || (user && employeeLoading && !isEmployee)) {
+  if (loading || (user && accessStillPending && !isEmployee)) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center space-y-4">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-slate-400">
-            {employeeLoading ? "Verifying access…" : "Loading…"}
+            {accessStillPending ? "Verifying access…" : "Loading…"}
           </p>
         </div>
       </div>
@@ -41,7 +69,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           </p>
           <p className="text-slate-500 text-xs">
             Ask an administrator to add you to the employees table in Supabase, then
-            try again.
+            try again. If you were just added, use retry below.
           </p>
           <div className="flex flex-col gap-2 pt-2">
             <button

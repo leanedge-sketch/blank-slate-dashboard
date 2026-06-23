@@ -18,9 +18,17 @@ const EMPLOYEE_CHECK_SKIP_EVENTS = new Set<AuthChangeEvent>([
   "TOKEN_REFRESHED",
 ]);
 
-const EMPLOYEE_CHECK_TIMEOUT_MS = 12_000;
+const EMPLOYEE_CHECK_TIMEOUT_MS = 8_000;
+const EMPLOYEE_CHECK_RETRY_ATTEMPTS = 3;
+const EMPLOYEE_CHECK_RETRY_DELAY_MS = 500;
 const EMPLOYEE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const EMPLOYEE_CACHE_KEY = "leanchem_employee_verification";
+
+type EmployeeCheckOutcome =
+  | { kind: "employee"; data: EmployeeData }
+  | { kind: "not_employee" }
+  | { kind: "failed" }
+  | { kind: "stale" };
 
 interface CachedEmployeeVerification {
   email: string;
@@ -101,6 +109,25 @@ interface EmployeeData {
   name?: string;
 }
 
+type EmployeeLookupResult =
+  | { status: "found"; employee: EmployeeData }
+  | { status: "not_found" }
+  | { status: "error" }
+  | { status: "stale" };
+
+function outcomeToLookup(outcome: EmployeeCheckOutcome): EmployeeLookupResult {
+  if (outcome.kind === "employee") {
+    return { status: "found", employee: outcome.data };
+  }
+  if (outcome.kind === "not_employee") {
+    return { status: "not_found" };
+  }
+  if (outcome.kind === "stale") {
+    return { status: "stale" };
+  }
+  return { status: "error" };
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -153,12 +180,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearEmployeeCache();
   };
 
-  // Check if user email exists in employees table and get role
-  // Uses backend API instead of direct Supabase query for better reliability
-  const checkEmployeeStatus = async (
+  const checkEmployeeStatusOnce = async (
     email: string,
     generation: number,
-  ): Promise<EmployeeData | null> => {
+  ): Promise<EmployeeCheckOutcome> => {
     const normalizedEmail = email.toLowerCase().trim();
 
     try {
@@ -172,27 +197,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }),
       ]);
       if (generation !== employeeCheckGeneration.current) {
-        return null;
+        return { kind: "stale" };
       }
 
       if (result.is_employee) {
         const role = (result.role?.trim().toLowerCase() ||
           "sales") as EmployeeRole;
         return {
-          email: result.email,
-          role,
-          name: result.name || undefined,
+          kind: "employee",
+          data: {
+            email: result.email,
+            role,
+            name: result.name || undefined,
+          },
         };
       }
 
-      return null;
+      return { kind: "not_employee" };
     } catch (error) {
       if (isRequestAborted(error) || generation !== employeeCheckGeneration.current) {
-        return null;
+        return { kind: "stale" };
       }
       console.error("Employee status check failed:", error);
-      return null;
+      return { kind: "failed" };
     }
+  };
+
+  // Retries transient API/network failures — only deny on explicit not_employee.
+  const checkEmployeeStatus = async (
+    email: string,
+    generation: number,
+  ): Promise<EmployeeCheckOutcome> => {
+    for (let attempt = 0; attempt < EMPLOYEE_CHECK_RETRY_ATTEMPTS; attempt++) {
+      const outcome = await checkEmployeeStatusOnce(email, generation);
+      if (outcome.kind === "stale") return outcome;
+      if (outcome.kind === "employee" || outcome.kind === "not_employee") {
+        return outcome;
+      }
+      if (attempt < EMPLOYEE_CHECK_RETRY_ATTEMPTS - 1) {
+        await new Promise((resolve) => {
+          window.setTimeout(
+            resolve,
+            EMPLOYEE_CHECK_RETRY_DELAY_MS * (attempt + 1),
+          );
+        });
+      }
+    }
+    return { kind: "failed" };
+  };
+
+  const lookupEmployee = async (
+    email: string,
+    generation: number,
+  ): Promise<EmployeeLookupResult> => {
+    return outcomeToLookup(await checkEmployeeStatus(email, generation));
   };
 
   const hydrateEmployeeFromCache = (email: string): boolean => {
@@ -215,23 +273,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const normalized = email.toLowerCase().trim();
-    const isDefinitiveCheck = EMPLOYEE_CHECK_EVENTS.has(event);
 
     if (
-      !isDefinitiveCheck &&
       lastEmployeeEmail.current === normalized &&
       verifiedEmployeeRef.current
     ) {
       return;
     }
 
-    const employeeInfo = await checkEmployeeStatus(normalized, generation);
+    const outcome = await checkEmployeeStatus(normalized, generation);
     if (generation !== employeeCheckGeneration.current) {
       return;
     }
 
-    if (employeeInfo) {
-      applyVerifiedEmployee(employeeInfo);
+    if (outcome.kind === "employee") {
+      applyVerifiedEmployee(outcome.data);
+      return;
+    }
+
+    if (outcome.kind === "stale") {
       return;
     }
 
@@ -247,11 +307,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (isDefinitiveCheck) {
+    if (
+      outcome.kind === "failed" &&
+      lastEmployeeEmail.current === normalized &&
+      verifiedEmployeeRef.current
+    ) {
       console.warn(
-        "Employee check failed — user may not be registered or API error",
+        "Employee re-check failed; keeping prior verification for",
+        normalized,
       );
+      return;
+    }
+
+    if (outcome.kind === "not_employee") {
       clearVerifiedEmployee();
+      return;
+    }
+
+    if (outcome.kind === "failed") {
+      console.warn(
+        "Employee check failed after retries — network or API may be unavailable",
+      );
     }
   };
 
@@ -285,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const alreadyVerified =
         lastEmployeeEmail.current === normalized && verifiedEmployeeRef.current;
 
-      if (!EMPLOYEE_CHECK_EVENTS.has(event) && alreadyVerified) {
+      if (alreadyVerified) {
         return;
       }
 
@@ -335,7 +411,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -344,32 +420,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error };
       }
 
-      // Check if user is an employee
-      if (data.user?.email) {
-        setEmployeeLoading(true);
-        const generation = ++employeeCheckGeneration.current;
-        try {
-          const employeeInfo = await checkEmployeeStatus(
-            data.user.email,
-            generation,
-          );
-          if (!employeeInfo) {
-            await supabase.auth.signOut();
-            clearVerifiedEmployee();
-            return {
-              error: new Error(
-                "Access denied. Your email is not registered as an employee."
-              ),
-            };
-          }
-          applyVerifiedEmployee(employeeInfo);
-        } finally {
-          if (generation === employeeCheckGeneration.current) {
-            setEmployeeLoading(false);
-          }
-        }
-      }
-
+      // Employee verification runs once via onAuthStateChange (SIGNED_IN).
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -388,11 +439,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // First check if email is an employee
       const generation = ++employeeCheckGeneration.current;
-      const employeeInfo = await checkEmployeeStatus(email, generation);
-      if (!employeeInfo) {
+      const lookup = await lookupEmployee(email, generation);
+      if (lookup.status === "not_found" || lookup.status === "stale") {
         return {
           error: new Error(
             "Access denied. Your email is not registered as an employee."
+          ),
+        };
+      }
+      if (lookup.status === "error") {
+        return {
+          error: new Error(
+            "Could not verify employee status. Check your connection and try again."
           ),
         };
       }
@@ -428,11 +486,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // First check if email is an employee
       const generation = ++employeeCheckGeneration.current;
-      const employeeInfo = await checkEmployeeStatus(email, generation);
-      if (!employeeInfo) {
+      const lookup = await lookupEmployee(email, generation);
+      if (lookup.status === "not_found" || lookup.status === "stale") {
         return {
           error: new Error(
             "Access denied. Your email is not registered as an employee."
+          ),
+        };
+      }
+      if (lookup.status === "error") {
+        return {
+          error: new Error(
+            "Could not verify employee status. Check your connection and try again."
           ),
         };
       }
@@ -497,10 +562,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const generation = ++employeeCheckGeneration.current;
     setEmployeeLoading(true);
     try {
-      const employeeInfo = await checkEmployeeStatus(normalized, generation);
+      const lookup = await lookupEmployee(normalized, generation);
       if (generation !== employeeCheckGeneration.current) return;
-      if (employeeInfo) {
-        applyVerifiedEmployee(employeeInfo);
+      if (lookup.status === "found") {
+        applyVerifiedEmployee(lookup.employee);
+        return;
+      }
+      if (lookup.status === "not_found") {
+        clearVerifiedEmployee();
         return;
       }
       const cached = readEmployeeCache(normalized);
@@ -508,7 +577,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         applyVerifiedEmployee(employeeDataFromCache(cached));
         return;
       }
-      clearVerifiedEmployee();
+      if (
+        lastEmployeeEmail.current === normalized &&
+        verifiedEmployeeRef.current
+      ) {
+        return;
+      }
     } finally {
       if (generation === employeeCheckGeneration.current) {
         setEmployeeLoading(false);
