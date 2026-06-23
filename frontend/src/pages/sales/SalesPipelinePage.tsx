@@ -240,7 +240,7 @@ export function SalesPipelinePage() {
   }
 
   function suggestDealLink(productId: string | null): ProductDealLink {
-    return suggestProductDealLink(customerPipelines, productId);
+    return suggestProductDealLink(customerPipelines, productId, chemicalFullData);
   }
 
   function applyGlobalExistingPipeline(pipelineId: string | null) {
@@ -274,7 +274,7 @@ export function SalesPipelinePage() {
     const fromLink = productDealLinks[key]?.existingPipelineId;
     if (fromLink) return fromLink;
     if (globalExistingPipelineId) return globalExistingPipelineId;
-    return suggestProductDealLink(customerPipelines, productId).existingPipelineId;
+    return suggestProductDealLink(customerPipelines, productId, chemicalFullData).existingPipelineId;
   }
 
   function applyGlobalDealMode(mode: DealLinkMode) {
@@ -293,14 +293,14 @@ export function SalesPipelinePage() {
         if (mode === "new") {
           next[key] = { mode: "new", existingPipelineId: null };
         } else {
-          next[key] = suggestProductDealLink(customerPipelines, productId);
+          next[key] = suggestProductDealLink(customerPipelines, productId, chemicalFullData);
         }
       }
       return next;
     });
     if (mode === "existing" && customerPipelines.length > 0) {
       const productId = selectedProductIds[0] ?? null;
-      const match = findPipelineForProduct(customerPipelines, productId);
+      const match = findPipelineForProduct(customerPipelines, productId, chemicalFullData);
       applyGlobalExistingPipeline(match?.id ?? customerPipelines[0]?.id ?? null);
     } else if (mode === "new") {
       setFormData((prev) => ({ ...prev, stage: "Lead ID" }));
@@ -409,10 +409,10 @@ export function SalesPipelinePage() {
     setProductDealLinks((prev) => {
       const next = { ...prev };
       for (const id of selectedProductIds) {
-        if (!next[id]) next[id] = suggestProductDealLink(customerPipelines, id);
+        if (!next[id]) next[id] = suggestProductDealLink(customerPipelines, id, chemicalFullData);
       }
       if (selectedProductIds.length === 0 && !next[DEAL_LINK_KEY_NONE]) {
-        next[DEAL_LINK_KEY_NONE] = suggestProductDealLink(customerPipelines, null);
+        next[DEAL_LINK_KEY_NONE] = suggestProductDealLink(customerPipelines, null, chemicalFullData);
       }
       return next;
     });
@@ -423,7 +423,7 @@ export function SalesPipelinePage() {
     if (hasMatch) {
       setGlobalDealMode("existing");
       const productId = selectedProductIds[0] ?? null;
-      const match = findPipelineForProduct(customerPipelines, productId);
+      const match = findPipelineForProduct(customerPipelines, productId, chemicalFullData);
       setGlobalExistingPipelineId(match?.id ?? customerPipelines[0]?.id ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -567,7 +567,7 @@ export function SalesPipelinePage() {
         customer_id: selectedCustomer || undefined,
         chemical_type_id: selectedChemicalType || undefined,
         stage: selectedStage || undefined,
-        latest_per_deal: false,
+        latest_per_deal: true,
       });
 
       const sortedPipelines = [...res.pipelines].sort(

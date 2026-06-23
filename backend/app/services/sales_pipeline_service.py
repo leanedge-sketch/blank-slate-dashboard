@@ -189,8 +189,21 @@ def normalize_pipeline_row_from_db(row: dict) -> dict:
     return row
 
 
+def _product_identity_key(pipeline: SalesPipeline) -> str:
+    """Stable product key for grouping deals (catalog id, TDS, or metadata name)."""
+    product_id = pipeline.chemical_type_id or pipeline.tds_id
+    if product_id:
+        return str(product_id).strip().lower()
+    meta = pipeline.metadata if isinstance(pipeline.metadata, dict) else {}
+    for field in ("product_name", "generic_name", "product"):
+        raw = meta.get(field)
+        if raw and str(raw).strip():
+            return f"name:{str(raw).strip().lower()}"
+    return "none"
+
+
 def _pipeline_group_key(pipeline: SalesPipeline) -> str:
-    product_id = pipeline.chemical_type_id or pipeline.tds_id or "none"
+    product_id = _product_identity_key(pipeline)
     return f"{pipeline.customer_id}-{product_id}"
 
 
@@ -280,15 +293,16 @@ def list_sales_pipelines(
     supabase: Client = get_supabase_client()
     query = supabase.table("sales_pipeline").select("*")
     
-    # Apply filters
+    # Apply filters (stage is applied after dedup when latest_per_deal=True)
+    stage_filter = stage if not latest_per_deal else None
     if customer_id:
         query = query.eq("customer_id", customer_id)
     if tds_id:
         query = query.eq("tds_id", tds_id)
     if chemical_type_id:
         query = query.eq("chemical_type_id", _resolve_chemical_type_id(chemical_type_id))
-    if stage:
-        query = query.eq("stage", stage)
+    if stage_filter:
+        query = query.eq("stage", stage_filter)
 
     fetch_limit = 1000 if latest_per_deal else limit
     fetch_offset = 0 if latest_per_deal else offset
@@ -312,6 +326,8 @@ def list_sales_pipelines(
     pipelines = [SalesPipeline(**row) for row in normalized_rows]
     if latest_per_deal:
         pipelines = deduplicate_sales_pipelines(pipelines)
+        if stage:
+            pipelines = [p for p in pipelines if p.stage == stage]
         return pipelines[offset : offset + limit]
     return pipelines
 
@@ -559,21 +575,49 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
 
     customer_id = payload.get("customer_id")
     chemical_type_id = payload.get("chemical_type_id")
-    if customer_id and chemical_type_id:
+    meta = payload.get("metadata") or {}
+    meta_product_name = ""
+    if isinstance(meta, dict):
+        for field in ("product_name", "generic_name", "product"):
+            raw = meta.get(field)
+            if raw and str(raw).strip():
+                meta_product_name = str(raw).strip().lower()
+                break
+
+    if customer_id and (chemical_type_id or meta_product_name):
         existing_deals = list_sales_pipelines(
-            limit=5,
+            limit=200,
             offset=0,
             customer_id=str(customer_id),
-            chemical_type_id=str(chemical_type_id),
             latest_per_deal=True,
         )
-        if existing_deals:
-            deal = existing_deals[0]
-            raise ValueError(
-                f"A pipeline already exists for this customer and product "
-                f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
-                f"that deal instead of creating a duplicate."
+        resolved_chem = (
+            str(_resolve_chemical_type_id(chemical_type_id))
+            if chemical_type_id
+            else None
+        )
+        for deal in existing_deals:
+            deal_chem = (
+                str(_resolve_chemical_type_id(deal.chemical_type_id))
+                if deal.chemical_type_id
+                else None
             )
+            if resolved_chem and deal_chem and resolved_chem == deal_chem:
+                raise ValueError(
+                    f"A pipeline already exists for this customer and product "
+                    f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
+                    f"that deal instead of creating a duplicate."
+                )
+            if meta_product_name:
+                deal_meta = deal.metadata if isinstance(deal.metadata, dict) else {}
+                for field in ("product_name", "generic_name", "product"):
+                    raw = deal_meta.get(field)
+                    if raw and str(raw).strip().lower() == meta_product_name:
+                        raise ValueError(
+                            f"A pipeline already exists for this customer and product "
+                            f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
+                            f"that deal instead of creating a duplicate."
+                        )
 
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)

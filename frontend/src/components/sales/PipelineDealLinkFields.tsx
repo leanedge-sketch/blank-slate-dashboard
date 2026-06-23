@@ -26,9 +26,27 @@ export function emptyProductDealLink(): ProductDealLink {
 export function findPipelineForProduct(
   pipelines: SalesPipeline[],
   productId: string | null,
+  chemicals: ChemicalFullData[] = [],
 ): SalesPipeline | undefined {
   if (productId) {
-    return pipelines.find((p) => p.chemical_type_id === productId);
+    const direct = pipelines.find((p) => p.chemical_type_id === productId);
+    if (direct) return direct;
+
+    const catalogProduct = chemicals.find((c) => c.uuid_id === productId);
+    const productName = catalogProduct?.product_name?.trim().toLowerCase();
+    if (productName) {
+      return pipelines.find((p) => {
+        const meta = (p.metadata || {}) as Record<string, unknown>;
+        for (const field of ["product_name", "generic_name", "product"] as const) {
+          const raw = meta[field];
+          if (typeof raw === "string" && raw.trim().toLowerCase() === productName) {
+            return true;
+          }
+        }
+        return false;
+      });
+    }
+    return undefined;
   }
   return pipelines.find((p) => !p.chemical_type_id && !p.tds_id);
 }
@@ -36,8 +54,9 @@ export function findPipelineForProduct(
 export function suggestProductDealLink(
   pipelines: SalesPipeline[],
   productId: string | null,
+  chemicals: ChemicalFullData[] = [],
 ): ProductDealLink {
-  const match = findPipelineForProduct(pipelines, productId);
+  const match = findPipelineForProduct(pipelines, productId, chemicals);
   if (match) {
     return { mode: "existing", existingPipelineId: match.id };
   }
@@ -134,8 +153,13 @@ export function PipelineDealLinkFields({
   const [stageFilter, setStageFilter] = useState<PipelineStage | "">("");
 
   const matchedPipeline = useMemo(
-    () => findPipelineForProduct(customerPipelines, preferProductId ?? productId ?? null),
-    [customerPipelines, preferProductId, productId],
+    () =>
+      findPipelineForProduct(
+        customerPipelines,
+        preferProductId ?? productId ?? null,
+        labelOptions.chemicalFullData,
+      ),
+    [customerPipelines, preferProductId, productId, labelOptions.chemicalFullData],
   );
 
   const filteredPipelines = useMemo(() => {
