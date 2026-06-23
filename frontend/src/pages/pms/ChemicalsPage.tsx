@@ -18,7 +18,6 @@ import {
   FlaskConical,
   Search,
   Plus,
-  X,
   Loader2,
   ChevronLeft,
   ChevronRight,
@@ -102,11 +101,6 @@ export function ChemicalsPage() {
   const [loadingSearchSuggestions, setLoadingSearchSuggestions] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
-  const [vendorProducts, setVendorProducts] = useState<ChemicalFullData[]>([]);
-  const [loadingVendorProducts, setLoadingVendorProducts] = useState(false);
-  const [selectedVendorProductId, setSelectedVendorProductId] = useState("");
-  const [showNewVendorOnCreate, setShowNewVendorOnCreate] = useState(false);
-  const [newVendorName, setNewVendorName] = useState("");
   const [filterSector, setFilterSector] = useState("");
   const [filterIndustry, setFilterIndustry] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
@@ -136,60 +130,38 @@ export function ChemicalsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const creatingRef = useRef(false);
 
-  type AddOptionType = "vendor" | "product_category";
+  const vendorNameSuggestions = useMemo(
+    () => vendors.map((v) => v.vendor).filter(Boolean),
+    [vendors],
+  );
 
-  const [addOptionType, setAddOptionType] = useState<AddOptionType | null>(null);
-  const [newOptionValue, setNewOptionValue] = useState("");
-
-  function openAddOption(type: AddOptionType) {
-    setAddOptionType(type);
-    setNewOptionValue("");
+  async function ensurePartnerForVendor(vendorName: string): Promise<string | null> {
+    const trimmed = vendorName.trim();
+    if (!trimmed) return null;
+    const matched = vendors.find(
+      (v) => v.vendor?.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (matched) return matched.id;
+    const newPartner = await createPartner({ partner: trimmed });
+    const label = newPartner.partner || trimmed;
+    setVendors((prev) => {
+      if (prev.some((v) => v.id === newPartner.id)) return prev;
+      return [...prev, { id: newPartner.id, vendor: label }].sort((a, b) =>
+        a.vendor.localeCompare(b.vendor),
+      );
+    });
+    return newPartner.id;
   }
 
-  function closeAddOption() {
-    setAddOptionType(null);
-    setNewOptionValue("");
-  }
-
-  async function saveNewOption() {
-    if (!addOptionType) return;
-    const value = newOptionValue.trim();
-    if (!value) return;
-
-    const normalize = (v: string) => v.trim().toLowerCase();
-
-    if (addOptionType === "product_category") {
-      setProductCategories((prev) => {
-        if (prev.some((s) => normalize(s) === normalize(value))) return prev;
-        return [...prev, value].sort((a, b) => a.localeCompare(b));
-      });
-      setFormData((prev) => ({ ...prev, product_category: value }));
-    } else if (addOptionType === "vendor") {
-      try {
-        const newPartner = await createPartner({ partner: value });
-        setVendors((prev) => {
-          if (prev.some((v) => v.id === newPartner.id)) return prev;
-          return [...prev, { id: newPartner.id, vendor: newPartner.partner || value }].sort(
-            (a, b) => a.vendor.localeCompare(b.vendor)
-          );
-        });
-        setFormData((prev) => ({
-          ...prev,
-          vendor: newPartner.partner || value,
-          partner_id: newPartner.id,
-        }));
-        void loadVendorProducts(newPartner.partner || value);
-      } catch (err: unknown) {
-        const message =
-          (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-          (err as Error)?.message ||
-          "Failed to create partner";
-        alert(String(message));
-        return;
-      }
-    }
-
-    closeAddOption();
+  function handleVendorInput(vendor: string) {
+    const matched = vendors.find(
+      (v) => v.vendor?.trim().toLowerCase() === vendor.trim().toLowerCase(),
+    );
+    setFormData((prev) => ({
+      ...prev,
+      vendor,
+      partner_id: matched?.id ?? null,
+    }));
   }
 
   async function loadOptions() {
@@ -281,113 +253,6 @@ export function ChemicalsPage() {
       loadOptions();
     }
   }, [showCreateForm]);
-
-  const loadVendorProducts = useCallback(async (vendor: string) => {
-    const trimmed = vendor.trim();
-    if (!trimmed) {
-      setVendorProducts([]);
-      return;
-    }
-    try {
-      setLoadingVendorProducts(true);
-      const res = await fetchChemicalFullData({ vendor: trimmed, limit: 500 });
-      setVendorProducts(
-        sortChemicalsBySupplier(dedupeChemicalsById(res.chemicals)),
-      );
-    } catch {
-      setVendorProducts([]);
-    } finally {
-      setLoadingVendorProducts(false);
-    }
-  }, []);
-
-  function resetCreateProductSelection() {
-    setSelectedVendorProductId("");
-    setVendorProducts([]);
-    setShowNewVendorOnCreate(false);
-    setNewVendorName("");
-  }
-
-  function handleVendorChange(vendor: string) {
-    const matched = vendors.find(
-      (v) => v.vendor?.toLowerCase() === vendor.trim().toLowerCase(),
-    );
-    setFormData((prev) => ({
-      ...prev,
-      vendor,
-      partner_id: matched?.id ?? null,
-      product_name: "",
-      generic_name: "",
-      sector: "",
-      industry: "",
-      product_category: "",
-      product_type: "",
-      packing: "",
-      hs_code: "",
-      country_of_origin: "",
-      typical_application: "",
-      product_description: "",
-    }));
-    setSelectedVendorProductId("");
-    void loadVendorProducts(vendor);
-  }
-
-  async function applyNewVendorOnCreate() {
-    const value = newVendorName.trim();
-    if (!value) {
-      alert("Enter a supplier / vendor name");
-      return;
-    }
-    try {
-      const newPartner = await createPartner({ partner: value });
-      setVendors((prev) => {
-        if (prev.some((v) => v.id === newPartner.id)) return prev;
-        return [...prev, { id: newPartner.id, vendor: newPartner.partner || value }].sort(
-          (a, b) => a.vendor.localeCompare(b.vendor),
-        );
-      });
-      const vendorLabel = newPartner.partner || value;
-      setFormData((prev) => ({
-        ...prev,
-        vendor: vendorLabel,
-        partner_id: newPartner.id,
-      }));
-      setShowNewVendorOnCreate(false);
-      setNewVendorName("");
-      setSelectedVendorProductId("");
-      void loadVendorProducts(vendorLabel);
-    } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        "Failed to create vendor";
-      alert(String(message));
-    }
-  }
-
-  function applyVendorProductToCreateForm(product: ChemicalFullData) {
-    const matchedVendor = vendors.find(
-      (v) =>
-        v.vendor?.trim().toLowerCase() === (product.vendor || "").trim().toLowerCase(),
-    );
-    setFormData((prev) => ({
-      ...prev,
-      vendor: product.vendor || prev.vendor,
-      partner_id: matchedVendor?.id ?? prev.partner_id,
-      sector: product.sector || "",
-      industry: resolveChemicalIndustry(product) || "",
-      product_category: product.product_category || "",
-      product_name: product.product_name || "",
-      generic_name: product.generic_name || "",
-      product_type: product.product_type || "",
-      packing: product.packing || "",
-      hs_code: product.hs_code || "",
-      country_of_origin: product.country_of_origin || "",
-      typical_application: product.typical_application || "",
-      product_description: product.product_description || "",
-    }));
-    setSelectedVendorProductId(product.id != null ? String(product.id) : "");
-  }
 
   const loadSearchSuggestions = useCallback(async (term: string) => {
     const q = term.trim();
@@ -516,12 +381,15 @@ export function ChemicalsPage() {
     creatingRef.current = true;
     try {
       setCreating(true);
-      const createData = formDataToCreatePayload(formData);
+      const partnerId = await ensurePartnerForVendor(formData.vendor || "");
+      const createData = formDataToCreatePayload({
+        ...formData,
+        partner_id: partnerId,
+      });
       const created = await createChemicalFullData(createData);
       await refreshCatalog();
       setShowCreateForm(false);
       setFormData({ ...EMPTY_CHEMICAL_FORM });
-      resetCreateProductSelection();
       await loadChemicals({ offset: 0, search: created.product_name || created.generic_name || "" });
       await selectChemical(created);
       if (created.id != null) {
@@ -998,67 +866,29 @@ export function ChemicalsPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-xl font-bold text-slate-900 mb-1">Create New Chemical</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Pick a supplier, enter a <strong>product name</strong>, and fill industry (required).
-              A unique Ref # is assigned automatically when you save.
+              Enter new product details below. Vendor names are suggested as you type; every
+              save creates a new catalog row with an automatic Ref #.
             </p>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Supplier / Vendor {vendors.length > 0 && `(${vendors.length})`}
-                    <span className="text-rose-500"> *</span>
+                    Supplier / Vendor <span className="text-rose-500">*</span>
                   </label>
-                  {!showNewVendorOnCreate ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={formData.vendor || ""}
-                        onChange={(e) => handleVendorChange(e.target.value)}
-                        required
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select supplier…</option>
-                        {vendors.map((v) => (
-                          <option key={v.id} value={v.vendor}>
-                            {v.vendor}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setShowNewVendorOnCreate(true)}
-                        className="shrink-0 px-3 py-2 rounded-lg border border-indigo-300 text-indigo-700 text-sm font-medium hover:bg-indigo-50"
-                      >
-                        + New
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={newVendorName}
-                        onChange={(e) => setNewVendorName(e.target.value)}
-                        placeholder="New supplier name"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void applyNewVendorOnCreate()}
-                        className="shrink-0 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowNewVendorOnCreate(false);
-                          setNewVendorName("");
-                        }}
-                        className="shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
+                  <input
+                    type="text"
+                    list="create-vendor-suggestions"
+                    value={formData.vendor || ""}
+                    onChange={(e) => handleVendorInput(e.target.value)}
+                    placeholder="Type supplier name"
+                    required
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <datalist id="create-vendor-suggestions">
+                    {vendorNameSuggestions.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1070,59 +900,11 @@ export function ChemicalsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, product_name: e.target.value })
                     }
-                    placeholder="Enter new product name"
+                    placeholder="New product name"
                     autoComplete="off"
                     required
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="mt-1 text-xs text-slate-500">
-                    Type a new product name here. Use the optional pre-fill below to copy
-                    fields from an existing supplier product.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Pre-fill from supplier catalog{" "}
-                    <span className="font-normal text-slate-500">(optional)</span>
-                  </label>
-                  <select
-                    value={selectedVendorProductId}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (!value) {
-                        setSelectedVendorProductId("");
-                        return;
-                      }
-                      const product = vendorProducts.find((p) => String(p.id) === value);
-                      if (product) applyVendorProductToCreateForm(product);
-                    }}
-                    disabled={!formData.vendor?.trim() || loadingVendorProducts}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    <option value="">
-                      {!formData.vendor?.trim()
-                        ? "Select supplier first…"
-                        : loadingVendorProducts
-                          ? "Loading products…"
-                          : vendorProducts.length > 0
-                            ? "Choose existing product to pre-fill…"
-                            : "No existing products — enter name above"}
-                    </option>
-                    {vendorProducts.map((p) => (
-                      <option key={p.id} value={String(p.id)}>
-                        {p.product_name || "Unnamed"}
-                        {p.packing ? ` · ${p.packing}` : ""}
-                        {p.id != null ? ` (Ref #${p.id})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {formData.vendor?.trim() && !loadingVendorProducts ? (
-                    <p className="mt-1 text-xs text-slate-500">
-                      {vendorProducts.length > 0
-                        ? `${vendorProducts.length} existing product(s) for this supplier.`
-                        : "No catalog rows yet for this supplier — your new name will create the first one."}
-                    </p>
-                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1168,38 +950,23 @@ export function ChemicalsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Product Category {productCategories.length > 0 && `(${productCategories.length})`}
+                    Product Category
                   </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.product_category || ""}
-                      onChange={(e) => {
-                        const newValue = e.target.value;
-                        console.log("Product Category changed to:", newValue);
-                        setFormData({ ...formData, product_category: newValue });
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Category...</option>
-                      {productCategories.length > 0 ? (
-                        productCategories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No categories available</option>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => openAddOption("product_category")}
-                      className="p-2 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
-                      title="Add new product category"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    list="create-category-suggestions"
+                    value={formData.product_category || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, product_category: e.target.value })
+                    }
+                    placeholder="Category"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <datalist id="create-category-suggestions">
+                    {productCategories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1297,7 +1064,6 @@ export function ChemicalsPage() {
                   onClick={() => {
                     setShowCreateForm(false);
                     setFormData({ ...EMPTY_CHEMICAL_FORM });
-                    resetCreateProductSelection();
                   }}
                   className="px-6 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
                 >
@@ -1581,68 +1347,6 @@ export function ChemicalsPage() {
           </>
         )}
       </main>
-
-      {/* Add Option Modal */}
-      {addOptionType && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
-            <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">
-                Add new{" "}
-                {addOptionType === "product_category" ? "product category" : "vendor"}
-              </h3>
-              <button
-                type="button"
-                onClick={closeAddOption}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Value</label>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newOptionValue}
-                  onChange={(e) => setNewOptionValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      saveNewOption();
-                    }
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      closeAddOption();
-                    }
-                  }}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Type new value..."
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={closeAddOption}
-                  className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={saveNewOption}
-                  disabled={!newOptionValue.trim()}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
