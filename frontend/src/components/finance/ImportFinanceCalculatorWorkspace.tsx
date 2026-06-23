@@ -18,7 +18,7 @@ import {
 } from "../../services/importFinance";
 import { catalogProductValue } from "../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
-import type { FinanceConstants } from "../../utils/importFinanceCalc";
+import { DEFAULT_TRADE_PARAMETERS } from "../../types/tradeParameters";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseExpectedCostCsv } from "../../utils/expectedCostCsv";
@@ -43,6 +43,13 @@ import {
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
+import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
+import {
+  loadPricingLocations,
+  mapCustomerToCRMPartner,
+} from "../pms/pricing-costing/pricingApi";
+import { fetchCustomers } from "../../services/api";
+import { syncTradeTransitLinesToPricing } from "../../services/tradeTransitPricingSync";
 
 export type TradeTransitWorkspaceSection = "trade" | "products" | "summary" | "all";
 
@@ -352,6 +359,37 @@ export function ImportFinanceCalculatorWorkspace({
       alert(
         `Saved ${linkedLines.length} pipeline line(s) for client "${clientLabel}".`,
       );
+
+      try {
+        const customersRes = await fetchCustomers({ limit: 500 });
+        const partners = (customersRes.customers ?? []).map(mapCustomerToCRMPartner);
+        const locations = await loadPricingLocations();
+        const syncResult = await syncTradeTransitLinesToPricing({
+          lines: linkedLines,
+          clientName: clientLabel,
+          parameters: parameters ?? {
+            ...DEFAULT_TRADE_PARAMETERS,
+            clientName: clientLabel,
+            requestRef: request.requestRef,
+            exchangeRate: activeLine?.inputs.capitalParallelRate ?? DEFAULT_TRADE_PARAMETERS.exchangeRate,
+          },
+          partners,
+          locations,
+          constants,
+        });
+        if (syncResult.synced > 0) {
+          alert(
+            `Updated ${syncResult.synced} pricing row(s) in PMS Pricing & Costing.`,
+          );
+        } else if (syncResult.skipped.length > 0) {
+          console.warn("Pricing sync skipped:", syncResult.skipped.join(" "));
+        }
+        if (syncResult.errors.length > 0) {
+          console.warn("Pricing sync errors:", syncResult.errors.join("; "));
+        }
+      } catch (syncErr) {
+        console.warn("Could not sync Trade & Transit to pricing:", syncErr);
+      }
     } catch {
       /* error banner */
     }
@@ -497,6 +535,29 @@ export function ImportFinanceCalculatorWorkspace({
           </button>
         </div>
       </div>
+      )}
+
+      {showTooling && activeLine && (
+        <TradeTransitPricingSelect
+          clientName={
+            parameters?.clientName.trim() ||
+            request.clientName.trim() ||
+            ""
+          }
+          chemicalTypeId={activeLine.chemicalTypeId}
+          parameters={
+            parameters ?? {
+              ...DEFAULT_TRADE_PARAMETERS,
+              clientName: request.clientName,
+              requestRef: request.requestRef,
+              exchangeRate: activeLine.inputs.capitalParallelRate,
+            }
+          }
+          disabled={loading || saving}
+          onApply={(patch) => {
+            updateActiveLine(patch);
+          }}
+        />
       )}
 
       {showCalculator && activeScenario && (

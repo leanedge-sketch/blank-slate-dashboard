@@ -60,6 +60,11 @@ import {
 } from "../../../services/api";
 
 import { notifyCatalogUpdated } from "../../../lib/catalogEvents";
+import { fetchRecentImportShipments } from "../../../services/importFinance";
+import {
+  buildTradeTransitSnapshotIndex,
+  type TradeTransitPricingSnapshot,
+} from "../../../utils/tradeTransitPricingBridge";
 
 
 
@@ -132,6 +137,10 @@ export function PricingCostingView() {
   const [setupRequired, setSetupRequired] = useState(false);
 
   const [demoNote, setDemoNote] = useState<string | null>(null);
+
+  const [tradeTransitSnapshots, setTradeTransitSnapshots] = useState<
+    Map<string, TradeTransitPricingSnapshot>
+  >(() => new Map());
 
 
 
@@ -227,7 +236,7 @@ export function PricingCostingView() {
 
     try {
 
-      const [partners, catalogRes, locs, records] = await Promise.all([
+      const [partners, catalogRes, locs, records, shipments] = await Promise.all([
 
         loadAllPartners(),
 
@@ -236,6 +245,8 @@ export function PricingCostingView() {
         loadPricingLocations(),
 
         loadPricingRecords(),
+
+        fetchRecentImportShipments(100).catch(() => []),
 
       ]);
 
@@ -254,6 +265,8 @@ export function PricingCostingView() {
       setLocations(locs);
 
       setPricingRecords(withDemo);
+
+      setTradeTransitSnapshots(buildTradeTransitSnapshotIndex(shipments));
 
       setSelectedPartnerId((prev) => {
 
@@ -599,6 +612,8 @@ export function PricingCostingView() {
             onUpdatePricing={handleUpdatePricing}
 
             onDeleteRecord={handleDeleteRecord}
+
+            tradeTransitSnapshots={tradeTransitSnapshots}
 
             readOnly={setupRequired}
 
