@@ -1,5 +1,6 @@
 import { PanelRightOpen } from "lucide-react";
 import { TradeTransitHubDecks } from "../../components/finance/trade-transit-hub/TradeTransitHubDecks";
+import { TradeTransitConnectedModules } from "../../components/finance/trade-transit-hub/TradeTransitConnectedModules";
 import { TradeTransitHubHero } from "../../components/finance/trade-transit-hub/TradeTransitHubHero";
 import { TRADE_TRANSIT_ROUTES } from "../../contexts/TradeTransitRequestContext";
 import { useImportFinanceDock } from "../../contexts/ImportFinanceDockContext";
@@ -42,6 +43,8 @@ export function ImportFinancePage() {
         />
 
         <TradeTransitHubDecks />
+
+        <TradeTransitConnectedModules />
       </div>
     </div>
   );

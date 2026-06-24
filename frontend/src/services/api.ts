@@ -1528,9 +1528,31 @@ export interface IntegratedLinkStats {
   deals_exceeding_addis_stock: number;
 }
 
+export interface TradeTransitReportSummary {
+  shipment_count: number;
+  linked_to_catalog_count: number;
+  linked_to_crm_count: number;
+  unique_clients_count: number;
+  total_quantity_kg: number;
+  avg_landed_cost_etb_per_kg?: number | null;
+  avg_gross_margin_pct?: number | null;
+  recent_shipments: Array<{
+    id: string;
+    client_name?: string | null;
+    customer_id?: string | null;
+    chemical_type_id?: string | null;
+    quantity_kg?: number | null;
+    landed_etb_per_kg?: number | null;
+    gross_margin_pct?: number | null;
+    status?: string | null;
+    created_at?: string | null;
+  }>;
+}
+
 export interface IntegratedReportSnapshot {
   stock: StockReportSummary;
   pms: PmsReportSummary;
+  trade_transit: TradeTransitReportSummary;
   links: IntegratedLinkStats;
   fulfillment_risks: PipelineFulfillmentRisk[];
   product_demand_top: Array<{ product_key: string; quote_count: number }>;

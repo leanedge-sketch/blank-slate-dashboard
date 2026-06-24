@@ -36,7 +36,10 @@ export async function syncTradeTransitLinesToPricing(options: {
     errors: [],
   };
 
-  const partner = resolveCrmPartnerByClientName(partners, clientName);
+  const partner =
+    (parameters.customerId
+      ? partners.find((p) => p.id === parameters.customerId)
+      : undefined) ?? resolveCrmPartnerByClientName(partners, clientName);
   if (!partner) {
     result.skipped.push(
       `No CRM buyer match for client "${clientName}" — pricing not updated.`,

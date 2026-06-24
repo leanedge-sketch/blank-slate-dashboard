@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowRight, Users } from "lucide-react";
+import { fetchCustomers, type Customer } from "../../../services/api";
 import {
   TRADE_CURRENCIES,
   TRADE_INCOTERMS,
@@ -50,6 +51,34 @@ export function TradeParametersForm({
   onLoadSample,
   onContinue,
 }: TradeParametersFormProps) {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchCustomers({ limit: 500 })
+      .then((res) => {
+        if (!cancelled) setCustomers(res.customers ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCustomers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleCustomerPick(customerId: string) {
+    if (!customerId) {
+      onChange({ customerId: "", clientName: parameters.clientName });
+      return;
+    }
+    const customer = customers.find((c) => c.customer_id === customerId);
+    onChange({
+      customerId,
+      clientName: customer?.customer_name?.trim() || parameters.clientName,
+    });
+  }
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#111827] p-5 sm:p-8 space-y-6 sm:space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -58,14 +87,38 @@ export function TradeParametersForm({
           description="Buyer identity and document reference for this transit request."
         >
           <div className="sm:col-span-2">
-            <label className={labelClass}>Client</label>
+            <label className={labelClass}>CRM customer</label>
+            <select
+              value={parameters.customerId}
+              onChange={(e) => handleCustomerPick(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— Type or pick below —</option>
+              {customers.map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.customer_name}
+                  {c.display_id ? ` (${c.display_id})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Client name</label>
             <input
               type="text"
+              list="trade-transit-client-suggestions"
               value={parameters.clientName}
-              onChange={(e) => onChange({ clientName: e.target.value })}
-              placeholder="Customer / buyer name"
+              onChange={(e) =>
+                onChange({ clientName: e.target.value, customerId: parameters.customerId })
+              }
+              placeholder="Buyer name (used on shipments & reports)"
               className={inputClass}
             />
+            <datalist id="trade-transit-client-suggestions">
+              {customers.map((c) => (
+                <option key={c.customer_id} value={c.customer_name || ""} />
+              ))}
+            </datalist>
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Request ref</label>

@@ -13,6 +13,7 @@ from app.models.integrated_report import (
     PipelineFulfillmentRisk,
     PmsReportSummary,
     StockReportSummary,
+    TradeTransitReportSummary,
 )
 from app.models.sales_pipeline import PIPELINE_STAGES
 from app.services.chemical_master_data import count_chemical_master_data
@@ -208,6 +209,78 @@ def get_pipeline_fulfillment_risks(limit: int = 15) -> tuple[List[PipelineFulfil
     return risks, links
 
 
+def get_trade_transit_report_summary(limit: int = 10) -> TradeTransitReportSummary:
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("import_finance_shipments")
+            .select(
+                "id, client_name, customer_id, chemical_type_id, quantity_kg, "
+                "final_landed_unit_cost_etb_per_kg, gross_margin_pct, status, created_at"
+            )
+            .order("created_at", desc=True)
+            .limit(500)
+            .execute()
+        )
+    except Exception:
+        return TradeTransitReportSummary()
+
+    rows = response.data or []
+    if not rows:
+        return TradeTransitReportSummary()
+
+    linked_catalog = sum(1 for r in rows if r.get("chemical_type_id"))
+    linked_crm = sum(1 for r in rows if r.get("customer_id"))
+    clients = {
+        str(r.get("customer_id") or r.get("client_name") or "").strip().lower()
+        for r in rows
+        if (r.get("customer_id") or r.get("client_name"))
+    }
+    total_kg = sum(float(r.get("quantity_kg") or 0) for r in rows)
+
+    landed_vals = [
+        float(r["final_landed_unit_cost_etb_per_kg"])
+        for r in rows
+        if r.get("final_landed_unit_cost_etb_per_kg") is not None
+    ]
+    margin_vals = [
+        float(r["gross_margin_pct"])
+        for r in rows
+        if r.get("gross_margin_pct") is not None
+    ]
+
+    recent = []
+    for r in rows[:limit]:
+        recent.append(
+            {
+                "id": str(r.get("id")),
+                "client_name": r.get("client_name"),
+                "customer_id": str(r.get("customer_id")) if r.get("customer_id") else None,
+                "chemical_type_id": r.get("chemical_type_id"),
+                "quantity_kg": r.get("quantity_kg"),
+                "landed_etb_per_kg": r.get("final_landed_unit_cost_etb_per_kg"),
+                "gross_margin_pct": r.get("gross_margin_pct"),
+                "status": r.get("status"),
+                "created_at": r.get("created_at"),
+            }
+        )
+
+    return TradeTransitReportSummary(
+        shipment_count=len(rows),
+        linked_to_catalog_count=linked_catalog,
+        linked_to_crm_count=linked_crm,
+        unique_clients_count=len(clients),
+        total_quantity_kg=total_kg,
+        avg_landed_cost_etb_per_kg=(
+            sum(landed_vals) / len(landed_vals) if landed_vals else None
+        ),
+        avg_gross_margin_pct=(
+            sum(margin_vals) / len(margin_vals) if margin_vals else None
+        ),
+        recent_shipments=recent,
+    )
+
+
 def get_integrated_report_snapshot(days_back: int = 90) -> IntegratedReportSnapshot:
     insights = generate_pipeline_insights(days_back=days_back)
     product_demand_top = sorted(
@@ -225,6 +298,7 @@ def get_integrated_report_snapshot(days_back: int = 90) -> IntegratedReportSnaps
     return IntegratedReportSnapshot(
         stock=get_stock_report_summary(),
         pms=get_pms_report_summary(),
+        trade_transit=get_trade_transit_report_summary(limit=10),
         links=links,
         fulfillment_risks=fulfillment_risks,
         product_demand_top=product_demand_top,

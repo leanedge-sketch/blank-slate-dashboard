@@ -48,9 +48,23 @@ class IntegratedLinkStats(BaseModel):
     deals_exceeding_addis_stock: int = 0
 
 
+class TradeTransitReportSummary(BaseModel):
+    shipment_count: int = 0
+    linked_to_catalog_count: int = 0
+    linked_to_crm_count: int = 0
+    unique_clients_count: int = 0
+    total_quantity_kg: float = 0.0
+    avg_landed_cost_etb_per_kg: Optional[float] = None
+    avg_gross_margin_pct: Optional[float] = None
+    recent_shipments: List[dict] = Field(default_factory=list)
+
+
 class IntegratedReportSnapshot(BaseModel):
     stock: StockReportSummary
     pms: PmsReportSummary
+    trade_transit: TradeTransitReportSummary = Field(
+        default_factory=TradeTransitReportSummary
+    )
     links: IntegratedLinkStats
     fulfillment_risks: List[PipelineFulfillmentRisk] = Field(default_factory=list)
     product_demand_top: List[dict] = Field(default_factory=list)

@@ -21,6 +21,8 @@ export type TradeCurrency = (typeof TRADE_CURRENCIES)[number];
  * Shared across Trade Parameters, Product Costing, and Transit Summary workspaces.
  */
 export interface TradeParameters {
+  /** CRM customers.customer_id when buyer is picked from CRM. */
+  customerId: string;
   clientName: string;
   requestRef: string;
   incoterm: TradeIncoterm;
@@ -36,6 +38,7 @@ export interface TradeParameters {
 }
 
 export const DEFAULT_TRADE_PARAMETERS: TradeParameters = {
+  customerId: "",
   clientName: "",
   requestRef: "",
   incoterm: "FOB",

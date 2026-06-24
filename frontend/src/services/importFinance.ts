@@ -53,6 +53,7 @@ export interface ImportShipmentRow {
   client_name?: string | null;
   request_ref?: string | null;
   chemical_type_id?: string | null;
+  customer_id?: string | null;
   status: string;
   created_at: string;
 }
@@ -94,6 +95,7 @@ export function buildShipmentPipelinePayload(
     clientName?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
+    customerId?: string | null;
   },
 ) {
   return {
@@ -128,6 +130,7 @@ export function buildShipmentPipelinePayload(
     client_name: clientContext?.clientName?.trim() || null,
     request_ref: clientContext?.requestRef?.trim() || null,
     chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
+    customer_id: clientContext?.customerId?.trim() || null,
     status: "draft" as const,
   };
 }
@@ -242,6 +245,7 @@ export async function saveImportShipmentDraft(
     clientName?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
+    customerId?: string | null;
   },
 ): Promise<ImportShipmentRow> {
   const payload = buildShipmentPipelinePayload(
@@ -268,6 +272,38 @@ export async function fetchRecentImportShipments(
   const { data, error } = await importFinanceDb()
     .from(TABLES.shipments)
     .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data ?? []) as ImportShipmentRow[];
+}
+
+export async function fetchImportShipmentsForCustomer(
+  customerId: string,
+  limit = 20,
+): Promise<ImportShipmentRow[]> {
+  const { data, error } = await importFinanceDb()
+    .from(TABLES.shipments)
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data ?? []) as ImportShipmentRow[];
+}
+
+export async function fetchImportShipmentsByClientName(
+  clientName: string,
+  limit = 20,
+): Promise<ImportShipmentRow[]> {
+  const trimmed = clientName.trim();
+  if (!trimmed) return [];
+  const { data, error } = await importFinanceDb()
+    .from(TABLES.shipments)
+    .select("*")
+    .ilike("client_name", trimmed)
     .order("created_at", { ascending: false })
     .limit(limit);
 

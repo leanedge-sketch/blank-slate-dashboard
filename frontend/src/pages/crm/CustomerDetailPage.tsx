@@ -29,6 +29,7 @@ import {
 } from "../../utils/interactions";
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package } from "lucide-react";
 import { formatPipelineQuantity } from "../../utils/pipelineProduct";
+import { CustomerTradeTransitPanel } from "../../components/crm/CustomerTradeTransitPanel";
 
 export function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
@@ -969,6 +970,15 @@ export function CustomerDetailPage() {
             )}
           </div>
         </section>
+
+        {customerId && customer?.customer_name ? (
+          <section className="mt-8">
+            <CustomerTradeTransitPanel
+              customerId={customerId}
+              customerName={customer.customer_name}
+            />
+          </section>
+        ) : null}
       </main>
     </div>
   );

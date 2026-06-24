@@ -27,6 +27,7 @@ import {
   FlaskConical,
   Package,
   Warehouse,
+  Ship,
 } from "lucide-react";
 
 const SALES_STAGES: Record<string, string> = {
@@ -228,6 +229,12 @@ export function CRMReportsPage() {
         ["Open pipeline deals", String(integrated.links.open_pipeline_deals)],
         ["Deals with catalog product", String(integrated.links.open_deals_with_catalog_product)],
         ["Deals exceeding Addis stock", String(integrated.links.deals_exceeding_addis_stock)],
+        [],
+        ["Trade & Transit"],
+        ["Shipments (recent window)", String(integrated.trade_transit?.shipment_count ?? 0)],
+        ["CRM-linked shipments", String(integrated.trade_transit?.linked_to_crm_count ?? 0)],
+        ["Catalog-linked shipments", String(integrated.trade_transit?.linked_to_catalog_count ?? 0)],
+        ["Total transit kg", String(integrated.trade_transit?.total_quantity_kg ?? 0)],
       );
       if (integrated.fulfillment_risks.length > 0) {
         rows.push([], ["Fulfillment risks"], ["Product", "Customer", "Stage", "Deal qty", "Addis kg"]);
@@ -263,7 +270,7 @@ export function CRMReportsPage() {
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
                 CRM coverage, sales pipeline forecast, PMS catalog &amp; pricing, stock availability,
-                and deal fulfillment risks — one connected view from Supabase.
+                trade transit landed costs, and deal fulfillment risks — one connected view.
               </p>
               {lastLoadedAt && (
                 <p className="text-xs text-slate-500">Last updated: {lastLoadedAt}</p>
@@ -489,7 +496,7 @@ export function CRMReportsPage() {
                     {integrated.links.open_deals_with_catalog_product} with PMS product ·{" "}
                     {integrated.links.deals_exceeding_addis_stock} exceeding Addis stock
                   </p>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
                       <div className="flex items-center gap-2 text-cyan-200 mb-2">
                         <FlaskConical size={18} />
@@ -536,8 +543,75 @@ export function CRMReportsPage() {
                         {integrated.stock.customer_linked_movements} customer-linked movements
                       </p>
                     </div>
+                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
+                      <div className="flex items-center gap-2 text-teal-200 mb-2">
+                        <Ship size={18} />
+                        <span className="text-xs font-semibold uppercase">Trade &amp; Transit</span>
+                      </div>
+                      <p className="text-2xl font-bold">
+                        {integrated.trade_transit?.shipment_count ?? 0}
+                      </p>
+                      <p className="text-xs text-slate-300 mt-1">Saved shipments</p>
+                      <p className="text-xs text-slate-400 mt-2">
+                        {formatKg(integrated.trade_transit?.total_quantity_kg ?? 0)} ·{" "}
+                        {integrated.trade_transit?.linked_to_catalog_count ?? 0} PMS-linked
+                      </p>
+                    </div>
                   </div>
                 </section>
+
+                {(integrated.trade_transit?.recent_shipments?.length ?? 0) > 0 && (
+                  <section className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <h3 className="text-lg font-semibold text-cyan-950 flex items-center gap-2">
+                        <Ship className="h-5 w-5" />
+                        Recent trade transit shipments
+                      </h3>
+                      <Link
+                        to="/finance/import"
+                        className="text-sm font-medium text-cyan-800 hover:text-cyan-950"
+                      >
+                        Open Trade &amp; Transit hub →
+                      </Link>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-cyan-100 bg-white">
+                      <table className="w-full text-sm">
+                        <thead className="bg-cyan-50 text-left text-xs uppercase text-cyan-900">
+                          <tr>
+                            <th className="px-4 py-3">Client</th>
+                            <th className="px-4 py-3 text-right">Qty (kg)</th>
+                            <th className="px-4 py-3 text-right">Landed ETB/kg</th>
+                            <th className="px-4 py-3 text-right">Margin %</th>
+                            <th className="px-4 py-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {integrated.trade_transit.recent_shipments.map((s) => (
+                            <tr key={s.id} className="border-t border-slate-100">
+                              <td className="px-4 py-3">{s.client_name || "—"}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">
+                                {s.quantity_kg != null
+                                  ? Number(s.quantity_kg).toLocaleString()
+                                  : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums">
+                                {s.landed_etb_per_kg != null
+                                  ? Number(s.landed_etb_per_kg).toFixed(2)
+                                  : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums">
+                                {s.gross_margin_pct != null
+                                  ? `${Number(s.gross_margin_pct).toFixed(1)}%`
+                                  : "—"}
+                              </td>
+                              <td className="px-4 py-3">{s.status || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
 
                 {integrated.fulfillment_risks.length > 0 && (
                   <section className="rounded-2xl border border-rose-200 bg-rose-50/50 p-6">

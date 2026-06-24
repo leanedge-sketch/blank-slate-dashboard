@@ -44,6 +44,7 @@ import {
 } from "./ImportFinanceCalculatorPanel";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
+import { TradeTransitStockPanel } from "./TradeTransitStockPanel";
 import {
   loadPricingLocations,
   mapCustomerToCRMPartner,
@@ -354,6 +355,10 @@ export function ImportFinanceCalculatorWorkspace({
           clientName: clientLabel,
           requestRef: request.requestRef,
           chemicalTypeId: line.chemicalTypeId,
+          customerId:
+            parameters?.customerId?.trim() ||
+            request.customerId?.trim() ||
+            null,
         });
       }
       alert(
@@ -538,26 +543,35 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {showTooling && activeLine && (
-        <TradeTransitPricingSelect
-          clientName={
-            parameters?.clientName.trim() ||
-            request.clientName.trim() ||
-            ""
-          }
-          chemicalTypeId={activeLine.chemicalTypeId}
-          parameters={
-            parameters ?? {
-              ...DEFAULT_TRADE_PARAMETERS,
-              clientName: request.clientName,
-              requestRef: request.requestRef,
-              exchangeRate: activeLine.inputs.capitalParallelRate,
+        <div className="space-y-4">
+          <TradeTransitPricingSelect
+            clientName={
+              parameters?.clientName.trim() ||
+              request.clientName.trim() ||
+              ""
             }
-          }
-          disabled={loading || saving}
-          onApply={(patch) => {
-            updateActiveLine(patch);
-          }}
-        />
+            chemicalTypeId={activeLine.chemicalTypeId}
+            parameters={
+              parameters ?? {
+                ...DEFAULT_TRADE_PARAMETERS,
+                customerId: request.customerId,
+                clientName: request.clientName,
+                requestRef: request.requestRef,
+                exchangeRate: activeLine.inputs.capitalParallelRate,
+              }
+            }
+            disabled={loading || saving}
+            onApply={(patch) => {
+              updateActiveLine(patch);
+            }}
+          />
+          <TradeTransitStockPanel
+            chemicalTypeId={activeLine.chemicalTypeId}
+            quantityKg={activeLine.inputs.quantityKg}
+            customerId={parameters?.customerId || request.customerId || null}
+            productName={activeLine.productName}
+          />
+        </div>
       )}
 
       {showCalculator && activeScenario && (

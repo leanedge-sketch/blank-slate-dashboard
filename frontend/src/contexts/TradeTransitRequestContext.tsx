@@ -69,6 +69,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
 
       const withMeta: TradeTransitRequest = {
         ...prev,
+        customerId: parameters.customerId,
         clientName: parameters.clientName,
         requestRef: parameters.requestRef,
         lines: prev.lines.map((line) => ({

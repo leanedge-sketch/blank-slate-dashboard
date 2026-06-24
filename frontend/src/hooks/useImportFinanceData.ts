@@ -66,6 +66,7 @@ export function useImportFinanceData(enabled = true) {
         clientName?: string;
         requestRef?: string;
         chemicalTypeId?: string | null;
+        customerId?: string | null;
       },
     ) => {
       setSaving(true);
