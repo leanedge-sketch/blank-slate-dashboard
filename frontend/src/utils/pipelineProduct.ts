@@ -52,6 +52,75 @@ export function getPipelineProductLabel(
   return "General / no product linked";
 }
 
+function pipelineSortTimestamp(pipeline: SalesPipeline): number {
+  const raw = pipeline.updated_at || pipeline.created_at;
+  return raw ? new Date(raw).getTime() : 0;
+}
+
+function chainRootId(pipeline: SalesPipeline): string {
+  return pipeline.parent_pipeline_id || pipeline.id;
+}
+
+function pickBetterPipelineCandidate(
+  existing: SalesPipeline,
+  candidate: SalesPipeline,
+): SalesPipeline {
+  if (candidate.is_current_version && !existing.is_current_version) return candidate;
+  if (!candidate.is_current_version && existing.is_current_version) return existing;
+  const vExisting = existing.version_number ?? 0;
+  const vCandidate = candidate.version_number ?? 0;
+  if (vCandidate !== vExisting) {
+    return vCandidate > vExisting ? candidate : existing;
+  }
+  return pipelineSortTimestamp(candidate) > pipelineSortTimestamp(existing)
+    ? candidate
+    : existing;
+}
+
+/** One card per customer+product — collapse version history and duplicate chains. */
+export function dedupePipelinesForDisplay(
+  pipelines: SalesPipeline[],
+  chemicals: ChemicalFullData[] = [],
+): SalesPipeline[] {
+  const chainHeads = new Map<string, SalesPipeline>();
+  for (const pipeline of pipelines) {
+    const root = chainRootId(pipeline);
+    const prev = chainHeads.get(root);
+    chainHeads.set(root, prev ? pickBetterPipelineCandidate(prev, pipeline) : pipeline);
+  }
+
+  const grouped = new Map<string, SalesPipeline>();
+  for (const pipeline of chainHeads.values()) {
+    const customer = (pipeline.customer_id || "").toLowerCase();
+    const chemId = pipeline.chemical_type_id?.trim().toLowerCase();
+    let productKey: string;
+    if (chemId) {
+      productKey = chemId;
+    } else {
+      const label = getPipelineProductLabel(pipeline, { chemicalFullData: chemicals })
+        .trim()
+        .toLowerCase();
+      if (label && label !== "general / no product linked") {
+        const byName = chemicals.find(
+          (c) => (c.product_name || "").trim().toLowerCase() === label,
+        );
+        productKey = byName?.uuid_id?.toLowerCase() ?? `n:${label}`;
+      } else if (pipeline.tds_id) {
+        productKey = `tds:${pipeline.tds_id.toLowerCase()}`;
+      } else {
+        productKey = "umbrella";
+      }
+    }
+    const key = `${customer}|${productKey}`;
+    const prev = grouped.get(key);
+    grouped.set(key, prev ? pickBetterPipelineCandidate(prev, pipeline) : pipeline);
+  }
+
+  return [...grouped.values()].sort(
+    (a, b) => pipelineSortTimestamp(b) - pipelineSortTimestamp(a),
+  );
+}
+
 export const PIPELINE_STAGE_COLORS: Record<string, string> = {
   "Lead ID": "bg-slate-100 text-slate-700 border-slate-300",
   Discovery: "bg-blue-100 text-blue-700 border-blue-300",

@@ -64,6 +64,7 @@ import {
 } from "../../components/sales/PipelineDealLinkFields";
 import {
   amountChangeReasonRequired,
+  dedupePipelinesForDisplay,
   formatPipelineAmountInput,
   formatPipelineQuantity,
   getNextPipelineStage,
@@ -570,14 +571,15 @@ export function SalesPipelinePage() {
         latest_per_deal: true,
       });
 
-      const sortedPipelines = [...res.pipelines].sort(
-        (a, b) => pipelineTimestamp(b) - pipelineTimestamp(a),
+      const sortedPipelines = dedupePipelinesForDisplay(
+        [...res.pipelines],
+        chemicalFullData,
       );
       const paginatedPipelines = sortedPipelines.slice(offset, offset + limit);
 
       setStageBoardPipelines(sortedPipelines);
       setPipelines(paginatedPipelines);
-      setTotal(res.total ?? sortedPipelines.length);
+      setTotal(sortedPipelines.length);
       setExpandedCustomers(
         new Set(
           sortedPipelines
@@ -595,7 +597,7 @@ export function SalesPipelinePage() {
 
   useEffect(() => {
     loadPipelines();
-  }, [offset, selectedCustomer, selectedChemicalType, selectedStage]);
+  }, [offset, selectedCustomer, selectedChemicalType, selectedStage, chemicalFullData.length]);
 
   async function handleSyncAllFromCrm() {
     if (

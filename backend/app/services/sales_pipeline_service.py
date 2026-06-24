@@ -189,22 +189,64 @@ def normalize_pipeline_row_from_db(row: dict) -> dict:
     return row
 
 
-def _product_identity_key(pipeline: SalesPipeline) -> str:
-    """Stable product key for grouping deals (catalog id, TDS, or metadata name)."""
-    product_id = pipeline.chemical_type_id or pipeline.tds_id
-    if product_id:
-        return str(product_id).strip().lower()
-    meta = pipeline.metadata if isinstance(pipeline.metadata, dict) else {}
+def _metadata_product_name(metadata: Any) -> Optional[str]:
+    if not isinstance(metadata, dict):
+        return None
     for field in ("product_name", "generic_name", "product"):
-        raw = meta.get(field)
+        raw = metadata.get(field)
         if raw and str(raw).strip():
-            return f"name:{str(raw).strip().lower()}"
-    return "none"
+            return str(raw).strip()
+    return None
+
+
+_name_to_catalog_uuid_cache: dict[str, Optional[str]] = {}
+
+
+def _lookup_catalog_uuid_by_product_name(name: str) -> Optional[str]:
+    """Resolve catalog product name to uuid_id (case-insensitive exact match)."""
+    normalized = name.strip().lower()
+    if not normalized:
+        return None
+    if normalized in _name_to_catalog_uuid_cache:
+        return _name_to_catalog_uuid_cache[normalized]
+    resolved: Optional[str] = None
+    try:
+        from app.services.chemical_master_data import list_chemical_master_data
+
+        rows = list_chemical_master_data(limit=50, search=name.strip())
+        for chem in rows:
+            pn = (chem.product_name or "").strip().lower()
+            if pn == normalized and chem.uuid_id:
+                resolved = str(chem.uuid_id)
+                break
+    except Exception:
+        resolved = None
+    _name_to_catalog_uuid_cache[normalized] = resolved
+    return resolved
+
+
+def _product_identity_key(pipeline: SalesPipeline) -> str:
+    """Stable product key for grouping deals (canonical catalog UUID, TDS, or name)."""
+    chem_uuid = _resolve_chemical_type_id(pipeline.chemical_type_id)
+    if chem_uuid:
+        return chem_uuid.lower()
+
+    meta_name = _metadata_product_name(pipeline.metadata)
+    if meta_name:
+        name_uuid = _lookup_catalog_uuid_by_product_name(meta_name)
+        if name_uuid:
+            return name_uuid.lower()
+        return f"n:{meta_name.lower()}"
+
+    if pipeline.tds_id:
+        return f"tds:{str(pipeline.tds_id).strip().lower()}"
+
+    return "__umbrella__"
 
 
 def _pipeline_group_key(pipeline: SalesPipeline) -> str:
-    product_id = _product_identity_key(pipeline)
-    return f"{pipeline.customer_id}-{product_id}"
+    customer = (str(pipeline.customer_id or "")).strip().lower()
+    return f"{customer}|{_product_identity_key(pipeline)}"
 
 
 def _pipeline_sort_timestamp(pipeline: SalesPipeline) -> float:
@@ -246,9 +288,21 @@ def _pick_better_pipeline(
 def deduplicate_sales_pipelines(
     pipelines: List[SalesPipeline],
 ) -> List[SalesPipeline]:
-    """One row per customer + product: the best current/latest pipeline version."""
-    grouped: dict[str, SalesPipeline] = {}
+    """
+    One row per customer + product for display.
+    First collapse each version chain to its current head, then merge duplicate chains
+    that refer to the same customer + product (e.g. catalog UUID vs metadata name only).
+    """
+    chain_heads: dict[str, SalesPipeline] = {}
     for pipeline in pipelines:
+        root = _chain_root_id(pipeline)
+        prev = chain_heads.get(root)
+        chain_heads[root] = (
+            _pick_better_pipeline(prev, pipeline) if prev else pipeline
+        )
+
+    grouped: dict[str, SalesPipeline] = {}
+    for pipeline in chain_heads.values():
         key = _pipeline_group_key(pipeline)
         prev = grouped.get(key)
         grouped[key] = (
@@ -304,22 +358,40 @@ def list_sales_pipelines(
     if stage_filter:
         query = query.eq("stage", stage_filter)
 
-    fetch_limit = 1000 if latest_per_deal else limit
-    fetch_offset = 0 if latest_per_deal else offset
+    fetch_limit = limit
+    fetch_offset = offset
+    raw_rows: list = []
 
-    response = (
-        query.order("created_at", desc=True)
-        .limit(fetch_limit)
-        .offset(fetch_offset)
-        .execute()
-    )
-    
-    if response.data is None:
+    if latest_per_deal:
+        batch_size = 1000
+        batch_offset = 0
+        while True:
+            response = (
+                query.order("created_at", desc=True)
+                .limit(batch_size)
+                .offset(batch_offset)
+                .execute()
+            )
+            batch = response.data or []
+            raw_rows.extend(batch)
+            if len(batch) < batch_size:
+                break
+            batch_offset += batch_size
+    else:
+        response = (
+            query.order("created_at", desc=True)
+            .limit(fetch_limit)
+            .offset(fetch_offset)
+            .execute()
+        )
+        raw_rows = response.data or []
+
+    if not raw_rows:
         return []
     
     # Normalize metadata and ai_interactions if they're strings
     normalized_rows = []
-    for row in response.data:
+    for row in raw_rows:
         normalized_row = normalize_pipeline_row_from_db(row)
         normalized_rows.append(normalized_row)
     
@@ -366,7 +438,7 @@ def count_sales_pipelines(
 
     if latest_per_deal:
         rows = list_sales_pipelines(
-            limit=1000,
+            limit=100000,
             offset=0,
             customer_id=customer_id,
             tds_id=tds_id,
@@ -574,55 +646,42 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     validate_pipeline_business_model(payload.get("business_model"))
 
     customer_id = payload.get("customer_id")
-    chemical_type_id = payload.get("chemical_type_id")
     meta = payload.get("metadata") or {}
-    meta_product_name = ""
-    if isinstance(meta, dict):
-        for field in ("product_name", "generic_name", "product"):
-            raw = meta.get(field)
-            if raw and str(raw).strip():
-                meta_product_name = str(raw).strip().lower()
-                break
 
-    if customer_id and (chemical_type_id or meta_product_name):
+    if customer_id:
         existing_deals = list_sales_pipelines(
             limit=200,
             offset=0,
             customer_id=str(customer_id),
             latest_per_deal=True,
         )
-        resolved_chem = (
-            str(_resolve_chemical_type_id(chemical_type_id))
-            if chemical_type_id
-            else None
+        from uuid import uuid4
+
+        new_stub = SalesPipeline(
+            id=uuid4(),
+            customer_id=str(customer_id),
+            chemical_type_id=_resolve_chemical_type_id(payload.get("chemical_type_id")),
+            tds_id=payload.get("tds_id"),
+            metadata=meta if isinstance(meta, dict) else {},
+            stage=payload.get("stage") or "Lead ID",
         )
+        new_key = _pipeline_group_key(new_stub)
         for deal in existing_deals:
-            deal_chem = (
-                str(_resolve_chemical_type_id(deal.chemical_type_id))
-                if deal.chemical_type_id
-                else None
-            )
-            if resolved_chem and deal_chem and resolved_chem == deal_chem:
+            if _pipeline_group_key(deal) == new_key:
                 raise ValueError(
                     f"A pipeline already exists for this customer and product "
                     f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
                     f"that deal instead of creating a duplicate."
                 )
-            if meta_product_name:
-                deal_meta = deal.metadata if isinstance(deal.metadata, dict) else {}
-                for field in ("product_name", "generic_name", "product"):
-                    raw = deal_meta.get(field)
-                    if raw and str(raw).strip().lower() == meta_product_name:
-                        raise ValueError(
-                            f"A pipeline already exists for this customer and product "
-                            f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
-                            f"that deal instead of creating a duplicate."
-                        )
 
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)
 
     db_payload = normalize_pipeline_payload_to_db(payload)
+    if db_payload.get("is_current_version") is None:
+        db_payload["is_current_version"] = True
+    if not db_payload.get("version_number"):
+        db_payload["version_number"] = 1
     
     # Log the payload for debugging
     import logging
