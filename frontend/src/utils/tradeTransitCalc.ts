@@ -168,6 +168,21 @@ export const DEFAULT_TRADE_TRANSIT_INPUTS: TradeTransitInputs = {
   profitTaxPctOnPreLanded: DEFAULT_PROFIT_TAX_PCT_ON_PRE_LANDED,
 };
 
+/** Calculator defaults for a new pipeline line; quantity and supplier price left empty. */
+export function newPipelineLineInputs(
+  overrides?: Partial<TradeTransitInputs>,
+): TradeTransitInputs {
+  return {
+    ...DEFAULT_TRADE_TRANSIT_INPUTS,
+    quantityKg: 0,
+    supplierBasePriceUsd: 0,
+    ...overrides,
+  };
+}
+
+/** @deprecated Use newPipelineLineInputs */
+export const blankTradeTransitLineInputs = newPipelineLineInputs;
+
 export function roundFinancial(value: number, decimalPlaces = 4): number {
   const factor = 10 ** decimalPlaces;
   return Math.round(value * factor) / factor;

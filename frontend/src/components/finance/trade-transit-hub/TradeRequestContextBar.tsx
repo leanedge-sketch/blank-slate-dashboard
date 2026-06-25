@@ -19,6 +19,7 @@ type TradeRequestContextBarProps = {
   productCount: number;
   readOnly?: boolean;
   showProcurementLineAction?: boolean;
+  showCustomerFields?: boolean;
   onSync: (patch: {
     customerId?: string;
     clientName?: string;
@@ -42,12 +43,13 @@ export function TradeRequestContextBar({
   productCount,
   readOnly = false,
   showProcurementLineAction = true,
+  showCustomerFields = false,
   onSync,
 }: TradeRequestContextBarProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
 
   useEffect(() => {
-    if (readOnly) return;
+    if (readOnly || !showCustomerFields) return;
     let cancelled = false;
     void fetchCustomers({ limit: 1000 })
       .then((res) => {
@@ -59,7 +61,7 @@ export function TradeRequestContextBar({
     return () => {
       cancelled = true;
     };
-  }, [readOnly]);
+  }, [readOnly, showCustomerFields]);
 
   const customerId = parameters?.customerId || request.customerId || "";
   const clientName = parameters?.clientName.trim() || request.clientName.trim();
@@ -124,22 +126,32 @@ export function TradeRequestContextBar({
     );
   }
 
+  if (!showCustomerFields && showProcurementLineAction && !readOnly) {
+    return (
+      <section className="flex justify-end">
+        <button
+          type="button"
+          onClick={openNewPipelineWindow}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
+        >
+          <Plus className="h-4 w-4" />
+          Add new procurement pipeline line
+        </button>
+      </section>
+    );
+  }
+
+  if (!showCustomerFields) {
+    return null;
+  }
+
   return (
     <section className="rounded-xl border border-cyan-500/25 bg-gradient-to-br from-slate-900/95 to-slate-950/95 p-4 sm:p-5 shadow-[0_0_24px_rgba(6,182,212,0.08)]">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90">
           Customer request · pipeline entry
         </p>
-        {!readOnly && showProcurementLineAction ? (
-          <button
-            type="button"
-            onClick={openNewPipelineWindow}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            Add new procurement pipeline line
-          </button>
-        ) : !readOnly && productCount > 0 ? (
+        {!readOnly && productCount > 0 ? (
           <span className="text-xs text-slate-500 tabular-nums shrink-0">
             {productCount} product line{productCount === 1 ? "" : "s"}
           </span>
@@ -156,6 +168,7 @@ export function TradeRequestContextBar({
 
       {readOnly ? (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
+          {clientName ? <span>{clientName}</span> : null}
           {contactPerson ? (
             <span className="inline-flex items-center gap-1.5">
               <UserRound className="h-4 w-4 text-slate-500" />

@@ -10,12 +10,11 @@ import { EXPECTED_COST_2026_SCENARIOS } from "../data/expectedCost2026Scenarios"
 import {
   DEFAULT_TRADE_PARAMETERS,
   createDefaultValidityDate,
-  generatePipelineRequestRef,
   normalizeTradeParameters,
-  todayIsoDate,
   type TradeParameters,
 } from "../types/tradeParameters";
 import {
+  createBlankTradeTransitLine,
   createTradeTransitLine,
   createTradeTransitRequest,
   scenariosToTradeTransitRequest,
@@ -23,7 +22,7 @@ import {
   sharedRatesFromInputs,
   type TradeTransitRequest,
 } from "../utils/tradeTransitRequest";
-import { customsRatesFromConstants, DEFAULT_TRADE_TRANSIT_INPUTS } from "../utils/tradeTransitCalc";
+import { customsRatesFromConstants } from "../utils/tradeTransitCalc";
 import { DEFAULT_FINANCE_CONSTANTS } from "../utils/importFinanceCalc";
 
 export const TRADE_TRANSIT_ROUTES = {
@@ -111,8 +110,6 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
   }, [parameters.clientName]);
 
   const beginNewPipelineSession = useCallback(() => {
-    const requestDate = todayIsoDate();
-    const requestRef = generatePipelineRequestRef(requestDate);
     const exchangeRate = DEFAULT_TRADE_PARAMETERS.exchangeRate;
 
     setParametersState(
@@ -120,24 +117,19 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
         customerId: "",
         clientName: "",
         contactPerson: "",
-        requestDate,
-        requestRef,
+        requestDate: "",
+        requestRef: "",
         validityDate: createDefaultValidityDate(),
         exchangeRate,
       }),
     );
 
-    const line = createTradeTransitLine("", {
-      ...DEFAULT_TRADE_TRANSIT_INPUTS,
+    const line = createBlankTradeTransitLine("", {
       ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
       capitalParallelRate: exchangeRate,
     });
 
-    setRequest({
-      ...createTradeTransitRequest("", [line]),
-      requestDate,
-      requestRef,
-    });
+    setRequest(createTradeTransitRequest("", [line]));
   }, []);
 
   const value = useMemo(

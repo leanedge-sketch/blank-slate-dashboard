@@ -46,6 +46,8 @@ export function ProductCostingWorkspacePage() {
         activeSection="products"
         historyOnly={historyOnly}
         showRecentShipments
+        showProcurementLineAction={false}
+        showCustomerFields
       />
     </TradeTransitWorkspaceLayout>
   );

@@ -33,6 +33,7 @@ import {
 import {
   applySharedRatesToLine,
   createTradeTransitLine,
+  createBlankTradeTransitLine,
   createTradeTransitRequest,
   scenariosToTradeTransitRequest,
   sharedRatesFromInputs,
@@ -68,7 +69,9 @@ type ImportFinanceCalculatorWorkspaceProps = {
   activeSection?: TradeTransitWorkspaceSection;
   historyOnly?: boolean;
   showProcurementLineAction?: boolean;
+  showCustomerFields?: boolean;
   expandCalculatorInputs?: boolean;
+  blankNewLines?: boolean;
 };
 
 const darkSelect =
@@ -80,7 +83,9 @@ export function ImportFinanceCalculatorWorkspace({
   activeSection = "all",
   historyOnly = false,
   showProcurementLineAction = true,
+  showCustomerFields = false,
   expandCalculatorInputs = false,
+  blankNewLines = false,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const {
     constants,
@@ -215,8 +220,9 @@ export function ImportFinanceCalculatorWorkspace({
     const shared = template
       ? sharedRatesFromInputs(template.inputs)
       : sharedRatesFromInputs(DEFAULT_TRADE_TRANSIT_INPUTS);
+    const createLine = blankNewLines ? createBlankTradeTransitLine : createTradeTransitLine;
     const line = applySharedRatesToLine(
-      createTradeTransitLine("", {
+      createLine("", {
         ...customsRatesFromConstants(constants),
       }),
       shared,
@@ -640,10 +646,13 @@ export function ImportFinanceCalculatorWorkspace({
 
   const showProducts =
     activeSection === "all" || activeSection === "products";
+  const procurementLauncherOnly =
+    showProcurementLineAction && !showCustomerFields && !historyOnly;
+  const showWorkspace = showProducts && !procurementLauncherOnly;
   const showSummary =
     activeSection === "all" || activeSection === "summary";
-  const showTooling = showProducts && !historyOnly;
-  const showCalculator = showProducts && !historyOnly;
+  const showTooling = showWorkspace && !historyOnly;
+  const showCalculator = showWorkspace && !historyOnly;
   const showShipments =
     showRecentShipments &&
     (historyOnly ||
@@ -686,17 +695,18 @@ export function ImportFinanceCalculatorWorkspace({
           productCount={request.lines.length}
           readOnly={historyOnly}
           showProcurementLineAction={showProcurementLineAction}
+          showCustomerFields={showCustomerFields}
           onSync={syncCustomerContext}
         />
       )}
 
-      {importNotice && showProducts && (
+      {importNotice && showWorkspace && (
         <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-100">
           {importNotice}
         </p>
       )}
 
-      {showProducts && (
+      {showWorkspace && (
         <RequestProductLineTabs
           request={request}
           summary={summary}

@@ -8,6 +8,7 @@ import {
 import {
   calculateTradeTransit,
   DEFAULT_TRADE_TRANSIT_INPUTS,
+  newPipelineLineInputs,
   type TradeTransitInputs,
   type TradeTransitResult,
 } from "./tradeTransitCalc";
@@ -95,6 +96,23 @@ export function sharedRatesFromInputs(
     taxSpecialGoodsPct: inputs.taxSpecialGoodsPct,
     bankChargePctOnCapital: inputs.bankChargePctOnCapital,
     profitTaxPctOnPreLanded: inputs.profitTaxPctOnPreLanded,
+  };
+}
+
+export function createBlankTradeTransitLine(
+  productName = "",
+  partial?: Partial<TradeTransitInputs> & {
+    productId?: string | null;
+    chemicalTypeId?: string | null;
+  },
+): TradeTransitRequestLine {
+  const { productId = null, chemicalTypeId = null, ...inputPatch } = partial ?? {};
+  return {
+    id: createTradeTransitLineId(),
+    productName,
+    chemicalTypeId,
+    productId,
+    inputs: newPipelineLineInputs(inputPatch),
   };
 }
 
