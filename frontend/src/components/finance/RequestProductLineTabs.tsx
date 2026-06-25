@@ -11,6 +11,7 @@ type RequestProductLineTabsProps = {
   onSelectLine: (lineId: string) => void;
   onAddLine: () => void;
   onRemoveActive: () => void;
+  showRequestHeader?: boolean;
 };
 
 export function RequestProductLineTabs({
@@ -20,6 +21,7 @@ export function RequestProductLineTabs({
   onSelectLine,
   onAddLine,
   onRemoveActive,
+  showRequestHeader = true,
 }: RequestProductLineTabsProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -46,15 +48,13 @@ export function RequestProductLineTabs({
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Products on this request
+              Product lines
             </p>
-            {(request.clientName || request.contactPerson || request.requestRef) && (
+            {showRequestHeader ? (
               <p className="mt-1 text-xs text-slate-400">
-                {request.clientName || "Unnamed client"}
-                {request.contactPerson ? ` · ${request.contactPerson}` : ""}
-                {request.requestRef ? ` · ${request.requestRef}` : ""}
+                Each tab is one product on the same customer request.
               </p>
-            )}
+            ) : null}
           </div>
           <p className="text-[10px] text-slate-600 tabular-nums">
             {request.lines.length} product{request.lines.length === 1 ? "" : "s"}
@@ -94,7 +94,7 @@ export function RequestProductLineTabs({
             className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-white/20 px-3 py-2.5 text-sm text-slate-400 hover:border-cyan-500/40 hover:text-cyan-300 transition"
           >
             <Plus className="h-4 w-4" />
-            Add product
+            Add product line
           </button>
         </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
   FileSpreadsheet,
@@ -43,6 +43,7 @@ import {
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
+import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
 import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
 import {
   loadPricingLocations,
@@ -95,6 +96,20 @@ export function ImportFinanceCalculatorWorkspace({
   const request = transitCtx?.request ?? localRequest;
   const setRequest = transitCtx?.setRequest ?? setLocalRequest;
   const parameters = transitCtx?.parameters;
+  const updateParameters = transitCtx?.updateParameters;
+
+  const syncCustomerContext = useCallback(
+    (patch: {
+      customerId?: string;
+      clientName?: string;
+      contactPerson?: string;
+      requestRef?: string;
+    }) => {
+      updateParameters?.(patch);
+      setRequest((prev) => ({ ...prev, ...patch }));
+    },
+    [setRequest, updateParameters],
+  );
   const [activeLineId, setActiveLineId] = useState<string>(
     () => request.lines[0]?.id ?? "",
   );
@@ -444,6 +459,16 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {showProducts && (
+        <TradeRequestContextBar
+          parameters={parameters}
+          request={request}
+          productCount={request.lines.length}
+          readOnly={historyOnly}
+          onSync={syncCustomerContext}
+        />
+      )}
+
+      {showProducts && (
         <RequestProductLineTabs
           request={request}
           summary={summary}
@@ -454,6 +479,7 @@ export function ImportFinanceCalculatorWorkspace({
           }}
           onAddLine={addProductLine}
           onRemoveActive={removeActiveLine}
+          showRequestHeader={historyOnly}
         />
       )}
 
@@ -545,7 +571,7 @@ export function ImportFinanceCalculatorWorkspace({
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Save all linked lines
+            Save all product lines
           </button>
         </div>
       </div>
@@ -564,6 +590,7 @@ export function ImportFinanceCalculatorWorkspace({
               ...DEFAULT_TRADE_PARAMETERS,
               customerId: request.customerId,
               clientName: request.clientName,
+              contactPerson: request.contactPerson,
               requestRef: request.requestRef,
               exchangeRate: activeLine.inputs.capitalParallelRate,
             }

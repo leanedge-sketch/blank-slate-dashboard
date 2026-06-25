@@ -25,11 +25,9 @@ export function ProductCostingWorkspacePage() {
       subtitle={
         historyOnly
           ? "Review and reload saved shipment snapshots."
-          : `Product lines for ${parameters.clientName.trim() || "your client"}${
-              parameters.contactPerson.trim()
-                ? ` · contact ${parameters.contactPerson.trim()}`
-                : ""
-            }.`
+          : parameters.clientName.trim()
+            ? `Pipeline entry for ${parameters.clientName.trim()} — add one product line per SKU on this customer request.`
+            : "Select the customer request, then add one product line per SKU they ordered."
       }
       icon={<Package className="h-5 w-5 text-teal-400" />}
       actions={
