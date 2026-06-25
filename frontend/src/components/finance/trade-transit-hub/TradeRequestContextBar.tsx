@@ -18,6 +18,7 @@ type TradeRequestContextBarProps = {
     customerId?: string;
     clientName?: string;
     contactPerson?: string;
+    requestDate?: string;
     requestRef?: string;
   }) => void;
 };
@@ -59,6 +60,10 @@ export function TradeRequestContextBar({
   const contactPerson =
     parameters?.contactPerson.trim() || request.contactPerson.trim();
   const requestRef = parameters?.requestRef.trim() || request.requestRef.trim();
+  const requestDate =
+    parameters?.requestDate.trim() || request.requestDate.trim();
+
+  const missingPipeline = !clientName || !contactPerson || !requestDate || !requestRef;
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.customer_id === customerId),
@@ -125,9 +130,10 @@ export function TradeRequestContextBar({
         </div>
       </div>
 
-      {missingCustomer && !readOnly && (
+      {missingPipeline && !readOnly && (
         <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-          Select a CRM customer or enter a client name before saving pipeline lines.
+          Customer name, contact person, request date, and pipeline number are required
+          before saving pipeline lines.
         </p>
       )}
 
@@ -139,10 +145,11 @@ export function TradeRequestContextBar({
               {contactPerson}
             </span>
           ) : null}
+          {requestDate ? <span>Date {requestDate}</span> : null}
           {requestRef ? <span>Ref {requestRef}</span> : null}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           <div>
             <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               <Building2 className="h-3.5 w-3.5" />
@@ -196,13 +203,24 @@ export function TradeRequestContextBar({
           </div>
           <div>
             <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Request ref
+              Request date
+            </label>
+            <input
+              type="date"
+              value={parameters?.requestDate ?? request.requestDate}
+              onChange={(e) => onSync({ requestDate: e.target.value })}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Pipeline / request #
             </label>
             <input
               type="text"
               value={parameters?.requestRef ?? request.requestRef}
               onChange={(e) => onSync({ requestRef: e.target.value })}
-              placeholder="PO / quote #"
+              placeholder="Unique pipeline number"
               className={inputClass}
             />
           </div>

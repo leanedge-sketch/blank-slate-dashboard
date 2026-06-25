@@ -21,6 +21,19 @@ export interface ExpectedCostScenario {
   };
 }
 
+/** Customer / pipeline metadata rows from workbook column A labels. */
+export interface WorkbookImportMetadata {
+  clientName: string;
+  contactPerson: string;
+  requestDate: string;
+  requestRef: string;
+}
+
+export interface WorkbookImportParseResult {
+  scenarios: ExpectedCostScenario[];
+  metadata: WorkbookImportMetadata;
+}
+
 function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -89,6 +102,109 @@ function inferSupplierMarginPct(
   const implied = moyaleUsd - transportUsd;
   if (implied <= 0) return 0;
   return Math.max(0, Math.round(((implied / purchaseUsd) - 1) * 10000) / 100);
+}
+
+function firstNonEmpty(values: Array<string | undefined>): string {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+function normalizeWorkbookDate(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const slash = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (slash) {
+    const year =
+      slash[3].length === 2 ? `20${slash[3]}` : slash[3].padStart(4, "0");
+    const month = slash[1].padStart(2, "0");
+    const day = slash[2].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return "";
+}
+
+function metadataValueForRow(row: string[], labels: string[]): string {
+  const label = row[0]?.toLowerCase().trim() ?? "";
+  if (!label) return "";
+  const matches = labels.some(
+    (needle) => label === needle || label.includes(needle),
+  );
+  if (!matches) return "";
+  return firstNonEmpty(row.slice(1));
+}
+
+/**
+ * Read customer / contact / date / pipeline ref from labeled rows (column A).
+ */
+export function parseWorkbookMetadata(text: string): WorkbookImportMetadata {
+  const rows = parseCsvRows(text);
+  let clientName = "";
+  let contactPerson = "";
+  let requestDate = "";
+  let requestRef = "";
+
+  for (const row of rows) {
+    clientName =
+      clientName ||
+      metadataValueForRow(row, [
+        "customer name",
+        "client name",
+        "customer",
+        "client",
+        "buyer",
+      ]);
+    contactPerson =
+      contactPerson ||
+      metadataValueForRow(row, [
+        "contact person",
+        "contact name",
+        "contact",
+        "attn",
+        "attention",
+      ]);
+    requestDate =
+      requestDate ||
+      normalizeWorkbookDate(
+        metadataValueForRow(row, [
+          "request date",
+          "quote date",
+          "pipeline date",
+          "date",
+        ]),
+      );
+    requestRef =
+      requestRef ||
+      metadataValueForRow(row, [
+        "pipeline number",
+        "pipeline no",
+        "pipeline ref",
+        "request number",
+        "request ref",
+        "request #",
+        "quote ref",
+        "po number",
+        "po #",
+        "po",
+        "ref no",
+      ]);
+  }
+
+  return { clientName, contactPerson, requestDate, requestRef };
+}
+
+export function parseWorkbookImport(text: string): WorkbookImportParseResult {
+  return {
+    scenarios: parseExpectedCostCsv(text),
+    metadata: parseWorkbookMetadata(text),
+  };
 }
 
 /**

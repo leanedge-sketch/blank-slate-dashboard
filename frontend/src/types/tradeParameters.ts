@@ -26,6 +26,8 @@ export interface TradeParameters {
   clientName: string;
   /** Buyer contact for this request — from CRM primary contact or entered manually. */
   contactPerson: string;
+  /** ISO date (YYYY-MM-DD) — when this customer request was raised. */
+  requestDate: string;
   requestRef: string;
   incoterm: TradeIncoterm;
   paymentTerms: TradePaymentTerm | string;
@@ -43,6 +45,7 @@ export const DEFAULT_TRADE_PARAMETERS: TradeParameters = {
   customerId: "",
   clientName: "",
   contactPerson: "",
+  requestDate: "",
   requestRef: "",
   incoterm: "FOB",
   paymentTerms: "LC at Sight",
@@ -60,6 +63,38 @@ export function createDefaultValidityDate(daysAhead = 30): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Unique pipeline / request number when not supplied by workbook or user. */
+export function generatePipelineRequestRef(requestDate?: string): string {
+  const d = (requestDate?.trim() || todayIsoDate()).replace(/-/g, "");
+  const suffix = Math.floor(1000 + Math.random() * 9000);
+  return `TT-${d}-${suffix}`;
+}
+
+export function validatePipelineRequestFields(fields: {
+  clientName: string;
+  contactPerson: string;
+  requestDate: string;
+  requestRef: string;
+}): string | null {
+  if (!fields.clientName.trim()) {
+    return "Customer name is required for this pipeline entry.";
+  }
+  if (!fields.contactPerson.trim()) {
+    return "Contact person is required for this pipeline entry.";
+  }
+  if (!fields.requestDate.trim()) {
+    return "Request date is required for this pipeline entry.";
+  }
+  if (!fields.requestRef.trim()) {
+    return "Pipeline / request number is required for this pipeline entry.";
+  }
+  return null;
+}
+
 export function normalizeTradeParameters(
   partial?: Partial<TradeParameters>,
 ): TradeParameters {
@@ -70,5 +105,9 @@ export function normalizeTradeParameters(
       partial?.validityDate?.trim() ||
       DEFAULT_TRADE_PARAMETERS.validityDate ||
       createDefaultValidityDate(),
+    requestDate:
+      partial?.requestDate?.trim() ||
+      DEFAULT_TRADE_PARAMETERS.requestDate ||
+      todayIsoDate(),
   };
 }

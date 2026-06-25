@@ -26,6 +26,7 @@ export interface TradeTransitRequest {
   customerId: string;
   clientName: string;
   contactPerson: string;
+  requestDate: string;
   requestRef: string;
   lines: TradeTransitRequestLine[];
 }
@@ -122,11 +123,13 @@ export function createTradeTransitRequest(
   lines?: TradeTransitRequestLine[],
   customerId = "",
   contactPerson = "",
+  requestDate = "",
 ): TradeTransitRequest {
   return {
     customerId,
     clientName,
     contactPerson,
+    requestDate,
     requestRef: "",
     lines: lines ?? [createTradeTransitLine("Product 1")],
   };
@@ -234,6 +237,7 @@ export function scenariosToTradeTransitRequest(
     customerId: "",
     clientName,
     contactPerson: "",
+    requestDate: "",
     requestRef: scenarios.length > 1 ? "multi-product" : scenarios[0].id,
     lines,
   };

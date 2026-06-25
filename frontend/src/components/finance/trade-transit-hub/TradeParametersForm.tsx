@@ -6,6 +6,8 @@ import {
   TRADE_CURRENCIES,
   TRADE_INCOTERMS,
   TRADE_PAYMENT_TERMS,
+  generatePipelineRequestRef,
+  validatePipelineRequestFields,
   type TradeParameters,
 } from "../../../types/tradeParameters";
 
@@ -135,8 +137,9 @@ export function TradeParametersForm({
       window.alert("Select a CRM customer for this import request.");
       return;
     }
-    if (!parameters.contactPerson.trim()) {
-      window.alert("Enter the contact person for this customer request.");
+    const validationError = validatePipelineRequestFields(parameters);
+    if (validationError) {
+      window.alert(validationError);
       return;
     }
     onContinue?.();
@@ -236,14 +239,36 @@ export function TradeParametersForm({
             )}
           </div>
           <div className="sm:col-span-2">
-            <label className={labelClass}>Request ref</label>
+            <label className={labelClass}>Request date</label>
             <input
-              type="text"
-              value={parameters.requestRef}
-              onChange={(e) => onChange({ requestRef: e.target.value })}
-              placeholder="PO / quote # (optional)"
+              type="date"
+              value={parameters.requestDate}
+              onChange={(e) => onChange({ requestDate: e.target.value })}
               className={inputClass}
             />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Pipeline / request number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={parameters.requestRef}
+                onChange={(e) => onChange({ requestRef: e.target.value })}
+                placeholder="Unique pipeline reference"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    requestRef: generatePipelineRequestRef(parameters.requestDate),
+                  })
+                }
+                className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
+              >
+                Generate
+              </button>
+            </div>
           </div>
           {onLoadSample ? (
             <div className="sm:col-span-2">

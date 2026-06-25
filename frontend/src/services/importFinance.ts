@@ -52,6 +52,7 @@ export interface ImportShipmentRow {
   total_expected_revenue_etb?: number | null;
   client_name?: string | null;
   contact_person?: string | null;
+  request_date?: string | null;
   request_ref?: string | null;
   chemical_type_id?: string | null;
   customer_id?: string | null;
@@ -95,6 +96,7 @@ export function buildShipmentPipelinePayload(
   clientContext?: {
     clientName?: string;
     contactPerson?: string;
+    requestDate?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;
@@ -131,6 +133,7 @@ export function buildShipmentPipelinePayload(
     total_expected_revenue_etb: result.sales.totalExpectedRevenueEtb,
     client_name: clientContext?.clientName?.trim() || null,
     contact_person: clientContext?.contactPerson?.trim() || null,
+    request_date: clientContext?.requestDate?.trim() || null,
     request_ref: clientContext?.requestRef?.trim() || null,
     chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
     customer_id: clientContext?.customerId?.trim() || null,
@@ -247,6 +250,7 @@ export async function saveImportShipmentDraft(
   clientContext?: {
     clientName?: string;
     contactPerson?: string;
+    requestDate?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;

@@ -18,10 +18,10 @@ import {
 } from "../../services/importFinance";
 import { catalogProductValue } from "../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
-import { DEFAULT_TRADE_PARAMETERS } from "../../types/tradeParameters";
+import { DEFAULT_TRADE_PARAMETERS, validatePipelineRequestFields } from "../../types/tradeParameters";
 import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
-import { parseExpectedCostCsv } from "../../utils/expectedCostCsv";
+import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import {
   calculateTradeTransit,
   customsRatesFromConstants,
@@ -44,6 +44,10 @@ import {
 } from "./ImportFinanceCalculatorPanel";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
+import {
+  WorkbookImportReviewPanel,
+  type WorkbookImportDraft,
+} from "./trade-transit-hub/WorkbookImportReviewPanel";
 import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
 import {
   loadPricingLocations,
@@ -103,6 +107,7 @@ export function ImportFinanceCalculatorWorkspace({
       customerId?: string;
       clientName?: string;
       contactPerson?: string;
+      requestDate?: string;
       requestRef?: string;
     }) => {
       updateParameters?.(patch);
@@ -115,9 +120,17 @@ export function ImportFinanceCalculatorWorkspace({
   );
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
-  const [csvScenarios, setCsvScenarios] = useState<
-    ReturnType<typeof parseExpectedCostCsv>
-  >([]);
+  const [csvScenarios, setCsvScenarios] = useState<ExpectedCostScenario[]>([]);
+  const [pendingWorkbook, setPendingWorkbook] = useState<{
+    fileName: string;
+    scenarios: ExpectedCostScenario[];
+    metadata: ReturnType<typeof parseWorkbookImport>["metadata"];
+    initialDraft: WorkbookImportDraft;
+  } | null>(null);
+  const preWorkbookSnapshot = useRef<{
+    request: TradeTransitRequest;
+    csvScenarios: ExpectedCostScenario[];
+  } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const scenarioOptions = [
@@ -274,29 +287,105 @@ export function ImportFinanceCalculatorWorkspace({
   function loadFullScenarioRequest(
     scenarios: Array<{ id: string; name: string; inputs: TradeTransitInputs }>,
     clientName: string,
+    meta?: Partial<Pick<TradeTransitRequest, "customerId" | "contactPerson" | "requestDate" | "requestRef">>,
   ) {
     const next = scenariosToTradeTransitRequest(scenarios, clientName);
-    setRequest(next);
+    setRequest({
+      ...next,
+      customerId: meta?.customerId ?? next.customerId,
+      contactPerson: meta?.contactPerson ?? next.contactPerson,
+      requestDate: meta?.requestDate ?? next.requestDate,
+      requestRef: meta?.requestRef ?? next.requestRef,
+    });
     setActiveLineId(next.lines[0]?.id ?? "");
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
   }
 
+  function buildWorkbookDraft(
+    metadata: ReturnType<typeof parseWorkbookImport>["metadata"],
+    fileName: string,
+  ): WorkbookImportDraft {
+    const fileStem = fileName.replace(/\.csv$/i, "").trim();
+    return {
+      customerId: parameters?.customerId || request.customerId || "",
+      clientName:
+        metadata.clientName.trim() ||
+        parameters?.clientName.trim() ||
+        request.clientName.trim() ||
+        fileStem ||
+        "",
+      contactPerson:
+        metadata.contactPerson.trim() ||
+        parameters?.contactPerson.trim() ||
+        request.contactPerson.trim() ||
+        "",
+      requestDate:
+        metadata.requestDate.trim() ||
+        parameters?.requestDate.trim() ||
+        request.requestDate.trim() ||
+        new Date().toISOString().slice(0, 10),
+      requestRef:
+        metadata.requestRef.trim() ||
+        parameters?.requestRef.trim() ||
+        request.requestRef.trim() ||
+        "",
+    };
+  }
+
   async function handleCsvUpload(file: File) {
     const text = await file.text();
-    const parsed = parseExpectedCostCsv(text);
-    if (parsed.length === 0) {
+    const parsed = parseWorkbookImport(text);
+    if (parsed.scenarios.length === 0) {
       alert(
         "Could not read product columns from this CSV. Use the Expected cost workbook format (product names in row 3).",
       );
       return;
     }
-    setCsvScenarios(parsed);
-    const clientName =
-      request.clientName.trim() ||
-      file.name.replace(/\.csv$/i, "").trim() ||
-      "Imported client";
-    loadFullScenarioRequest(parsed, clientName);
+
+    preWorkbookSnapshot.current = {
+      request: structuredClone(request),
+      csvScenarios: [...csvScenarios],
+    };
+
+    setPendingWorkbook({
+      fileName: file.name,
+      scenarios: parsed.scenarios,
+      metadata: parsed.metadata,
+      initialDraft: buildWorkbookDraft(parsed.metadata, file.name),
+    });
+  }
+
+  function handleConfirmWorkbookImport(draft: WorkbookImportDraft) {
+    if (!pendingWorkbook) return;
+
+    syncCustomerContext({
+      customerId: draft.customerId,
+      clientName: draft.clientName,
+      contactPerson: draft.contactPerson,
+      requestDate: draft.requestDate,
+      requestRef: draft.requestRef,
+    });
+
+    setCsvScenarios(pendingWorkbook.scenarios);
+    loadFullScenarioRequest(pendingWorkbook.scenarios, draft.clientName, {
+      customerId: draft.customerId,
+      contactPerson: draft.contactPerson,
+      requestDate: draft.requestDate,
+      requestRef: draft.requestRef,
+    });
+
+    setPendingWorkbook(null);
+    preWorkbookSnapshot.current = null;
+  }
+
+  function handleCancelWorkbookImport() {
+    if (preWorkbookSnapshot.current) {
+      setRequest(preWorkbookSnapshot.current.request);
+      setCsvScenarios(preWorkbookSnapshot.current.csvScenarios);
+    }
+    setPendingWorkbook(null);
+    preWorkbookSnapshot.current = null;
   }
 
   function handleLoadShipment(row: ImportShipmentRow) {
@@ -311,6 +400,7 @@ export function ImportFinanceCalculatorWorkspace({
       clientName: row.client_name?.trim() || prev.clientName,
       contactPerson: row.contact_person?.trim() || prev.contactPerson,
       customerId: row.customer_id?.trim() || prev.customerId,
+      requestDate: row.request_date?.trim() || prev.requestDate,
       requestRef: row.request_ref?.trim() || prev.requestRef,
       lines: [line],
     }));
@@ -328,6 +418,30 @@ export function ImportFinanceCalculatorWorkspace({
       parameters?.contactPerson.trim() ||
       request.contactPerson.trim() ||
       "";
+    const requestDateLabel =
+      parameters?.requestDate.trim() ||
+      request.requestDate.trim() ||
+      "";
+    const requestRefLabel =
+      parameters?.requestRef.trim() ||
+      request.requestRef.trim() ||
+      "";
+
+    const pipelineError = validatePipelineRequestFields({
+      clientName: clientLabel === "Unnamed client" ? "" : clientLabel,
+      contactPerson: contactLabel,
+      requestDate: requestDateLabel,
+      requestRef: requestRefLabel,
+    });
+    if (pipelineError) {
+      alert(pipelineError);
+      return;
+    }
+
+    if (pendingWorkbook) {
+      alert("Apply or cancel the workbook import review before saving.");
+      return;
+    }
     const unlinked = request.lines.filter((line) => !line.chemicalTypeId);
     if (unlinked.length > 0) {
       const names = unlinked.map((l) => l.productName).join(", ");
@@ -376,7 +490,8 @@ export function ImportFinanceCalculatorWorkspace({
         await saveDraft(productId, legacyInputs, constants, {
           clientName: clientLabel,
           contactPerson: contactLabel || undefined,
-          requestRef: request.requestRef,
+          requestDate: requestDateLabel || undefined,
+          requestRef: requestRefLabel,
           chemicalTypeId: line.chemicalTypeId,
           customerId:
             parameters?.customerId?.trim() ||
@@ -399,7 +514,8 @@ export function ImportFinanceCalculatorWorkspace({
             ...DEFAULT_TRADE_PARAMETERS,
             clientName: clientLabel,
             contactPerson: contactLabel,
-            requestRef: request.requestRef,
+            requestDate: requestDateLabel,
+            requestRef: requestRefLabel,
             exchangeRate: activeLine?.inputs.capitalParallelRate ?? DEFAULT_TRADE_PARAMETERS.exchangeRate,
           },
           partners,
@@ -457,6 +573,17 @@ export function ImportFinanceCalculatorWorkspace({
           )}
         </div>
       )}
+
+      {pendingWorkbook && showTooling ? (
+        <WorkbookImportReviewPanel
+          fileName={pendingWorkbook.fileName}
+          scenarios={pendingWorkbook.scenarios}
+          metadata={pendingWorkbook.metadata}
+          initial={pendingWorkbook.initialDraft}
+          onConfirm={handleConfirmWorkbookImport}
+          onCancel={handleCancelWorkbookImport}
+        />
+      ) : null}
 
       {showProducts && (
         <TradeRequestContextBar
@@ -563,7 +690,7 @@ export function ImportFinanceCalculatorWorkspace({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={saving || Boolean(setupHint)}
+            disabled={saving || Boolean(setupHint) || Boolean(pendingWorkbook)}
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.25)] disabled:opacity-50 transition"
           >
             {saving ? (
@@ -591,6 +718,7 @@ export function ImportFinanceCalculatorWorkspace({
               customerId: request.customerId,
               clientName: request.clientName,
               contactPerson: request.contactPerson,
+              requestDate: request.requestDate,
               requestRef: request.requestRef,
               exchangeRate: activeLine.inputs.capitalParallelRate,
             }
