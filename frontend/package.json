@@ -11,10 +11,13 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
     "axios": "^1.7.7",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.562.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
+    "recharts": "^3.9.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

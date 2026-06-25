@@ -14,6 +14,7 @@ import { CRMDashboardPage } from "./pages/crm/CRMDashboardPage";
 import { ReportsHomePage } from "./pages/reports/ReportsHomePage";
 import { CRMReportsPage } from "./pages/reports/CRMReportsPage";
 import { AnalyticsDashboardPage } from "./pages/reports/AnalyticsDashboardPage";
+import { ExecutiveReportDashboardPage } from "./pages/reports/ExecutiveReportDashboardPage";
 import { PMSHomePage } from "./pages/pms/PMSHomePage";
 import { ChemicalsPage } from "./pages/pms/ChemicalsPage";
 import { TDSPage } from "./pages/pms/TDSPage";
@@ -154,6 +155,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AnalyticsDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports/executive"
+            element={
+              <ProtectedRoute>
+                <ExecutiveReportDashboardPage />
               </ProtectedRoute>
             }
           />

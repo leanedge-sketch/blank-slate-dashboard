@@ -287,6 +287,32 @@ export async function fetchRecentImportShipments(
   return (data ?? []) as ImportShipmentRow[];
 }
 
+/** Shipments for executive report dashboards (date-filtered, higher limit). */
+export async function fetchImportShipmentsForReport(
+  options?: { startIso?: string; endIso?: string; limit?: number },
+): Promise<ImportShipmentRow[]> {
+  let query = importFinanceDb()
+    .from(TABLES.shipments)
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (options?.startIso) {
+    query = query.gte("created_at", options.startIso);
+  }
+  if (options?.endIso) {
+    query = query.lte("created_at", options.endIso);
+  }
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  } else {
+    query = query.limit(500);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ImportShipmentRow[];
+}
+
 export async function fetchImportShipmentsForCustomer(
   customerId: string,
   limit = 20,

@@ -1,7 +1,18 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, FileText, Sparkles } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, LayoutDashboard, Sparkles } from "lucide-react";
 
 const modules = [
+  {
+    icon: LayoutDashboard,
+    title: "Executive Report Dashboard",
+    subtitle: "Stage 4 · Cross-filter BI · PDF export",
+    description:
+      "Interactive cost structure, revenue trajectory, and customer efficiency charts with product/customer cross-filtering and AI cognitive summaries.",
+    href: "/reports/executive",
+    cta: "Open executive dashboard",
+    accent: "from-violet-600 via-purple-500 to-fuchsia-500",
+    accentHover: "group-hover:shadow-violet-500/40",
+  },
   {
     icon: FileText,
     title: "Integrated Reports",
@@ -76,7 +87,7 @@ export function ReportsHomePage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
               {modules.map((module) => {
                 const Icon = module.icon;
                 return (
