@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -27,7 +27,8 @@ import type {
 } from "../../../utils/expectedCostCsv";
 import type { TradeTransitInputs } from "../../../utils/tradeTransitCalc";
 import { formatNumber } from "../../../utils/importFinanceCalc";
-import { catalogProductValue } from "../../../utils/catalogProducts";
+import { catalogProductValue, findCatalogProduct } from "../../../utils/catalogProducts";
+import { chemicalSearchPrimaryLabel } from "../../../utils/chemicalMasterColumns";
 import {
   sharedRatesFromInputs,
   type SharedTradeTransitRates,
@@ -82,6 +83,36 @@ function sortCustomers(customers: Customer[]): Customer[] {
   );
 }
 
+function linePatchFromChemical(
+  line: WorkbookImportLineDraft,
+  chemical: ChemicalFullData,
+): Partial<WorkbookImportLineDraft> {
+  const productName = chemicalSearchPrimaryLabel(chemical);
+  const costUsd =
+    typeof chemical.current_cost === "number" && chemical.current_cost > 0
+      ? chemical.current_cost
+      : typeof chemical.price === "number" && chemical.price > 0
+        ? chemical.price
+        : null;
+
+  return {
+    chemicalTypeId: catalogProductValue(chemical),
+    productName,
+    inputs: {
+      ...line.inputs,
+      ...(costUsd != null ? { supplierBasePriceUsd: costUsd } : {}),
+    },
+  };
+}
+
+function pickCatalogButtonProps(onPick: () => void) {
+  return {
+    type: "button" as const,
+    onMouseDown: (e: MouseEvent) => e.preventDefault(),
+    onClick: onPick,
+  };
+}
+
 export function WorkbookImportReviewModal({
   fileName,
   scenarios,
@@ -127,11 +158,7 @@ export function WorkbookImportReviewModal({
         if (line.chemicalTypeId) return line;
         const match = bestCatalogMatch(line.workbookName, chemicals);
         if (!match) return line;
-        return {
-          ...line,
-          chemicalTypeId: catalogProductValue(match),
-          productName: match.product_name?.trim() || line.productName,
-        };
+        return { ...line, ...linePatchFromChemical(line, match) };
       }),
     );
   }, [catalogLoading, chemicals]);
@@ -183,10 +210,7 @@ export function WorkbookImportReviewModal({
 
   const linkedChemical = useMemo(() => {
     if (!activeLine?.chemicalTypeId) return null;
-    return (
-      chemicals.find((c) => catalogProductValue(c) === activeLine.chemicalTypeId) ??
-      null
-    );
+    return findCatalogProduct(activeLine.chemicalTypeId, chemicals) ?? null;
   }, [activeLine, chemicals]);
 
 
@@ -261,39 +285,30 @@ export function WorkbookImportReviewModal({
         if (line.chemicalTypeId) return line;
         const match = bestCatalogMatch(line.workbookName, chemicals);
         if (!match) return line;
-        return {
-          ...line,
-          chemicalTypeId: catalogProductValue(match),
-          productName: match.product_name?.trim() || line.productName,
-        };
+        return { ...line, ...linePatchFromChemical(line, match) };
       }),
     );
     setError(null);
   }
 
   function handlePmsSelect(lineId: string, chemical: ChemicalFullData) {
-    const patch = {
-      chemicalTypeId: catalogProductValue(chemical),
-      productName: chemical.product_name?.trim() || "",
-    };
     setLineDrafts((prev) => {
       let next = prev.map((line) =>
-        line.id === lineId ? { ...line, ...patch } : line,
+        line.id === lineId
+          ? { ...line, ...linePatchFromChemical(line, chemical) }
+          : line,
       );
       if (autoLinkOthers) {
         next = next.map((line) => {
           if (line.chemicalTypeId) return line;
           const match = bestCatalogMatch(line.workbookName, chemicals);
           if (!match) return line;
-          return {
-            ...line,
-            chemicalTypeId: catalogProductValue(match),
-            productName: match.product_name?.trim() || line.productName,
-          };
+          return { ...line, ...linePatchFromChemical(line, match) };
         });
       }
       return next;
     });
+    setPmsSearch("");
     setError(null);
   }
 
@@ -642,9 +657,10 @@ export function WorkbookImportReviewModal({
                     <div className="flex flex-wrap gap-2">
                       {suggestions.map(({ chemical, score }) => (
                         <button
-                          key={catalogProductValue(chemical)}
-                          type="button"
-                          onClick={() => handlePmsSelect(activeLine.id, chemical)}
+                          key={`${catalogProductValue(chemical)}-${chemical.id}`}
+                          {...pickCatalogButtonProps(() =>
+                            handlePmsSelect(activeLine.id, chemical),
+                          )}
                           className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-left text-xs text-cyan-100 hover:bg-cyan-500/20 transition"
                         >
                           <span className="font-semibold block">
@@ -659,7 +675,7 @@ export function WorkbookImportReviewModal({
                   </div>
                 ) : null}
 
-                <div className="relative">
+                <div className="relative z-20">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     type="search"
@@ -669,20 +685,20 @@ export function WorkbookImportReviewModal({
                     className={`${inputClass} pl-9`}
                   />
                 </div>
-                <div className="max-h-44 overflow-y-auto rounded-lg border border-white/10 divide-y divide-white/5">
+                <div className="relative z-20 max-h-44 overflow-y-auto rounded-lg border border-white/10 divide-y divide-white/5 bg-slate-950">
                   {filteredCatalog.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-slate-500 text-center">
                       No catalog matches. Try a shorter search.
                     </p>
                   ) : (
-                    filteredCatalog.map((chemical) => {
-                      const id = catalogProductValue(chemical);
-                      const isSelected = activeLine.chemicalTypeId === id;
+                    filteredCatalog.map((chemical, index) => {
+                      const isSelected = linkedChemical?.id === chemical.id;
                       return (
                         <button
-                          key={id}
-                          type="button"
-                          onClick={() => handlePmsSelect(activeLine.id, chemical)}
+                          key={`${chemical.id}-${index}`}
+                          {...pickCatalogButtonProps(() =>
+                            handlePmsSelect(activeLine.id, chemical),
+                          )}
                           className={`w-full px-3 py-2.5 text-left text-xs transition ${
                             isSelected
                               ? "bg-emerald-500/15 text-emerald-100"
@@ -690,7 +706,7 @@ export function WorkbookImportReviewModal({
                           }`}
                         >
                           <span className="font-semibold block">
-                            {chemical.product_name}
+                            {chemicalSearchPrimaryLabel(chemical)}
                           </span>
                           <span className="text-slate-500">
                             {chemical.vendor || "—"}

@@ -38,7 +38,8 @@ const accentStyles: Record<
 };
 
 type TradeTransitHubDeckCardProps = {
-  href: string;
+  href?: string;
+  onAction?: () => void;
   icon: LucideIcon;
   overline: string;
   title: string;
@@ -50,6 +51,7 @@ type TradeTransitHubDeckCardProps = {
 
 export function TradeTransitHubDeckCard({
   href,
+  onAction,
   icon: Icon,
   overline,
   title,
@@ -59,6 +61,7 @@ export function TradeTransitHubDeckCard({
   active = false,
 }: TradeTransitHubDeckCardProps) {
   const styles = accentStyles[accent];
+  const buttonClass = `mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-xl ${styles.button} ${styles.glow} group/btn`;
 
   return (
     <article
@@ -101,13 +104,17 @@ export function TradeTransitHubDeckCard({
           {description}
         </p>
 
-        <Link
-          to={href}
-          className={`mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-xl ${styles.button} ${styles.glow} group/btn`}
-        >
-          {buttonLabel}
-          <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
-        </Link>
+        {onAction ? (
+          <button type="button" onClick={onAction} className={buttonClass}>
+            {buttonLabel}
+            <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+          </button>
+        ) : href ? (
+          <Link to={href} className={buttonClass}>
+            {buttonLabel}
+            <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+          </Link>
+        ) : null}
       </div>
     </article>
   );

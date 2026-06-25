@@ -9,10 +9,14 @@ import {
 import { EXPECTED_COST_2026_SCENARIOS } from "../data/expectedCost2026Scenarios";
 import {
   DEFAULT_TRADE_PARAMETERS,
+  createDefaultValidityDate,
+  generatePipelineRequestRef,
   normalizeTradeParameters,
+  todayIsoDate,
   type TradeParameters,
 } from "../types/tradeParameters";
 import {
+  createTradeTransitLine,
   createTradeTransitRequest,
   scenariosToTradeTransitRequest,
   syncSharedRatesAcrossRequest,
@@ -24,6 +28,7 @@ import { DEFAULT_FINANCE_CONSTANTS } from "../utils/importFinanceCalc";
 
 export const TRADE_TRANSIT_ROUTES = {
   hub: "/finance/import",
+  newPipeline: "/finance/new-pipeline",
   tradeParameters: "/finance/trade-parameters",
   productCosting: "/finance/product-costing",
   transitSummary: "/finance/transit-summary",
@@ -37,6 +42,7 @@ interface TradeTransitRequestContextValue {
   setRequest: React.Dispatch<React.SetStateAction<TradeTransitRequest>>;
   applyParametersToRequest: () => void;
   loadExpectedCost2026Sample: () => void;
+  beginNewPipelineSession: () => void;
 }
 
 const TradeTransitRequestContext =
@@ -104,6 +110,35 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
     setRequest(next);
   }, [parameters.clientName]);
 
+  const beginNewPipelineSession = useCallback(() => {
+    const requestDate = todayIsoDate();
+    const requestRef = generatePipelineRequestRef(requestDate);
+    const exchangeRate = DEFAULT_TRADE_PARAMETERS.exchangeRate;
+
+    setParametersState(
+      normalizeTradeParameters({
+        customerId: "",
+        clientName: "",
+        contactPerson: "",
+        requestDate,
+        requestRef,
+        validityDate: createDefaultValidityDate(),
+        exchangeRate,
+      }),
+    );
+
+    const line = createTradeTransitLine("Product 1", {
+      ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+      capitalParallelRate: exchangeRate,
+    });
+
+    setRequest({
+      ...createTradeTransitRequest("", [line]),
+      requestDate,
+      requestRef,
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       parameters,
@@ -113,6 +148,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       setRequest,
       applyParametersToRequest,
       loadExpectedCost2026Sample,
+      beginNewPipelineSession,
     }),
     [
       parameters,
@@ -121,6 +157,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       request,
       applyParametersToRequest,
       loadExpectedCost2026Sample,
+      beginNewPipelineSession,
     ],
   );
 

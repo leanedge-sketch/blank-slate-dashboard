@@ -26,6 +26,7 @@ import { ImportFinancePage } from "./pages/finance/ImportFinancePage";
 import { TradeParametersWorkspacePage } from "./pages/finance/TradeParametersWorkspacePage";
 import { ProductCostingWorkspacePage } from "./pages/finance/ProductCostingWorkspacePage";
 import { TransitSummaryWorkspacePage } from "./pages/finance/TransitSummaryWorkspacePage";
+import { NewPipelineWorkspacePage } from "./pages/finance/NewPipelineWorkspacePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
@@ -229,6 +230,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ImportFinancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/new-pipeline"
+            element={
+              <ProtectedRoute>
+                <NewPipelineWorkspacePage />
               </ProtectedRoute>
             }
           />

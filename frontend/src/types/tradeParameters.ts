@@ -74,6 +74,16 @@ export function generatePipelineRequestRef(requestDate?: string): string {
   return `TT-${d}-${suffix}`;
 }
 
+export function ensurePipelineRequestIds(fields: {
+  requestDate?: string;
+  requestRef?: string;
+}): { requestDate: string; requestRef: string } {
+  const requestDate = fields.requestDate?.trim() || todayIsoDate();
+  const requestRef =
+    fields.requestRef?.trim() || generatePipelineRequestRef(requestDate);
+  return { requestDate, requestRef };
+}
+
 export function validatePipelineRequestFields(fields: {
   clientName: string;
   contactPerson: string;

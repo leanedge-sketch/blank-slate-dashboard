@@ -6,6 +6,7 @@ import {
   TRADE_CURRENCIES,
   TRADE_INCOTERMS,
   TRADE_PAYMENT_TERMS,
+  ensurePipelineRequestIds,
   generatePipelineRequestRef,
   validatePipelineRequestFields,
   type TradeParameters,
@@ -111,11 +112,16 @@ export function TradeParametersForm({
       return;
     }
     const customer = customers.find((c) => c.customer_id === customerId);
+    const ids = ensurePipelineRequestIds({
+      requestDate: parameters.requestDate,
+      requestRef: parameters.requestRef,
+    });
     onChange({
       customerId,
       clientName: customer?.customer_name?.trim() || parameters.clientName,
       contactPerson:
         customer?.primary_contact_name?.trim() || parameters.contactPerson,
+      ...ids,
     });
   }
 
@@ -124,11 +130,16 @@ export function TradeParametersForm({
     const matched = trimmed
       ? customers.find((c) => c.customer_name?.trim() === trimmed)
       : undefined;
+    const ids = ensurePipelineRequestIds({
+      requestDate: parameters.requestDate,
+      requestRef: parameters.requestRef,
+    });
     onChange({
       clientName,
       customerId: matched?.customer_id ?? "",
       contactPerson:
         matched?.primary_contact_name?.trim() || parameters.contactPerson,
+      ...ids,
     });
   }
 
