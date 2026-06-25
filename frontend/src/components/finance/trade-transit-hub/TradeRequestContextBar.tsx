@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Package, UserRound } from "lucide-react";
+import { Building2, Plus, UserRound } from "lucide-react";
 import { fetchCustomers, type Customer } from "../../../services/api";
-import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
 import {
   ensurePipelineRequestIds,
   generatePipelineRequestRef,
 } from "../../../types/tradeParameters";
 import type { TradeParameters } from "../../../types/tradeParameters";
 import type { TradeTransitRequest } from "../../../utils/tradeTransitRequest";
+import { openNewPipelineWindow } from "../../../utils/newPipelineSession";
 
 const inputClass =
   "w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40";
@@ -18,6 +18,7 @@ type TradeRequestContextBarProps = {
   request: TradeTransitRequest;
   productCount: number;
   readOnly?: boolean;
+  showProcurementLineAction?: boolean;
   onSync: (patch: {
     customerId?: string;
     clientName?: string;
@@ -40,6 +41,7 @@ export function TradeRequestContextBar({
   request,
   productCount,
   readOnly = false,
+  showProcurementLineAction = true,
   onSync,
 }: TradeRequestContextBarProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -137,19 +139,21 @@ export function TradeRequestContextBar({
             line below for each SKU, then cost each line separately.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200">
-            <Package className="h-3.5 w-3.5 text-cyan-400" />
-            {productCount} product{productCount === 1 ? "" : "s"}
-          </span>
-          {!readOnly && (
-            <Link
-              to={TRADE_TRANSIT_ROUTES.tradeParameters}
-              className="text-xs font-medium text-cyan-400 hover:text-cyan-300"
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {!readOnly && showProcurementLineAction ? (
+            <button
+              type="button"
+              onClick={openNewPipelineWindow}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
             >
-              Full trade parameters →
-            </Link>
-          )}
+              <Plus className="h-4 w-4" />
+              Add new procurement pipeline line
+            </button>
+          ) : !readOnly && productCount > 0 ? (
+            <span className="text-xs text-slate-500 tabular-nums">
+              {productCount} product line{productCount === 1 ? "" : "s"}
+            </span>
+          ) : null}
         </div>
       </div>
 

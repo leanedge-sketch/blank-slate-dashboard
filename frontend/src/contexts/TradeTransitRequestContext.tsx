@@ -23,7 +23,7 @@ import {
   sharedRatesFromInputs,
   type TradeTransitRequest,
 } from "../utils/tradeTransitRequest";
-import { customsRatesFromConstants } from "../utils/tradeTransitCalc";
+import { customsRatesFromConstants, DEFAULT_TRADE_TRANSIT_INPUTS } from "../utils/tradeTransitCalc";
 import { DEFAULT_FINANCE_CONSTANTS } from "../utils/importFinanceCalc";
 
 export const TRADE_TRANSIT_ROUTES = {
@@ -128,6 +128,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
     );
 
     const line = createTradeTransitLine("Product 1", {
+      ...DEFAULT_TRADE_TRANSIT_INPUTS,
       ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
       capitalParallelRate: exchangeRate,
     });

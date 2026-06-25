@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
+  Plus,
   AlertTriangle,
   Check,
   FileSpreadsheet,
@@ -18,6 +19,7 @@ import {
   type Customer,
 } from "../../../services/api";
 import {
+  ensurePipelineRequestIds,
   generatePipelineRequestRef,
   validatePipelineRequestFields,
 } from "../../../types/tradeParameters";
@@ -26,10 +28,15 @@ import type {
   WorkbookImportMetadata,
 } from "../../../utils/expectedCostCsv";
 import type { TradeTransitInputs } from "../../../utils/tradeTransitCalc";
-import { formatNumber } from "../../../utils/importFinanceCalc";
+import {
+  DEFAULT_TRADE_TRANSIT_INPUTS,
+  customsRatesFromConstants,
+} from "../../../utils/tradeTransitCalc";
+import { DEFAULT_FINANCE_CONSTANTS, formatNumber } from "../../../utils/importFinanceCalc";
 import { catalogProductValue, findCatalogProduct } from "../../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../../utils/chemicalMasterColumns";
 import {
+  createTradeTransitLineId,
   sharedRatesFromInputs,
   type SharedTradeTransitRates,
 } from "../../../utils/tradeTransitRequest";
@@ -113,6 +120,18 @@ function pickCatalogButtonProps(onPick: () => void) {
   };
 }
 
+function isLineLinked(line: WorkbookImportLineDraft): boolean {
+  return Boolean(line.chemicalTypeId?.trim());
+}
+
+const EMPTY_WORKBOOK_EXPECTED: WorkbookImportLineDraft["expected"] = {
+  totalCustomsFeeEtb: 0,
+  totalLandedCostEtb: 0,
+  unitCostEtbPerKg: 0,
+  sellingPriceEtbPerKg: 0,
+  targetMarginPct: 0,
+};
+
 export function WorkbookImportReviewModal({
   fileName,
   scenarios,
@@ -188,7 +207,34 @@ export function WorkbookImportReviewModal({
   );
 
   const activeLine = lineDrafts.find((line) => line.id === activeTab);
-  const unlinkedCount = lineDrafts.filter((line) => !line.chemicalTypeId).length;
+  const linkedCount = lineDrafts.filter((line) => isLineLinked(line)).length;
+  const unlinkedCount = lineDrafts.length - linkedCount;
+
+  const preparedDraft = useMemo(
+    () => ({
+      ...draft,
+      ...ensurePipelineRequestIds({
+        requestDate: draft.requestDate,
+        requestRef: draft.requestRef,
+      }),
+    }),
+    [draft],
+  );
+
+  const saveBlockers = useMemo(() => {
+    const blockers: string[] = [];
+    const validationError = validatePipelineRequestFields(preparedDraft);
+    if (validationError) blockers.push(validationError);
+    const unlinked = lineDrafts.filter((line) => !isLineLinked(line));
+    if (unlinked.length > 0) {
+      blockers.push(
+        `Link PMS for: ${unlinked.map((line) => line.workbookName).join(", ")}`,
+      );
+    }
+    return blockers;
+  }, [lineDrafts, preparedDraft]);
+
+  const canSave = saveBlockers.length === 0 && lineDrafts.length > 0;
 
   const suggestions = useMemo(() => {
     if (!activeLine) return [];
@@ -271,12 +317,47 @@ export function WorkbookImportReviewModal({
       return;
     }
     const customer = customers.find((c) => c.customer_id === customerId);
+    const ids = ensurePipelineRequestIds({
+      requestDate: draft.requestDate,
+      requestRef: draft.requestRef,
+    });
     patchDraft({
       customerId,
       clientName: customer?.customer_name?.trim() || draft.clientName,
       contactPerson:
         customer?.primary_contact_name?.trim() || draft.contactPerson,
+      ...ids,
     });
+  }
+
+  function addProductLine() {
+    const template = lineDrafts[0];
+    const shared = template
+      ? sharedRatesFromInputs(template.inputs)
+      : sharedRatesFromInputs({
+          ...DEFAULT_TRADE_TRANSIT_INPUTS,
+          ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+        });
+    const nextIndex = lineDrafts.length + 1;
+    const id = createTradeTransitLineId();
+    setLineDrafts((prev) => [
+      ...prev,
+      {
+        id,
+        workbookName: `New product ${nextIndex}`,
+        productName: `Product ${nextIndex}`,
+        chemicalTypeId: null,
+        quantityKg: DEFAULT_TRADE_TRANSIT_INPUTS.quantityKg,
+        inputs: {
+          ...DEFAULT_TRADE_TRANSIT_INPUTS,
+          ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+          ...shared,
+        },
+        expected: { ...EMPTY_WORKBOOK_EXPECTED },
+      },
+    ]);
+    setActiveTab(id);
+    setError(null);
   }
 
   function autoLinkAllFromCatalog() {
@@ -313,25 +394,18 @@ export function WorkbookImportReviewModal({
   }
 
   function handleSave() {
-    const validationError = validatePipelineRequestFields(draft);
-    if (validationError) {
-      setError(validationError);
-      setActiveTab("request");
+    if (!canSave) {
+      setError(saveBlockers[0] ?? "Complete the request and link every product.");
+      if (validatePipelineRequestFields(preparedDraft)) {
+        setActiveTab("request");
+      } else {
+        const firstUnlinked = lineDrafts.find((line) => !isLineLinked(line));
+        if (firstUnlinked) setActiveTab(firstUnlinked.id);
+      }
       return;
     }
-    if (lineDrafts.length === 0) {
-      setError("No product lines were found in this workbook.");
-      return;
-    }
-    const unlinked = lineDrafts.filter((line) => !line.chemicalTypeId);
-    if (unlinked.length > 0) {
-      setError(
-        `Link every product to PMS before saving. Still unlinked: ${unlinked.map((l) => l.workbookName).join(", ")}`,
-      );
-      setActiveTab(unlinked[0]!.id);
-      return;
-    }
-    onConfirm({ draft, lines: lineDrafts });
+    setDraft(preparedDraft);
+    onConfirm({ draft: preparedDraft, lines: lineDrafts });
   }
 
   const modal = (
@@ -384,6 +458,17 @@ export function WorkbookImportReviewModal({
             <p className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
               {unlinkedCount} product line{unlinkedCount === 1 ? "" : "s"} still
               need a PMS catalog match.
+            </p>
+          )}
+
+          {activeLine && isLineLinked(activeLine) && (
+            <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+              <strong>{activeLine.workbookName}</strong> is linked to PMS.
+              {canSave
+                ? " All products are ready — click Save to pipeline below."
+                : unlinkedCount > 0
+                  ? ` ${unlinkedCount} other line${unlinkedCount === 1 ? "" : "s"} still need a PMS link, or complete the Request tab.`
+                  : " Complete the Request tab (contact person, pipeline #), then save."}
             </p>
           )}
 
@@ -479,13 +564,13 @@ export function WorkbookImportReviewModal({
                 </h3>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                    activeLine.chemicalTypeId
+                    isLineLinked(activeLine)
                       ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                       : "bg-amber-500/15 text-amber-200 border border-amber-500/30"
                   }`}
                 >
                   <Link2 className="h-3 w-3" />
-                  {activeLine.chemicalTypeId ? "PMS linked" : "Needs PMS link"}
+                  {isLineLinked(activeLine) ? "PMS linked" : "Needs PMS link"}
                 </span>
               </div>
 
@@ -601,26 +686,33 @@ export function WorkbookImportReviewModal({
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     PMS catalog product
                   </label>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autoLinkOthers}
-                        onChange={(e) => setAutoLinkOthers(e.target.checked)}
-                        className="rounded border-white/20"
-                      />
-                      Auto-link other lines
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={syncSharedRates}
-                        onChange={(e) => setSyncSharedRates(e.target.checked)}
-                        className="rounded border-white/20"
-                      />
-                      Sync FX/tax rates to all lines
-                    </label>
-                  </div>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  <strong className="text-slate-400">Auto-link other lines</strong> — when
+                  you pick a product here, the system also matches remaining workbook
+                  rows to PMS by name.{" "}
+                  <strong className="text-slate-400">Sync FX/tax rates</strong> — parallel
+                  rate and duty % edits apply to every line on the same customer request.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoLinkOthers}
+                      onChange={(e) => setAutoLinkOthers(e.target.checked)}
+                      className="rounded border-white/20"
+                    />
+                    Auto-link other lines
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={syncSharedRates}
+                      onChange={(e) => setSyncSharedRates(e.target.checked)}
+                      className="rounded border-white/20"
+                    />
+                    Sync FX/tax rates to all lines
+                  </label>
                 </div>
 
                 {linkedChemical ? (
@@ -649,7 +741,7 @@ export function WorkbookImportReviewModal({
                   Auto-link all lines from catalog
                 </button>
 
-                {suggestions.length > 0 && !activeLine.chemicalTypeId ? (
+                {suggestions.length > 0 && !isLineLinked(activeLine) ? (
                   <div>
                     <p className="mb-2 text-xs text-slate-500">
                       Best matches for “{activeLine.workbookName}”
@@ -771,7 +863,7 @@ export function WorkbookImportReviewModal({
                 className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold border transition max-w-[180px] truncate ${
                   activeTab === line.id
                     ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
-                    : line.chemicalTypeId
+                    : isLineLinked(line)
                       ? "border-white/10 bg-slate-950 text-slate-300 hover:text-white"
                       : "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
                 }`}
@@ -779,8 +871,26 @@ export function WorkbookImportReviewModal({
                 {line.workbookName}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={addProductLine}
+              className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15 transition"
+              title="Add another product line after import"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add product
+            </button>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <p className="text-xs text-slate-500">
+              {linkedCount}/{lineDrafts.length} linked
+              {canSave ? (
+                <span className="text-emerald-400"> · ready to save</span>
+              ) : saveBlockers[0] ? (
+                <span className="text-amber-300"> · {saveBlockers[0]}</span>
+              ) : null}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onCancel}
@@ -792,12 +902,17 @@ export function WorkbookImportReviewModal({
             <button
               type="button"
               onClick={handleSave}
-              disabled={catalogLoading || lineDrafts.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              disabled={lineDrafts.length === 0}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
+                canSave
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : "bg-emerald-600/50 hover:bg-emerald-600/70"
+              } disabled:opacity-50`}
             >
               <Check className="h-4 w-4" />
               Save to pipeline
             </button>
+            </div>
           </div>
         </footer>
       </div>

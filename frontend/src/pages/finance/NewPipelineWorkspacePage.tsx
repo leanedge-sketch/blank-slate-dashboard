@@ -22,8 +22,8 @@ export function NewPipelineWorkspacePage() {
 
   return (
     <TradeTransitWorkspaceLayout
-      title="New pipeline entry"
-      subtitle="Manual costing workspace — customer details, multiple product lines, and the full calculator with default values you can override before saving."
+      title="Procurement pipeline"
+      subtitle="Customer request at the top, then add multiple product lines below. Default tax and margin percentages are pre-filled — change any field before saving."
       icon={<PenLine className="h-5 w-5 text-emerald-400" />}
       backHref={TRADE_TRANSIT_ROUTES.hub}
       backLabel="Back to hub"
@@ -31,6 +31,7 @@ export function NewPipelineWorkspacePage() {
       <ImportFinanceCalculatorWorkspace
         activeSection="all"
         showRecentShipments={false}
+        showProcurementLineAction={false}
       />
     </TradeTransitWorkspaceLayout>
   );
