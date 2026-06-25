@@ -35,6 +35,7 @@ import {
   createTradeTransitRequest,
   scenariosToTradeTransitRequest,
   sharedRatesFromInputs,
+  syncSharedRatesAcrossRequest,
   summarizeTradeTransitRequest,
   type TradeTransitRequest,
 } from "../../utils/tradeTransitRequest";
@@ -45,9 +46,10 @@ import {
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
 import {
-  WorkbookImportReviewPanel,
+  WorkbookImportReviewModal,
+  type WorkbookImportConfirmPayload,
   type WorkbookImportDraft,
-} from "./trade-transit-hub/WorkbookImportReviewPanel";
+} from "./trade-transit-hub/WorkbookImportReviewModal";
 import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
 import {
   loadPricingLocations,
@@ -356,8 +358,10 @@ export function ImportFinanceCalculatorWorkspace({
     });
   }
 
-  function handleConfirmWorkbookImport(draft: WorkbookImportDraft) {
+  function handleConfirmWorkbookImport(payload: WorkbookImportConfirmPayload) {
     if (!pendingWorkbook) return;
+
+    const { draft, lines } = payload;
 
     syncCustomerContext({
       customerId: draft.customerId,
@@ -367,13 +371,46 @@ export function ImportFinanceCalculatorWorkspace({
       requestRef: draft.requestRef,
     });
 
-    setCsvScenarios(pendingWorkbook.scenarios);
-    loadFullScenarioRequest(pendingWorkbook.scenarios, draft.clientName, {
-      customerId: draft.customerId,
-      contactPerson: draft.contactPerson,
-      requestDate: draft.requestDate,
-      requestRef: draft.requestRef,
-    });
+    const shared = sharedRatesFromInputs(lines[0]?.inputs ?? {});
+    const tradeLines = lines.map((line) =>
+      applySharedRatesToLine(
+        createTradeTransitLine(line.productName, {
+          ...line.inputs,
+          quantityKg: line.quantityKg,
+          chemicalTypeId: line.chemicalTypeId,
+          productId: null,
+        }),
+        shared,
+      ),
+    );
+
+    const synced = syncSharedRatesAcrossRequest(
+      {
+        ...createTradeTransitRequest(
+          draft.clientName,
+          tradeLines,
+          draft.customerId,
+          draft.contactPerson,
+          draft.requestDate,
+        ),
+        requestRef: draft.requestRef,
+      },
+      shared,
+    );
+
+    setRequest(synced);
+    setActiveLineId(synced.lines[0]?.id ?? "");
+    setSelectedScenarioId("");
+    setLoadedShipmentId(null);
+
+    setCsvScenarios(
+      lines.map((line) => ({
+        id: line.id,
+        name: line.productName,
+        inputs: line.inputs,
+        expected: line.expected,
+      })),
+    );
 
     setPendingWorkbook(null);
     preWorkbookSnapshot.current = null;
@@ -575,7 +612,7 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {pendingWorkbook && showTooling ? (
-        <WorkbookImportReviewPanel
+        <WorkbookImportReviewModal
           fileName={pendingWorkbook.fileName}
           scenarios={pendingWorkbook.scenarios}
           metadata={pendingWorkbook.metadata}
