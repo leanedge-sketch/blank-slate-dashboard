@@ -230,7 +230,7 @@ export function CRMReportsPage() {
         ["Deals with catalog product", String(integrated.links.open_deals_with_catalog_product)],
         ["Deals exceeding Addis stock", String(integrated.links.deals_exceeding_addis_stock)],
         [],
-        ["Trade & Transit"],
+        ["Import shipments"],
         ["Shipments (recent window)", String(integrated.trade_transit?.shipment_count ?? 0)],
         ["CRM-linked shipments", String(integrated.trade_transit?.linked_to_crm_count ?? 0)],
         ["Catalog-linked shipments", String(integrated.trade_transit?.linked_to_catalog_count ?? 0)],
@@ -270,7 +270,7 @@ export function CRMReportsPage() {
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
                 CRM coverage, sales pipeline forecast, PMS catalog &amp; pricing, stock availability,
-                trade transit landed costs, and deal fulfillment risks — one connected view.
+                import landed costs, and deal fulfillment risks.
               </p>
               {lastLoadedAt && (
                 <p className="text-xs text-slate-500">Last updated: {lastLoadedAt}</p>
@@ -489,94 +489,80 @@ export function CRMReportsPage() {
 
             {integrated && (
               <>
-                <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-sm">
-                  <h3 className="text-lg font-semibold mb-1">Connected modules</h3>
-                  <p className="text-sm text-slate-300 mb-4">
-                    {integrated.links.open_pipeline_deals} open deals ·{" "}
-                    {integrated.links.open_deals_with_catalog_product} with PMS product ·{" "}
-                    {integrated.links.deals_exceeding_addis_stock} exceeding Addis stock
-                  </p>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
-                      <div className="flex items-center gap-2 text-cyan-200 mb-2">
+                <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-cyan-700 mb-2">
                         <FlaskConical size={18} />
                         <span className="text-xs font-semibold uppercase">PMS</span>
                       </div>
                       <p className="text-2xl font-bold">{integrated.pms.catalog_product_count}</p>
-                      <p className="text-xs text-slate-300 mt-1">Catalog products</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-600 mt-1">Catalog products</p>
+                      <p className="text-xs text-slate-500 mt-2">
                         {integrated.pms.active_pricing_records} active prices ·{" "}
-                        {integrated.pms.catalog_with_current_price} synced
+                        {integrated.pms.catalog_with_current_price} with current price
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
-                      <div className="flex items-center gap-2 text-emerald-200 mb-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-emerald-700 mb-2">
                         <Warehouse size={18} />
                         <span className="text-xs font-semibold uppercase">Stock</span>
                       </div>
                       <p className="text-2xl font-bold">{formatKg(integrated.stock.total_available_kg)}</p>
-                      <p className="text-xs text-slate-300 mt-1">Total available</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-600 mt-1">Total available</p>
+                      <p className="text-xs text-slate-500 mt-2">
                         Addis {formatKg(integrated.stock.addis_available_kg)} ·{" "}
                         {integrated.stock.low_stock_sku_count} low SKUs
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
-                      <div className="flex items-center gap-2 text-indigo-200 mb-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-indigo-700 mb-2">
                         <TrendingUp size={18} />
                         <span className="text-xs font-semibold uppercase">Pipeline</span>
                       </div>
                       <p className="text-2xl font-bold">{integrated.links.open_pipeline_deals}</p>
-                      <p className="text-xs text-slate-300 mt-1">Open deals</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-600 mt-1">Open deals</p>
+                      <p className="text-xs text-slate-500 mt-2">
                         {integrated.stock.pipeline_linked_movements} stock movements linked
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
-                      <div className="flex items-center gap-2 text-amber-200 mb-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-amber-700 mb-2">
                         <Package size={18} />
-                        <span className="text-xs font-semibold uppercase">Links</span>
+                        <span className="text-xs font-semibold uppercase">Catalog links</span>
                       </div>
                       <p className="text-2xl font-bold">{integrated.pms.catalog_with_stock_link}</p>
-                      <p className="text-xs text-slate-300 mt-1">Catalog ↔ stock SKUs</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-600 mt-1">Catalog ↔ stock SKUs</p>
+                      <p className="text-xs text-slate-500 mt-2">
                         {integrated.stock.customer_linked_movements} customer-linked movements
                       </p>
                     </div>
-                    <div className="rounded-xl bg-white/10 p-4 backdrop-blur">
-                      <div className="flex items-center gap-2 text-teal-200 mb-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-teal-700 mb-2">
                         <Ship size={18} />
-                        <span className="text-xs font-semibold uppercase">Trade &amp; Transit</span>
+                        <span className="text-xs font-semibold uppercase">Import</span>
                       </div>
                       <p className="text-2xl font-bold">
                         {integrated.trade_transit?.shipment_count ?? 0}
                       </p>
-                      <p className="text-xs text-slate-300 mt-1">Saved shipments</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-600 mt-1">Saved shipments</p>
+                      <p className="text-xs text-slate-500 mt-2">
                         {formatKg(integrated.trade_transit?.total_quantity_kg ?? 0)} ·{" "}
-                        {integrated.trade_transit?.linked_to_catalog_count ?? 0} PMS-linked
+                        {integrated.trade_transit?.linked_to_catalog_count ?? 0} catalog-linked
                       </p>
                     </div>
-                  </div>
                 </section>
 
                 {(integrated.trade_transit?.recent_shipments?.length ?? 0) > 0 && (
-                  <section className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-6">
+                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                      <h3 className="text-lg font-semibold text-cyan-950 flex items-center gap-2">
-                        <Ship className="h-5 w-5" />
-                        Recent trade transit shipments
+                      <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                        <Ship className="h-5 w-5 text-teal-600" />
+                        Recent import shipments
                       </h3>
-                      <Link
-                        to="/finance/import"
-                        className="text-sm font-medium text-cyan-800 hover:text-cyan-950"
-                      >
-                        Open Trade &amp; Transit hub →
-                      </Link>
                     </div>
-                    <div className="overflow-x-auto rounded-xl border border-cyan-100 bg-white">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
                       <table className="w-full text-sm">
-                        <thead className="bg-cyan-50 text-left text-xs uppercase text-cyan-900">
+                        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
                           <tr>
                             <th className="px-4 py-3">Client</th>
                             <th className="px-4 py-3 text-right">Qty (kg)</th>

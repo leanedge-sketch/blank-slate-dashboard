@@ -49,15 +49,15 @@ export function CustomerTradeTransitPanel({
         <div className="flex items-center gap-2">
           <Ship className="h-5 w-5 text-cyan-600" />
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Trade &amp; Transit</h3>
-            <p className="text-xs text-slate-500">Import costing &amp; landed cost shipments</p>
+            <h3 className="text-sm font-bold text-slate-900">Import shipments</h3>
+            <p className="text-xs text-slate-500">Landed cost history for this customer</p>
           </div>
         </div>
         <Link
           to={TRADE_TRANSIT_ROUTES.tradeParameters}
           className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-900"
         >
-          New transit request
+          New import costing
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
@@ -69,7 +69,7 @@ export function CustomerTradeTransitPanel({
         </div>
       ) : shipments.length === 0 ? (
         <p className="px-5 py-6 text-sm text-slate-500">
-          No saved trade transit shipments for this customer yet.
+          No saved import shipments for this customer yet.
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">

@@ -58,7 +58,7 @@ export function TradeTransitHubHero({
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/20">
               <Container className="h-4 w-4 text-cyan-400" />
             </span>
-            <span>Dual-FX customs waterfall · multi-product client requests · PMS catalog</span>
+            <span>Dual-FX customs waterfall · multi-product client requests</span>
           </div>
         </div>
       </div>

@@ -26,10 +26,6 @@ import {
   partnerTypeLabel,
   type MarginComputeOptions,
 } from "./utils";
-import {
-  tradeTransitSnapshotKey,
-  type TradeTransitPricingSnapshot,
-} from "../../../utils/tradeTransitPricingBridge";
 
 type PricingDetailsMatrixProps = {
   partner: CRMPartner | null;
@@ -45,7 +41,6 @@ type PricingDetailsMatrixProps = {
     options?: { offerUpdateOpenDeals?: boolean },
   ) => void | Promise<void>;
   onDeleteRecord: (recordId: string) => void | Promise<void>;
-  tradeTransitSnapshots?: Map<string, TradeTransitPricingSnapshot>;
   readOnly?: boolean;
 };
 
@@ -171,7 +166,6 @@ export function PricingDetailsMatrix({
   onAddRecord,
   onUpdatePricing,
   onDeleteRecord,
-  tradeTransitSnapshots,
   readOnly = false,
 }: PricingDetailsMatrixProps) {
   const [showHistorical, setShowHistorical] = useState(false);
@@ -425,7 +419,6 @@ export function PricingDetailsMatrix({
                       <th className="whitespace-nowrap px-4 py-3">Incoterm</th>
                       <th className="whitespace-nowrap px-4 py-3">Cost</th>
                       <th className="whitespace-nowrap px-4 py-3">Price</th>
-                      <th className="whitespace-nowrap px-4 py-3">Trade &amp; Transit</th>
                       <th className="whitespace-nowrap px-4 py-3">Margin</th>
                       <th className="whitespace-nowrap px-4 py-3">Status</th>
                       <th className="sticky right-0 z-10 w-16 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-4 py-3 text-right">
@@ -436,14 +429,6 @@ export function PricingDetailsMatrix({
                   <tbody className="divide-y divide-slate-100">
                     {activeGroup.records.map((record) => {
                       const isHistorical = record.status === "historical";
-                      const transitKey =
-                        partner && tradeTransitSnapshots
-                          ? tradeTransitSnapshotKey(partner.name, record.pmsProductId)
-                          : "";
-                      const transitSnapshot =
-                        transitKey && tradeTransitSnapshots
-                          ? tradeTransitSnapshots.get(transitKey)
-                          : undefined;
                       return (
                         <tr
                           key={record.id}
@@ -477,26 +462,6 @@ export function PricingDetailsMatrix({
                                 {formatAmount(record.priceAmount)}
                               </span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {transitSnapshot ? (
-                              <div className="text-xs">
-                                <p className="tabular-nums font-medium text-teal-700">
-                                  Landed{" "}
-                                  {transitSnapshot.landedCostEtbPerKg != null
-                                    ? `${formatAmount(transitSnapshot.landedCostEtbPerKg)} ETB/kg`
-                                    : "—"}
-                                </p>
-                                <p className="tabular-nums text-slate-500">
-                                  Sell{" "}
-                                  {transitSnapshot.sellingPriceEtbPerKg != null
-                                    ? `${formatAmount(transitSnapshot.sellingPriceEtbPerKg)} ETB/kg`
-                                    : "—"}
-                                </p>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            )}
                           </td>
                           <td className="px-4 py-3">
                             <MarginCell record={record} marginOptions={marginOptions} />

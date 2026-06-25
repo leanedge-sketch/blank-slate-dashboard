@@ -62,7 +62,10 @@ export function TradeTransitPricingSelect({
       try {
         const customersRes = await fetchCustomers({ limit: 500 });
         const partners = (customersRes.customers ?? []).map(mapCustomerToCRMPartner);
-        const partner = resolveCrmPartnerByClientName(partners, clientName);
+        const partner =
+          (parameters.customerId
+            ? partners.find((p) => p.id === parameters.customerId)
+            : undefined) ?? resolveCrmPartnerByClientName(partners, clientName);
         if (!partner) {
           if (!cancelled) {
             setRecords([]);
@@ -111,7 +114,7 @@ export function TradeTransitPricingSelect({
         <div className="min-w-[220px] flex-1">
           <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-violet-300/90">
             <ArrowDownToLine className="h-3.5 w-3.5" />
-            Pricing &amp; costing link
+            Existing pricing
           </label>
           {loading ? (
             <div className="flex items-center gap-2 py-2 text-sm text-slate-400">
@@ -125,8 +128,8 @@ export function TradeTransitPricingSelect({
             </p>
           ) : records.length === 0 ? (
             <p className="text-xs text-slate-500">
-              No pricing rows for {partnerName ?? "this buyer"} and this product.
-              Save from Trade &amp; Transit to push landed cost into Pricing &amp; Costing.
+              No pricing rows for this buyer and product yet. Saving this request updates
+              pricing automatically when a CRM customer is linked.
             </p>
           ) : (
             <select
@@ -160,7 +163,7 @@ export function TradeTransitPricingSelect({
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/15 px-3 py-2.5 text-sm font-medium text-violet-100 hover:bg-violet-500/25 disabled:opacity-50 transition"
           >
-            Apply PMS pricing
+            Apply pricing
           </button>
         )}
       </div>

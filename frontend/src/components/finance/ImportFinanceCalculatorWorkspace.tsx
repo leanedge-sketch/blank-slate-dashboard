@@ -44,7 +44,6 @@ import {
 } from "./ImportFinanceCalculatorPanel";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { TradeTransitPricingSelect } from "./TradeTransitPricingSelect";
-import { TradeTransitStockPanel } from "./TradeTransitStockPanel";
 import {
   loadPricingLocations,
   mapCustomerToCRMPartner,
@@ -543,35 +542,27 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {showTooling && activeLine && (
-        <div className="space-y-4">
-          <TradeTransitPricingSelect
-            clientName={
-              parameters?.clientName.trim() ||
-              request.clientName.trim() ||
-              ""
+        <TradeTransitPricingSelect
+          clientName={
+            parameters?.clientName.trim() ||
+            request.clientName.trim() ||
+            ""
+          }
+          chemicalTypeId={activeLine.chemicalTypeId}
+          parameters={
+            parameters ?? {
+              ...DEFAULT_TRADE_PARAMETERS,
+              customerId: request.customerId,
+              clientName: request.clientName,
+              requestRef: request.requestRef,
+              exchangeRate: activeLine.inputs.capitalParallelRate,
             }
-            chemicalTypeId={activeLine.chemicalTypeId}
-            parameters={
-              parameters ?? {
-                ...DEFAULT_TRADE_PARAMETERS,
-                customerId: request.customerId,
-                clientName: request.clientName,
-                requestRef: request.requestRef,
-                exchangeRate: activeLine.inputs.capitalParallelRate,
-              }
-            }
-            disabled={loading || saving}
-            onApply={(patch) => {
-              updateActiveLine(patch);
-            }}
-          />
-          <TradeTransitStockPanel
-            chemicalTypeId={activeLine.chemicalTypeId}
-            quantityKg={activeLine.inputs.quantityKg}
-            customerId={parameters?.customerId || request.customerId || null}
-            productName={activeLine.productName}
-          />
-        </div>
+          }
+          disabled={loading || saving}
+          onApply={(patch) => {
+            updateActiveLine(patch);
+          }}
+        />
       )}
 
       {showCalculator && activeScenario && (

@@ -5,9 +5,9 @@ const modules = [
   {
     icon: FileText,
     title: "Integrated Reports",
-    subtitle: "CRM · Pipeline · PMS · Stock · Trade & Transit",
+    subtitle: "CRM · Pipeline · PMS · Stock · Import costing",
     description:
-      "Connected coverage, pipeline forecast, catalog & pricing, stock availability, trade transit landed costs, fulfillment risks, and CSV / PDF export.",
+      "CRM coverage, pipeline forecast, catalog & pricing, stock availability, import landed costs, fulfillment risks, and CSV / PDF export.",
     href: "/reports/crm",
     cta: "Open integrated reports",
     accent: "from-rose-600 via-pink-500 to-fuchsia-500",
