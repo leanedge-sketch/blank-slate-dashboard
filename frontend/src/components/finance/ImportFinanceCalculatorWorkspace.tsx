@@ -67,7 +67,6 @@ type ImportFinanceCalculatorWorkspaceProps = {
   showRecentShipments?: boolean;
   activeSection?: TradeTransitWorkspaceSection;
   historyOnly?: boolean;
-  showNewPipelineAction?: boolean;
 };
 
 const darkSelect =
@@ -78,7 +77,6 @@ export function ImportFinanceCalculatorWorkspace({
   showRecentShipments = true,
   activeSection = "all",
   historyOnly = false,
-  showNewPipelineAction = true,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const {
     constants,
@@ -672,7 +670,6 @@ export function ImportFinanceCalculatorWorkspace({
           request={request}
           productCount={request.lines.length}
           readOnly={historyOnly}
-          showNewPipelineAction={showNewPipelineAction}
           onSync={syncCustomerContext}
         />
       )}

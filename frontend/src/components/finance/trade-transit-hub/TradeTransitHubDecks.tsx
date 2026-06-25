@@ -1,7 +1,6 @@
 import { Briefcase, ClipboardList, Package } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
-import { openNewPipelineWindow } from "../../../utils/newPipelineSession";
 import {
   TradeTransitHubDeckCard,
   type TradeTransitDeckAccent,
@@ -11,8 +10,7 @@ export type TradeTransitHubModule = "trade" | "products" | "summary";
 
 const decks: Array<{
   id: TradeTransitHubModule;
-  href?: string;
-  onAction?: () => void;
+  href: string;
   icon: typeof Briefcase;
   overline: string;
   title: string;
@@ -21,35 +19,35 @@ const decks: Array<{
   accent: TradeTransitDeckAccent;
 }> = [
   {
-    id: "products",
-    onAction: openNewPipelineWindow,
-    icon: Package,
-    overline: "NEW_PIPELINE",
-    title: "Add new pipeline",
-    description:
-      "Open the full manual calculator in a new window — customer request, multiple products, default costing values you can edit, and save.",
-    buttonLabel: "Add new pipeline",
-    accent: "teal",
-  },
-  {
     id: "trade",
     href: TRADE_TRANSIT_ROUTES.tradeParameters,
     icon: Briefcase,
     overline: "TRADE_PARAMETERS",
-    title: "Trade parameters",
+    title: "Trade Parameters Workspace",
     description:
-      "Optional advanced step — incoterms, forex, ports, and commercial terms before costing.",
-    buttonLabel: "Open parameters",
+      "Define client details, commercial terms, forex, and routing before any costing begins.",
+    buttonLabel: "Open workspace",
     accent: "blue",
+  },
+  {
+    id: "products",
+    href: TRADE_TRANSIT_ROUTES.productCosting,
+    icon: Package,
+    overline: "PRODUCT_COSTING",
+    title: "Product Costing Calculator",
+    description:
+      "Add and manage products, calculate landed costs, selling prices, and payload capacities.",
+    buttonLabel: "Calculate products",
+    accent: "teal",
   },
   {
     id: "summary",
     href: TRADE_TRANSIT_ROUTES.transitSummary,
     icon: ClipboardList,
     overline: "TRANSIT_SUMMARY",
-    title: "Transit summary",
+    title: "Transit Summary Deck",
     description:
-      "View landed cost, selling rates per kg, and total revenue across product lines.",
+      "View the generated breakdown of quantities, landed/selling rates per KG, and total revenue.",
     buttonLabel: "View summary",
     accent: "orange",
   },
@@ -66,11 +64,11 @@ export function TradeTransitHubDecks() {
             Modules
           </p>
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Workspaces
+            Choose a workspace deck
           </h2>
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl font-light">
-            Start a new pipeline in a separate window, or open trade parameters,
-            history, and transit summary.
+            Each module opens in its own full-page workspace — trade parameters,
+            product costing, or transit summary.
           </p>
         </div>
 
@@ -79,14 +77,13 @@ export function TradeTransitHubDecks() {
             <TradeTransitHubDeckCard
               key={deck.id}
               href={deck.href}
-              onAction={deck.onAction}
               icon={deck.icon}
               overline={deck.overline}
               title={deck.title}
               description={deck.description}
               buttonLabel={deck.buttonLabel}
               accent={deck.accent}
-              active={deck.href ? pathname === deck.href : false}
+              active={pathname === deck.href}
             />
           ))}
         </div>

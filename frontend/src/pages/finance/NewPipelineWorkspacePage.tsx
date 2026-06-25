@@ -31,7 +31,6 @@ export function NewPipelineWorkspacePage() {
       <ImportFinanceCalculatorWorkspace
         activeSection="all"
         showRecentShipments={false}
-        showNewPipelineAction={false}
       />
     </TradeTransitWorkspaceLayout>
   );

@@ -1,12 +1,15 @@
-import { ArrowRight, Container, History, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
-import { openNewPipelineWindow } from "../../../utils/newPipelineSession";
+import { ArrowRight, Container, History, Plus } from "lucide-react";
 
 type TradeTransitHubHeroProps = {
+  newRequestHref: string;
   historyHref: string;
 };
 
-export function TradeTransitHubHero({ historyHref }: TradeTransitHubHeroProps) {
+export function TradeTransitHubHero({
+  newRequestHref,
+  historyHref,
+}: TradeTransitHubHeroProps) {
   return (
     <section className="px-4 sm:px-6 lg:px-8 pt-12 sm:pt-16 lg:pt-20 pb-8 sm:pb-10">
       <div className="max-w-5xl mx-auto">
@@ -34,15 +37,14 @@ export function TradeTransitHubHero({ historyHref }: TradeTransitHubHeroProps) {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 pt-2">
-            <button
-              type="button"
-              onClick={openNewPipelineWindow}
+            <Link
+              to={newRequestHref}
               className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/30 hover:-translate-y-0.5 active:translate-y-0 group"
             >
               <Plus className="w-5 h-5 mr-2" />
-              Add new pipeline
+              New Request
               <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-            </button>
+            </Link>
             <Link
               to={historyHref}
               className="inline-flex items-center justify-center px-8 py-4 rounded-xl border-2 border-slate-700 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:border-slate-500 hover:bg-slate-800/40 backdrop-blur-sm group"
