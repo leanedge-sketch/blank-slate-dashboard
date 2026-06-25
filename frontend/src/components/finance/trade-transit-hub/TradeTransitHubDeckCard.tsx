@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
-export type TradeTransitDeckAccent = "blue" | "teal" | "orange";
+export type TradeTransitDeckAccent = "blue" | "teal" | "orange" | "violet";
 
 const accentStyles: Record<
   TradeTransitDeckAccent,
@@ -34,6 +34,13 @@ const accentStyles: Record<
     iconBg: "bg-orange-500/20 border-orange-500/30",
     button: "bg-orange-500 hover:bg-orange-400 hover:shadow-orange-500/40",
     overline: "text-orange-400/90",
+  },
+  violet: {
+    gradient: "from-violet-600 via-purple-500 to-fuchsia-500",
+    glow: "group-hover:shadow-violet-500/35",
+    iconBg: "bg-violet-500/20 border-violet-500/30",
+    button: "bg-violet-600 hover:bg-violet-500 hover:shadow-violet-500/40",
+    overline: "text-violet-400/90",
   },
 };
 

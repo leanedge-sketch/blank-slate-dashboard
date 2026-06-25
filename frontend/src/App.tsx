@@ -14,7 +14,6 @@ import { CRMDashboardPage } from "./pages/crm/CRMDashboardPage";
 import { ReportsHomePage } from "./pages/reports/ReportsHomePage";
 import { CRMReportsPage } from "./pages/reports/CRMReportsPage";
 import { AnalyticsDashboardPage } from "./pages/reports/AnalyticsDashboardPage";
-import { ExecutiveReportDashboardPage } from "./pages/reports/ExecutiveReportDashboardPage";
 import { PMSHomePage } from "./pages/pms/PMSHomePage";
 import { ChemicalsPage } from "./pages/pms/ChemicalsPage";
 import { TDSPage } from "./pages/pms/TDSPage";
@@ -28,6 +27,7 @@ import { TradeParametersWorkspacePage } from "./pages/finance/TradeParametersWor
 import { ProductCostingWorkspacePage } from "./pages/finance/ProductCostingWorkspacePage";
 import { TransitSummaryWorkspacePage } from "./pages/finance/TransitSummaryWorkspacePage";
 import { NewPipelineWorkspacePage } from "./pages/finance/NewPipelineWorkspacePage";
+import { ExecutiveReportWorkspacePage } from "./pages/finance/ExecutiveReportWorkspacePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
@@ -162,7 +162,7 @@ export default function App() {
             path="/reports/executive"
             element={
               <ProtectedRoute>
-                <ExecutiveReportDashboardPage />
+                <ExecutiveReportWorkspacePage />
               </ProtectedRoute>
             }
           />
@@ -271,6 +271,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <TransitSummaryWorkspacePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/executive-report"
+            element={
+              <ProtectedRoute>
+                <ExecutiveReportWorkspacePage />
               </ProtectedRoute>
             }
           />

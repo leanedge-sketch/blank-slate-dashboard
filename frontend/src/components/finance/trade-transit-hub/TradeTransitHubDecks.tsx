@@ -1,4 +1,4 @@
-import { Briefcase, ClipboardList, Package } from "lucide-react";
+import { Briefcase, ClipboardList, LayoutDashboard, Package } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
 import {
@@ -6,7 +6,11 @@ import {
   type TradeTransitDeckAccent,
 } from "./TradeTransitHubDeckCard";
 
-export type TradeTransitHubModule = "trade" | "products" | "summary";
+export type TradeTransitHubModule =
+  | "trade"
+  | "products"
+  | "summary"
+  | "executive";
 
 const decks: Array<{
   id: TradeTransitHubModule;
@@ -51,6 +55,17 @@ const decks: Array<{
     buttonLabel: "View summary",
     accent: "orange",
   },
+  {
+    id: "executive",
+    href: TRADE_TRANSIT_ROUTES.executiveReport,
+    icon: LayoutDashboard,
+    overline: "STAGE_4_EXECUTIVE",
+    title: "Executive Report Dashboard",
+    description:
+      "Interactive BI with product and customer cross-filtering, cost charts, cognitive summaries, and PDF export.",
+    buttonLabel: "Open executive report",
+    accent: "violet",
+  },
 ];
 
 export function TradeTransitHubDecks() {
@@ -68,11 +83,11 @@ export function TradeTransitHubDecks() {
           </h2>
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl font-light">
             Each module opens in its own full-page workspace — trade parameters,
-            product costing, or transit summary.
+            product costing, transit summary, or the Stage 4 executive report.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 sm:gap-8">
           {decks.map((deck) => (
             <TradeTransitHubDeckCard
               key={deck.id}

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, BarChart3, FileText, LayoutDashboard, Sparkles } from "lucide-react";
+import { TRADE_TRANSIT_ROUTES } from "../../contexts/TradeTransitRequestContext";
 
 const modules = [
   {
@@ -8,7 +9,7 @@ const modules = [
     subtitle: "Stage 4 · Cross-filter BI · PDF export",
     description:
       "Interactive cost structure, revenue trajectory, and customer efficiency charts with product/customer cross-filtering and AI cognitive summaries.",
-    href: "/reports/executive",
+    href: TRADE_TRANSIT_ROUTES.executiveReport,
     cta: "Open executive dashboard",
     accent: "from-violet-600 via-purple-500 to-fuchsia-500",
     accentHover: "group-hover:shadow-violet-500/40",

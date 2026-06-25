@@ -31,6 +31,7 @@ export const TRADE_TRANSIT_ROUTES = {
   tradeParameters: "/finance/trade-parameters",
   productCosting: "/finance/product-costing",
   transitSummary: "/finance/transit-summary",
+  executiveReport: "/finance/executive-report",
 } as const;
 
 interface TradeTransitRequestContextValue {
