@@ -24,6 +24,8 @@ export interface TradeParameters {
   /** CRM customers.customer_id when buyer is picked from CRM. */
   customerId: string;
   clientName: string;
+  /** Buyer contact for this request — from CRM primary contact or entered manually. */
+  contactPerson: string;
   requestRef: string;
   incoterm: TradeIncoterm;
   paymentTerms: TradePaymentTerm | string;
@@ -40,6 +42,7 @@ export interface TradeParameters {
 export const DEFAULT_TRADE_PARAMETERS: TradeParameters = {
   customerId: "",
   clientName: "",
+  contactPerson: "",
   requestRef: "",
   incoterm: "FOB",
   paymentTerms: "LC at Sight",

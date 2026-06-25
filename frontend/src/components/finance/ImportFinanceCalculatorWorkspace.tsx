@@ -293,6 +293,10 @@ export function ImportFinanceCalculatorWorkspace({
     });
     setRequest((prev) => ({
       ...prev,
+      clientName: row.client_name?.trim() || prev.clientName,
+      contactPerson: row.contact_person?.trim() || prev.contactPerson,
+      customerId: row.customer_id?.trim() || prev.customerId,
+      requestRef: row.request_ref?.trim() || prev.requestRef,
       lines: [line],
     }));
     setActiveLineId(line.id);
@@ -305,6 +309,10 @@ export function ImportFinanceCalculatorWorkspace({
       parameters?.clientName.trim() ||
       request.clientName.trim() ||
       "Unnamed client";
+    const contactLabel =
+      parameters?.contactPerson.trim() ||
+      request.contactPerson.trim() ||
+      "";
     const unlinked = request.lines.filter((line) => !line.chemicalTypeId);
     if (unlinked.length > 0) {
       const names = unlinked.map((l) => l.productName).join(", ");
@@ -352,6 +360,7 @@ export function ImportFinanceCalculatorWorkspace({
         );
         await saveDraft(productId, legacyInputs, constants, {
           clientName: clientLabel,
+          contactPerson: contactLabel || undefined,
           requestRef: request.requestRef,
           chemicalTypeId: line.chemicalTypeId,
           customerId:
@@ -374,6 +383,7 @@ export function ImportFinanceCalculatorWorkspace({
           parameters: parameters ?? {
             ...DEFAULT_TRADE_PARAMETERS,
             clientName: clientLabel,
+            contactPerson: contactLabel,
             requestRef: request.requestRef,
             exchangeRate: activeLine?.inputs.capitalParallelRate ?? DEFAULT_TRADE_PARAMETERS.exchangeRate,
           },

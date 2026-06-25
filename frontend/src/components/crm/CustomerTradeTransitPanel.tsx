@@ -85,6 +85,7 @@ export function CustomerTradeTransitPanel({
                   {row.created_at
                     ? new Date(row.created_at).toLocaleDateString()
                     : "—"}
+                  {row.contact_person ? ` · ${row.contact_person}` : ""}
                   {row.final_landed_unit_cost_etb_per_kg != null
                     ? ` · Landed ${Number(row.final_landed_unit_cost_etb_per_kg).toFixed(2)} ETB/kg`
                     : ""}

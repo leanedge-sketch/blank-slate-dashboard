@@ -51,6 +51,7 @@ export interface ImportShipmentRow {
   gross_margin_pct?: number | null;
   total_expected_revenue_etb?: number | null;
   client_name?: string | null;
+  contact_person?: string | null;
   request_ref?: string | null;
   chemical_type_id?: string | null;
   customer_id?: string | null;
@@ -93,6 +94,7 @@ export function buildShipmentPipelinePayload(
   result: ImportFinanceResult = calculateImportFinance(inputs, constants),
   clientContext?: {
     clientName?: string;
+    contactPerson?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;
@@ -128,6 +130,7 @@ export function buildShipmentPipelinePayload(
     gross_margin_pct: result.sales.grossMarginPct,
     total_expected_revenue_etb: result.sales.totalExpectedRevenueEtb,
     client_name: clientContext?.clientName?.trim() || null,
+    contact_person: clientContext?.contactPerson?.trim() || null,
     request_ref: clientContext?.requestRef?.trim() || null,
     chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
     customer_id: clientContext?.customerId?.trim() || null,
@@ -243,6 +246,7 @@ export async function saveImportShipmentDraft(
   constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
   clientContext?: {
     clientName?: string;
+    contactPerson?: string;
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;

@@ -25,7 +25,11 @@ export function ProductCostingWorkspacePage() {
       subtitle={
         historyOnly
           ? "Review and reload saved shipment snapshots."
-          : `Product lines, landed cost, and margins for ${parameters.clientName.trim() || "your client"}.`
+          : `Product lines for ${parameters.clientName.trim() || "your client"}${
+              parameters.contactPerson.trim()
+                ? ` · contact ${parameters.contactPerson.trim()}`
+                : ""
+            }.`
       }
       icon={<Package className="h-5 w-5 text-teal-400" />}
       actions={

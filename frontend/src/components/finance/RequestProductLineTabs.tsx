@@ -44,9 +44,18 @@ export function RequestProductLineTabs({
     <div className="space-y-3">
       <div className="rounded-xl border border-white/10 bg-slate-900/80 p-4">
         <div className="flex items-center justify-between gap-3 mb-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Products on this request
-          </p>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Products on this request
+            </p>
+            {(request.clientName || request.contactPerson || request.requestRef) && (
+              <p className="mt-1 text-xs text-slate-400">
+                {request.clientName || "Unnamed client"}
+                {request.contactPerson ? ` · ${request.contactPerson}` : ""}
+                {request.requestRef ? ` · ${request.requestRef}` : ""}
+              </p>
+            )}
+          </div>
           <p className="text-[10px] text-slate-600 tabular-nums">
             {request.lines.length} product{request.lines.length === 1 ? "" : "s"}
           </p>
