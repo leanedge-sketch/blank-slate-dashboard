@@ -19,7 +19,8 @@ import {
 import { catalogProductValue } from "../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
 import { DEFAULT_TRADE_PARAMETERS, validatePipelineRequestFields } from "../../types/tradeParameters";
-import { formatEtb, formatNumber } from "../../utils/importFinanceCalc";
+import { formatNumber } from "../../utils/importFinanceCalc";
+import { pullLatestPricingForLines } from "../../services/pullLatestTransitPricing";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import {
@@ -43,6 +44,7 @@ import {
   DEFAULT_TRADE_TRANSIT_INPUTS,
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
+import { PipelineSnapshotsTable } from "./trade-transit-hub/PipelineSnapshotsTable";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
 import {
@@ -66,13 +68,6 @@ type ImportFinanceCalculatorWorkspaceProps = {
   activeSection?: TradeTransitWorkspaceSection;
   historyOnly?: boolean;
 };
-
-function marginTone(pct: number | null | undefined): string {
-  if (pct == null || Number.isNaN(pct)) return "text-slate-500";
-  if (pct < 0) return "text-rose-400 font-semibold";
-  if (pct >= 15) return "text-emerald-400 font-semibold";
-  return "text-amber-400 font-semibold";
-}
 
 const darkSelect =
   "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50";
@@ -121,6 +116,7 @@ export function ImportFinanceCalculatorWorkspace({
     () => request.lines[0]?.id ?? "",
   );
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
   const [csvScenarios, setCsvScenarios] = useState<ExpectedCostScenario[]>([]);
   const [pendingWorkbook, setPendingWorkbook] = useState<{
@@ -358,7 +354,7 @@ export function ImportFinanceCalculatorWorkspace({
     });
   }
 
-  function handleConfirmWorkbookImport(payload: WorkbookImportConfirmPayload) {
+  async function handleConfirmWorkbookImport(payload: WorkbookImportConfirmPayload) {
     if (!pendingWorkbook) return;
 
     const { draft, lines } = payload;
@@ -384,7 +380,7 @@ export function ImportFinanceCalculatorWorkspace({
       ),
     );
 
-    const synced = syncSharedRatesAcrossRequest(
+    let synced = syncSharedRatesAcrossRequest(
       {
         ...createTradeTransitRequest(
           draft.clientName,
@@ -398,10 +394,34 @@ export function ImportFinanceCalculatorWorkspace({
       shared,
     );
 
+    try {
+      const pricingParams = {
+        ...DEFAULT_TRADE_PARAMETERS,
+        clientName: draft.clientName,
+        customerId: draft.customerId,
+        contactPerson: draft.contactPerson,
+        requestDate: draft.requestDate,
+        requestRef: draft.requestRef,
+        exchangeRate:
+          lines[0]?.inputs.capitalParallelRate ??
+          DEFAULT_TRADE_PARAMETERS.exchangeRate,
+      };
+      const withPricing = await pullLatestPricingForLines({
+        lines: synced.lines,
+        parameters: pricingParams,
+      });
+      synced = { ...synced, lines: withPricing };
+    } catch (pricingErr) {
+      console.warn("Could not pull latest PMS pricing for workbook lines:", pricingErr);
+    }
+
     setRequest(synced);
     setActiveLineId(synced.lines[0]?.id ?? "");
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
+    setImportNotice(
+      `Loaded ${synced.lines.length} product line${synced.lines.length === 1 ? "" : "s"} from workbook — use the product tabs above. Latest PMS pricing applied where available.`,
+    );
 
     setCsvScenarios(
       lines.map((line) => ({
@@ -425,25 +445,47 @@ export function ImportFinanceCalculatorWorkspace({
     preWorkbookSnapshot.current = null;
   }
 
-  function handleLoadShipment(row: ImportShipmentRow) {
+
+  function shipmentToLine(row: ImportShipmentRow) {
     const product = products.find((p) => p.id === row.product_id);
-    const line = createTradeTransitLine(product?.product_name ?? "Loaded product", {
+    return createTradeTransitLine(product?.product_name ?? "Loaded product", {
       ...legacyShipmentToTradeTransit(row),
       productId: row.product_id,
       chemicalTypeId: row.chemical_type_id ?? null,
     });
-    setRequest((prev) => ({
-      ...prev,
-      clientName: row.client_name?.trim() || prev.clientName,
-      contactPerson: row.contact_person?.trim() || prev.contactPerson,
-      customerId: row.customer_id?.trim() || prev.customerId,
-      requestDate: row.request_date?.trim() || prev.requestDate,
-      requestRef: row.request_ref?.trim() || prev.requestRef,
-      lines: [line],
-    }));
-    setActiveLineId(line.id);
+  }
+
+  function handleLoadShipment(row: ImportShipmentRow) {
+    handleLoadShipmentGroup([row]);
+  }
+
+  function handleLoadShipmentGroup(rows: ImportShipmentRow[]) {
+    if (rows.length === 0) return;
+    const first = rows[0]!;
+    const lines = rows.map((row) => shipmentToLine(row));
+    const shared = sharedRatesFromInputs(lines[0]!.inputs);
+    const synced = syncSharedRatesAcrossRequest(
+      {
+        ...createTradeTransitRequest(
+          first.client_name?.trim() || "",
+          lines.map((line) => applySharedRatesToLine(line, shared)),
+          first.customer_id?.trim() || "",
+          first.contact_person?.trim() || "",
+          first.request_date?.trim() || "",
+        ),
+        requestRef: first.request_ref?.trim() || "",
+      },
+      shared,
+    );
+    setRequest(synced);
+    setActiveLineId(synced.lines[0]?.id ?? "");
     setSelectedScenarioId("");
-    setLoadedShipmentId(row.id);
+    setLoadedShipmentId(first.id);
+    setImportNotice(
+      lines.length > 1
+        ? `Loaded ${lines.length} products for request ${first.request_ref?.trim() || "—"} — use the product tabs above.`
+        : null,
+    );
   }
 
   async function handleSaveDraft() {
@@ -632,6 +674,12 @@ export function ImportFinanceCalculatorWorkspace({
         />
       )}
 
+      {importNotice && showProducts && (
+        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-100">
+          {importNotice}
+        </p>
+      )}
+
       {showProducts && (
         <RequestProductLineTabs
           request={request}
@@ -784,10 +832,10 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
-      {showCalculator && loadedShipmentId && (
+      {showCalculator && loadedShipmentId && request.lines.length > 1 && (
         <p className="text-xs text-cyan-400/90">
-          Loaded snapshot {loadedShipmentId.slice(0, 8)}… into single-product
-          request — add more products or save linked lines.
+          Loaded {request.lines.length} products from request snapshot — switch
+          tabs above or save all linked lines.
         </p>
       )}
 
@@ -805,96 +853,16 @@ export function ImportFinanceCalculatorWorkspace({
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Saved pipeline snapshots
             <span className="ml-2 text-xs font-normal text-slate-500">
-              click to load one product
+              click request ID to load all products, or a row for one line
             </span>
           </h3>
-          {shipments.length === 0 ? (
-            <p className="text-sm text-slate-500 py-6 text-center">
-              No saved snapshots yet. Complete a calculation and use Save all
-              linked lines.
-            </p>
-          ) : (
-          <table className="w-full min-w-[720px] text-sm text-left">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
-                <th className="py-2 pr-3 font-medium">Product</th>
-                <th className="py-2 pr-3 font-medium text-right">Qty</th>
-                <th className="py-2 pr-3 font-medium text-right">Capital</th>
-                <th className="py-2 pr-3 font-medium text-right">Customs</th>
-                <th className="py-2 pr-3 font-medium text-right">Landed/kg</th>
-                <th className="py-2 pr-3 font-medium text-right">Target/kg</th>
-                <th className="py-2 pr-3 font-medium text-right">Margin</th>
-                <th className="py-2 pr-3 font-medium text-right">Revenue</th>
-                <th className="py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shipments.map((s) => {
-                const product = products.find((p) => p.id === s.product_id);
-                const isLoaded = loadedShipmentId === s.id;
-                return (
-                  <tr
-                    key={s.id}
-                    onClick={() => handleLoadShipment(s)}
-                    className={`border-b border-white/5 cursor-pointer transition ${
-                      isLoaded ? "bg-cyan-500/10" : "hover:bg-white/5"
-                    }`}
-                  >
-                    <td className="py-2.5 pr-3 text-slate-200">
-                      {product?.product_name ?? s.product_id.slice(0, 8)}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
-                      {Number(s.quantity_kg).toLocaleString()}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
-                      {s.capital_outlay_etb != null
-                        ? formatEtb(Number(s.capital_outlay_etb), 0)
-                        : "—"}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
-                      {s.total_customs_paid_etb != null
-                        ? formatEtb(Number(s.total_customs_paid_etb), 0)
-                        : "—"}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums font-medium text-emerald-400">
-                      {s.final_landed_unit_cost_etb_per_kg != null
-                        ? formatNumber(
-                            Number(s.final_landed_unit_cost_etb_per_kg),
-                            2,
-                          )
-                        : "—"}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
-                      {s.target_selling_price_etb_per_kg != null
-                        ? formatNumber(
-                            Number(s.target_selling_price_etb_per_kg),
-                            2,
-                          )
-                        : "—"}
-                    </td>
-                    <td
-                      className={`py-2.5 pr-3 text-right tabular-nums ${marginTone(
-                        s.gross_margin_pct != null
-                          ? Number(s.gross_margin_pct)
-                          : null,
-                      )}`}
-                    >
-                      {s.gross_margin_pct != null
-                        ? `${formatNumber(Number(s.gross_margin_pct), 1)}%`
-                        : "—"}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
-                      {s.total_expected_revenue_etb != null
-                        ? formatEtb(Number(s.total_expected_revenue_etb), 0)
-                        : "—"}
-                    </td>
-                    <td className="py-2.5 text-slate-500 text-xs">{s.status}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          )}
+          <PipelineSnapshotsTable
+            shipments={shipments}
+            products={products}
+            loadedShipmentId={loadedShipmentId}
+            onLoadGroup={handleLoadShipmentGroup}
+            onLoadRow={handleLoadShipment}
+          />
         </div>
       )}
     </div>
