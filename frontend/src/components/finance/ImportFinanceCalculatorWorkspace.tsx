@@ -68,6 +68,7 @@ type ImportFinanceCalculatorWorkspaceProps = {
   activeSection?: TradeTransitWorkspaceSection;
   historyOnly?: boolean;
   showProcurementLineAction?: boolean;
+  expandCalculatorInputs?: boolean;
 };
 
 const darkSelect =
@@ -79,6 +80,7 @@ export function ImportFinanceCalculatorWorkspace({
   activeSection = "all",
   historyOnly = false,
   showProcurementLineAction = true,
+  expandCalculatorInputs = false,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const {
     constants,
@@ -120,6 +122,7 @@ export function ImportFinanceCalculatorWorkspace({
   const [loadedShipmentId, setLoadedShipmentId] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
+  const [renamingLineId, setRenamingLineId] = useState<string | null>(null);
   const [csvScenarios, setCsvScenarios] = useState<ExpectedCostScenario[]>([]);
   const [pendingWorkbook, setPendingWorkbook] = useState<{
     fileName: string;
@@ -197,14 +200,23 @@ export function ImportFinanceCalculatorWorkspace({
     }));
   }
 
+  function renameLine(lineId: string, productName: string) {
+    setLoadedShipmentId(null);
+    setRequest((prev) => ({
+      ...prev,
+      lines: prev.lines.map((line) =>
+        line.id === lineId ? { ...line, productName } : line,
+      ),
+    }));
+  }
+
   function addProductLine() {
     const template = activeLine ?? request.lines[0];
     const shared = template
       ? sharedRatesFromInputs(template.inputs)
       : sharedRatesFromInputs(DEFAULT_TRADE_TRANSIT_INPUTS);
-    const nextIndex = request.lines.length + 1;
     const line = applySharedRatesToLine(
-      createTradeTransitLine(`Product ${nextIndex}`, {
+      createTradeTransitLine("", {
         ...customsRatesFromConstants(constants),
       }),
       shared,
@@ -214,6 +226,7 @@ export function ImportFinanceCalculatorWorkspace({
       lines: [...prev.lines, line],
     }));
     setActiveLineId(line.id);
+    setRenamingLineId(line.id);
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
   }
@@ -688,12 +701,16 @@ export function ImportFinanceCalculatorWorkspace({
           request={request}
           summary={summary}
           activeLineId={activeLineId}
+          renamingLineId={renamingLineId}
           onSelectLine={(lineId) => {
             setActiveLineId(lineId);
             setSelectedScenarioId("");
+            setRenamingLineId(null);
           }}
           onAddLine={addProductLine}
           onRemoveActive={removeActiveLine}
+          onRenameLine={renameLine}
+          onRenamingLineIdChange={setRenamingLineId}
           showRequestHeader={historyOnly}
         />
       )}
@@ -848,6 +865,7 @@ export function ImportFinanceCalculatorWorkspace({
         inputs={activeLine.inputs}
         onChange={updateActiveLine}
         constants={constants as FinanceConstants}
+        expandAllInputs={expandCalculatorInputs}
       />
       )}
 

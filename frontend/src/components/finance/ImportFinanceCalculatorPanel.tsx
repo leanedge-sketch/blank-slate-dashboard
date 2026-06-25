@@ -36,6 +36,8 @@ type ImportFinanceCalculatorPanelProps = {
   onChange: (patch: Partial<TradeTransitInputs>) => void;
   constants?: FinanceConstants;
   compact?: boolean;
+  /** Show every stage input at once; hide the read-only pipeline ledger. */
+  expandAllInputs?: boolean;
 };
 
 type Accent = "cyan" | "amber" | "emerald" | "purple";
@@ -994,12 +996,42 @@ function InputConsole({
   inputs,
   result,
   onChange,
+  expandAllInputs = false,
 }: {
   activeStage: StageId;
   inputs: TradeTransitInputs;
   result: TradeTransitResult;
   onChange: (patch: Partial<TradeTransitInputs>) => void;
+  expandAllInputs?: boolean;
 }) {
+  if (expandAllInputs) {
+    const stages: StageId[] = [1, 2, 3, 4];
+    return (
+      <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4 lg:sticky lg:top-4">
+        <div className="flex items-center gap-2 mb-3">
+          <SlidersHorizontal className="h-4 w-4 text-cyan-400" />
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/80">
+            All stage inputs
+          </p>
+        </div>
+        <p className="text-[10px] text-slate-600 mb-4">
+          Edit any field below. Computed totals update as you type.
+        </p>
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 scrollbar-thin">
+          {stages.map((stage) => (
+            <StageInputPanel
+              key={stage}
+              stage={stage}
+              inputs={inputs}
+              result={result}
+              onChange={onChange}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-4 lg:sticky lg:top-4">
       <div className="flex items-center gap-2 mb-3">
@@ -1028,6 +1060,7 @@ export function ImportFinanceCalculatorPanel({
   onChange,
   constants = DEFAULT_FINANCE_CONSTANTS,
   compact = false,
+  expandAllInputs = false,
 }: ImportFinanceCalculatorPanelProps) {
   const [activeStage, setActiveStage] = useState<StageId>(1);
 
@@ -1037,6 +1070,28 @@ export function ImportFinanceCalculatorPanel({
   );
 
   const qty = Math.max(inputs.quantityKg, 0);
+
+  if (expandAllInputs) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-xs text-slate-400">
+            Landed unit cost (computed)
+          </p>
+          <p className="text-lg font-bold tabular-nums text-emerald-300">
+            {formatNumber(result.stage3.finalLandedUnitCostEtbPerKg, 2)} ETB/kg
+          </p>
+        </div>
+        <InputConsole
+          activeStage={activeStage}
+          inputs={inputs}
+          result={result}
+          onChange={onChange}
+          expandAllInputs
+        />
+      </div>
+    );
+  }
 
   return (
     <div

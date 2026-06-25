@@ -127,7 +127,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       }),
     );
 
-    const line = createTradeTransitLine("Product 1", {
+    const line = createTradeTransitLine("", {
       ...DEFAULT_TRADE_TRANSIT_INPUTS,
       ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
       capitalParallelRate: exchangeRate,

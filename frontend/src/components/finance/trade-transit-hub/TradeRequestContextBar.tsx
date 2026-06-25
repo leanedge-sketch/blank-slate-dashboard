@@ -126,35 +126,24 @@ export function TradeRequestContextBar({
 
   return (
     <section className="rounded-xl border border-cyan-500/25 bg-gradient-to-br from-slate-900/95 to-slate-950/95 p-4 sm:p-5 shadow-[0_0_24px_rgba(6,182,212,0.08)]">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90">
-            Customer request · pipeline entry
-          </p>
-          <h2 className="mt-1 text-xl sm:text-2xl font-bold text-white truncate">
-            {clientName || "No customer selected"}
-          </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            One customer can order multiple products on this request. Add a product
-            line below for each SKU, then cost each line separately.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {!readOnly && showProcurementLineAction ? (
-            <button
-              type="button"
-              onClick={openNewPipelineWindow}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
-            >
-              <Plus className="h-4 w-4" />
-              Add new procurement pipeline line
-            </button>
-          ) : !readOnly && productCount > 0 ? (
-            <span className="text-xs text-slate-500 tabular-nums">
-              {productCount} product line{productCount === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90">
+          Customer request · pipeline entry
+        </p>
+        {!readOnly && showProcurementLineAction ? (
+          <button
+            type="button"
+            onClick={openNewPipelineWindow}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            Add new procurement pipeline line
+          </button>
+        ) : !readOnly && productCount > 0 ? (
+          <span className="text-xs text-slate-500 tabular-nums shrink-0">
+            {productCount} product line{productCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
       </div>
 
       {missingPipeline && !readOnly && (

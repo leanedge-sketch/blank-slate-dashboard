@@ -345,7 +345,7 @@ export function WorkbookImportReviewModal({
       {
         id,
         workbookName: `New product ${nextIndex}`,
-        productName: `Product ${nextIndex}`,
+        productName: "",
         chemicalTypeId: null,
         quantityKg: DEFAULT_TRADE_TRANSIT_INPUTS.quantityKg,
         inputs: {
@@ -874,11 +874,11 @@ export function WorkbookImportReviewModal({
             <button
               type="button"
               onClick={addProductLine}
-              className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15 transition"
-              title="Add another product line after import"
+              className="shrink-0 inline-flex items-center justify-center rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2 text-cyan-200 hover:bg-cyan-500/15 transition min-w-[40px]"
+              title="Add another product line"
+              aria-label="Add line"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add product
             </button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">

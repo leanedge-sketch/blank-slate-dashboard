@@ -32,6 +32,7 @@ export function NewPipelineWorkspacePage() {
         activeSection="all"
         showRecentShipments={false}
         showProcurementLineAction={false}
+        expandCalculatorInputs
       />
     </TradeTransitWorkspaceLayout>
   );

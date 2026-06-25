@@ -131,7 +131,7 @@ export function createTradeTransitRequest(
     contactPerson,
     requestDate,
     requestRef: "",
-    lines: lines ?? [createTradeTransitLine("Product 1")],
+    lines: lines ?? [createTradeTransitLine("")],
   };
 }
 
