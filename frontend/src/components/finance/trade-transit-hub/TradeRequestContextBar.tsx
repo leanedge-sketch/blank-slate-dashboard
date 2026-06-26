@@ -134,8 +134,8 @@ export function TradeRequestContextBar({
           onClick={openNewPipelineWindow}
           className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
         >
-          <Plus className="h-4 w-4" />
-          Add new procurement pipeline line
+            <Plus className="h-4 w-4" />
+            Add pipeline
         </button>
       </section>
     );

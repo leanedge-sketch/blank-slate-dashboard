@@ -11,7 +11,7 @@ import {
 export function ProductCostingWorkspacePage() {
   const [searchParams] = useSearchParams();
   const historyOnly = searchParams.get("history") === "1";
-  const { applyParametersToRequest, parameters } = useTradeTransitRequest();
+  const { applyParametersToRequest } = useTradeTransitRequest();
 
   useEffect(() => {
     if (!historyOnly) {
@@ -25,9 +25,7 @@ export function ProductCostingWorkspacePage() {
       subtitle={
         historyOnly
           ? "Review and reload saved shipment snapshots."
-          : parameters.clientName.trim()
-            ? `Pipeline entry for ${parameters.clientName.trim()} — add one product line per SKU on this customer request.`
-            : "Select the customer request, then add one product line per SKU they ordered."
+          : "Add a pipeline to start a new customer request, or work with saved product lines below."
       }
       icon={<Package className="h-5 w-5 text-teal-400" />}
       actions={
@@ -46,8 +44,8 @@ export function ProductCostingWorkspacePage() {
         activeSection="products"
         historyOnly={historyOnly}
         showRecentShipments
-        showProcurementLineAction={false}
-        showCustomerFields
+        showProcurementLineAction
+        showCustomerFields={false}
       />
     </TradeTransitWorkspaceLayout>
   );

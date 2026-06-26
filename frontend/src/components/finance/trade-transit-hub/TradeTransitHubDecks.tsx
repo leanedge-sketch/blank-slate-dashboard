@@ -1,4 +1,4 @@
-import { Briefcase, ClipboardList, LayoutDashboard, Package } from "lucide-react";
+import { Briefcase, ClipboardList, LayoutDashboard, Package, Sparkles } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
 import {
@@ -6,14 +6,7 @@ import {
   type TradeTransitDeckAccent,
 } from "./TradeTransitHubDeckCard";
 
-export type TradeTransitHubModule =
-  | "trade"
-  | "products"
-  | "summary"
-  | "executive";
-
-const decks: Array<{
-  id: TradeTransitHubModule;
+type DeckConfig = {
   href: string;
   icon: typeof Briefcase;
   overline: string;
@@ -21,9 +14,10 @@ const decks: Array<{
   description: string;
   buttonLabel: string;
   accent: TradeTransitDeckAccent;
-}> = [
+};
+
+const workspaceDecks: DeckConfig[] = [
   {
-    id: "trade",
     href: TRADE_TRANSIT_ROUTES.tradeParameters,
     icon: Briefcase,
     overline: "TRADE_PARAMETERS",
@@ -34,7 +28,6 @@ const decks: Array<{
     accent: "blue",
   },
   {
-    id: "products",
     href: TRADE_TRANSIT_ROUTES.productCosting,
     icon: Package,
     overline: "PRODUCT_COSTING",
@@ -45,7 +38,6 @@ const decks: Array<{
     accent: "teal",
   },
   {
-    id: "summary",
     href: TRADE_TRANSIT_ROUTES.transitSummary,
     icon: ClipboardList,
     overline: "TRANSIT_SUMMARY",
@@ -55,8 +47,10 @@ const decks: Array<{
     buttonLabel: "View summary",
     accent: "orange",
   },
+];
+
+const reportDecks: DeckConfig[] = [
   {
-    id: "executive",
     href: TRADE_TRANSIT_ROUTES.executiveReport,
     icon: LayoutDashboard,
     overline: "STAGE_4_EXECUTIVE",
@@ -72,37 +66,77 @@ export function TradeTransitHubDecks() {
   const { pathname } = useLocation();
 
   return (
-    <section className="px-4 sm:px-6 lg:px-8 pb-10 sm:pb-14">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8 sm:mb-10">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/80 mb-2">
-            Modules
-          </p>
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Choose a workspace deck
-          </h2>
-          <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl font-light">
-            Each module opens in its own full-page workspace — trade parameters,
-            product costing, transit summary, or the Stage 4 executive report.
-          </p>
-        </div>
+    <>
+      <section className="px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-10 sm:mb-14">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              <span className="text-sm font-bold text-cyan-400 uppercase tracking-wider">
+                Workspaces
+              </span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mb-4 tracking-tight">
+              Choose a workspace deck
+            </h2>
+            <p className="text-lg sm:text-xl text-slate-400 max-w-2xl font-light">
+              Trade parameters, product costing, and transit summary — each opens in its own
+              full-page workspace.
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 sm:gap-8">
-          {decks.map((deck) => (
-            <TradeTransitHubDeckCard
-              key={deck.id}
-              href={deck.href}
-              icon={deck.icon}
-              overline={deck.overline}
-              title={deck.title}
-              description={deck.description}
-              buttonLabel={deck.buttonLabel}
-              accent={deck.accent}
-              active={pathname === deck.href}
-            />
-          ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+            {workspaceDecks.map((deck) => (
+              <TradeTransitHubDeckCard
+                key={deck.href}
+                href={deck.href}
+                icon={deck.icon}
+                overline={deck.overline}
+                title={deck.title}
+                description={deck.description}
+                buttonLabel={deck.buttonLabel}
+                accent={deck.accent}
+                active={pathname === deck.href}
+              />
+            ))}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-20 lg:pb-28 border-t border-slate-800/50">
+        <div className="max-w-7xl mx-auto pt-12 sm:pt-16">
+          <div className="mb-10 sm:mb-14">
+            <div className="flex items-center gap-2 mb-4">
+              <LayoutDashboard className="w-5 h-5 text-violet-400" />
+              <span className="text-sm font-bold text-violet-400 uppercase tracking-wider">
+                Report &amp; analysis
+              </span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mb-4 tracking-tight">
+              Executive intelligence
+            </h2>
+            <p className="text-lg sm:text-xl text-slate-400 max-w-2xl font-light">
+              Stage 4 cross-filter dashboards, cost structure charts, and exportable summaries.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+            {reportDecks.map((deck) => (
+              <TradeTransitHubDeckCard
+                key={deck.href}
+                href={deck.href}
+                icon={deck.icon}
+                overline={deck.overline}
+                title={deck.title}
+                description={deck.description}
+                buttonLabel={deck.buttonLabel}
+                accent={deck.accent}
+                active={pathname === deck.href}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

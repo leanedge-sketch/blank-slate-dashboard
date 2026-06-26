@@ -116,6 +116,28 @@ describe("calculateTradeTransit stage 2", () => {
   });
 });
 
+describe("sanitizeTradeTransitInputs", () => {
+  it("does not propagate NaN customs reference into stage 2 totals", () => {
+    const broken = {
+      ...DEFAULT_TRADE_TRANSIT_INPUTS,
+      quantityKg: 1000,
+      supplierBasePriceUsd: 1,
+      transportToMoyaleUsdPerKg: 0.1,
+      supplierMarginPct: 10,
+      capitalParallelRate: 180,
+      baseCustomsReferenceUsd: undefined as unknown as number,
+      customsOfficialRate: undefined as unknown as number,
+    };
+
+    const result = calculateTradeTransit(broken);
+
+    expect(Number.isFinite(result.stage2.totalCustomsPaidEtb)).toBe(true);
+    expect(result.stage2.totalCustomsPaidEtb).toBeGreaterThan(0);
+    expect(Number.isFinite(result.stage3.finalLandedUnitCostEtbPerKg)).toBe(true);
+    expect(Number.isFinite(result.stage3.profitTaxEtb)).toBe(true);
+  });
+});
+
 describe("calculateSellingPriceFromTargetMargin", () => {
   const unitCost = 275.76;
   const targetMarginDecimal = 0.2;

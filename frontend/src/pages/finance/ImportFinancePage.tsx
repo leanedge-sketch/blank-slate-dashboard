@@ -37,7 +37,7 @@ export function ImportFinancePage() {
         </div>
 
         <TradeTransitHubHero
-          newRequestHref={TRADE_TRANSIT_ROUTES.tradeParameters}
+          newRequestHref={`${TRADE_TRANSIT_ROUTES.newPipeline}?fresh=1`}
           historyHref={`${TRADE_TRANSIT_ROUTES.productCosting}?history=1`}
         />
 

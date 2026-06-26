@@ -73,17 +73,25 @@ const TABLES = {
 function mapConstantsRow(
   row: Record<string, unknown>,
 ): FinanceConstants {
+  const fallback = DEFAULT_FINANCE_CONSTANTS;
+  const read = (key: string, defaultValue: number) => {
+    const raw = row[key];
+    if (raw === undefined || raw === null || raw === "") return defaultValue;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : defaultValue;
+  };
+
   return {
-    customsDutyPct: Number(row.customs_duty_pct ?? DEFAULT_FINANCE_CONSTANTS.customsDutyPct),
+    customsDutyPct: read("customs_duty_pct", fallback.customsDutyPct),
     scanFeePct: normalizeScanFeePct(
-      Number(row.scan_fee_pct ?? DEFAULT_FINANCE_CONSTANTS.scanFeePct),
+      read("scan_fee_pct", fallback.scanFeePct),
     ),
-    socialFeePct: Number(row.social_fee_pct ?? DEFAULT_FINANCE_CONSTANTS.socialFeePct),
-    whtPct: Number(row.wht_pct ?? DEFAULT_FINANCE_CONSTANTS.whtPct),
-    vatPct: Number(row.vat_pct ?? DEFAULT_FINANCE_CONSTANTS.vatPct),
-    freightInsuranceBufferPct: Number(
-      row.freight_insurance_buffer_pct ??
-        DEFAULT_FINANCE_CONSTANTS.freightInsuranceBufferPct,
+    socialFeePct: read("social_fee_pct", fallback.socialFeePct),
+    whtPct: read("wht_pct", fallback.whtPct),
+    vatPct: read("vat_pct", fallback.vatPct),
+    freightInsuranceBufferPct: read(
+      "freight_insurance_buffer_pct",
+      fallback.freightInsuranceBufferPct,
     ),
   };
 }
@@ -202,7 +210,9 @@ export async function fetchImportFinanceProducts(): Promise<ImportFinanceProduct
   return (data ?? []).map((row) => ({
     id: String(row.id),
     product_name: String(row.product_name),
-    base_customs_reference_usd: Number(row.base_customs_reference_usd),
+    base_customs_reference_usd: Number.isFinite(Number(row.base_customs_reference_usd))
+      ? Number(row.base_customs_reference_usd)
+      : 0,
     created_at: row.created_at as string | undefined,
   }));
 }

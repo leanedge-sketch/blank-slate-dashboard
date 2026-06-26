@@ -42,7 +42,7 @@ export function TradeTransitHubHero({
               className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/30 hover:-translate-y-0.5 active:translate-y-0 group"
             >
               <Plus className="w-5 h-5 mr-2" />
-              New Request
+              Add pipeline
               <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
             </Link>
             <Link

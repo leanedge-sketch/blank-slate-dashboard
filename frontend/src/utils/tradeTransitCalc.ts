@@ -188,6 +188,93 @@ export function roundFinancial(value: number, decimalPlaces = 4): number {
   return Math.round(value * factor) / factor;
 }
 
+/** Coerce unknown numeric input; NaN / null / undefined → fallback. */
+export function finiteNumber(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Ensure calculator inputs are finite before customs / landed-cost math. */
+export function sanitizeTradeTransitInputs(
+  inputs: TradeTransitInputs,
+): TradeTransitInputs {
+  const defaults = DEFAULT_TRADE_TRANSIT_INPUTS;
+  const fixedCapital =
+    inputs.fixedCapitalOutlayEtb != null
+      ? finiteNumber(inputs.fixedCapitalOutlayEtb, 0)
+      : inputs.fixedCapitalOutlayEtb;
+
+  return {
+    ...inputs,
+    quantityKg: finiteNumber(inputs.quantityKg, 0),
+    targetSellingPriceEtbPerKg: finiteNumber(
+      inputs.targetSellingPriceEtbPerKg,
+      0,
+    ),
+    targetMarginPct: finiteNumber(inputs.targetMarginPct, defaults.targetMarginPct),
+    supplierBasePriceUsd: finiteNumber(
+      inputs.supplierBasePriceUsd,
+      defaults.supplierBasePriceUsd,
+    ),
+    supplierMarginPct: finiteNumber(
+      inputs.supplierMarginPct,
+      defaults.supplierMarginPct,
+    ),
+    transportToMoyaleUsdPerKg: finiteNumber(
+      inputs.transportToMoyaleUsdPerKg,
+      defaults.transportToMoyaleUsdPerKg,
+    ),
+    miscBorderCosts: (inputs.miscBorderCosts ?? []).map((line) => ({
+      ...line,
+      amountUsd: finiteNumber(line.amountUsd, 0),
+    })),
+    capitalParallelRate: finiteNumber(
+      inputs.capitalParallelRate,
+      defaults.capitalParallelRate,
+    ),
+    customsOfficialRate: finiteNumber(
+      inputs.customsOfficialRate,
+      defaults.customsOfficialRate,
+    ),
+    baseCustomsReferenceUsd: finiteNumber(
+      inputs.baseCustomsReferenceUsd,
+      defaults.baseCustomsReferenceUsd,
+    ),
+    cifBufferPct: finiteNumber(inputs.cifBufferPct, defaults.cifBufferPct),
+    customsDutyPct: finiteNumber(inputs.customsDutyPct, defaults.customsDutyPct),
+    scanFeePct: finiteNumber(inputs.scanFeePct, defaults.scanFeePct),
+    socialFeePct: finiteNumber(inputs.socialFeePct, defaults.socialFeePct),
+    whtPct: finiteNumber(inputs.whtPct, defaults.whtPct),
+    vatPct: finiteNumber(inputs.vatPct, defaults.vatPct),
+    surtaxPct: finiteNumber(inputs.surtaxPct, defaults.surtaxPct),
+    excisePct: finiteNumber(inputs.excisePct, defaults.excisePct),
+    taxSpecialGoodsPct: finiteNumber(
+      inputs.taxSpecialGoodsPct,
+      defaults.taxSpecialGoodsPct,
+    ),
+    inlandClearancePerKgEtb: finiteNumber(
+      inputs.inlandClearancePerKgEtb,
+      defaults.inlandClearancePerKgEtb,
+    ),
+    bankChargePctOnCapital: finiteNumber(
+      inputs.bankChargePctOnCapital,
+      defaults.bankChargePctOnCapital,
+    ),
+    insuranceEtb: finiteNumber(inputs.insuranceEtb, defaults.insuranceEtb),
+    betchemClearanceEtb: finiteNumber(
+      inputs.betchemClearanceEtb,
+      defaults.betchemClearanceEtb,
+    ),
+    profitTaxPctOnPreLanded: finiteNumber(
+      inputs.profitTaxPctOnPreLanded,
+      defaults.profitTaxPctOnPreLanded,
+    ),
+    fixedCapitalOutlayEtb:
+      fixedCapital != null && fixedCapital > 0 ? fixedCapital : null,
+  };
+}
+
 /**
  * Legacy Excel market strategy pricing (UI label: "20% margin").
  * profitPerKg = (unitCost / (1 − margin)) × (margin / 2)
@@ -350,40 +437,41 @@ export function calculateTradeTransit(
   inputs: TradeTransitInputs,
   _constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
 ): TradeTransitResult {
-  const qty = Math.max(inputs.quantityKg, 0);
-  const marginFactor = 1 + inputs.supplierMarginPct / 100;
+  const safe = sanitizeTradeTransitInputs(inputs);
+  const qty = Math.max(safe.quantityKg, 0);
+  const marginFactor = 1 + safe.supplierMarginPct / 100;
 
-  const materialUsdPerKg = inputs.supplierBasePriceUsd * marginFactor;
-  const transportUsdPerKg = inputs.transportToMoyaleUsdPerKg;
-  const miscBorderUsdTotal = sumMiscBorderCosts(inputs.miscBorderCosts);
+  const materialUsdPerKg = safe.supplierBasePriceUsd * marginFactor;
+  const transportUsdPerKg = safe.transportToMoyaleUsdPerKg;
+  const miscBorderUsdTotal = sumMiscBorderCosts(safe.miscBorderCosts);
   const borderUsdPerKg = materialUsdPerKg + transportUsdPerKg;
   const totalBorderUsd = borderUsdPerKg * qty + miscBorderUsdTotal;
   const capitalOutlayEtb =
-    inputs.fixedCapitalOutlayEtb != null && inputs.fixedCapitalOutlayEtb > 0
-      ? roundFinancial(inputs.fixedCapitalOutlayEtb, 2)
-      : roundFinancial(totalBorderUsd * inputs.capitalParallelRate, 2);
+    safe.fixedCapitalOutlayEtb != null && safe.fixedCapitalOutlayEtb > 0
+      ? roundFinancial(safe.fixedCapitalOutlayEtb, 2)
+      : roundFinancial(totalBorderUsd * safe.capitalParallelRate, 2);
 
   const customs = calculateCustomsDutyAssessment({
     quantityKg: qty,
-    customsRateUsdPerKg: inputs.baseCustomsReferenceUsd,
-    officialExchangeRate: inputs.customsOfficialRate,
-    cifFreightInsuranceBufferPct: inputs.cifBufferPct,
-    customsDutyPct: inputs.customsDutyPct,
-    scanFeePct: inputs.scanFeePct,
-    socialFeePct: inputs.socialFeePct,
-    whtPct: inputs.whtPct,
-    vatPct: inputs.vatPct,
-    specialGoodsPct: inputs.taxSpecialGoodsPct,
-    surtaxPct: inputs.surtaxPct,
-    excisePct: inputs.excisePct,
+    customsRateUsdPerKg: safe.baseCustomsReferenceUsd,
+    officialExchangeRate: safe.customsOfficialRate,
+    cifFreightInsuranceBufferPct: safe.cifBufferPct,
+    customsDutyPct: safe.customsDutyPct,
+    scanFeePct: safe.scanFeePct,
+    socialFeePct: safe.socialFeePct,
+    whtPct: safe.whtPct,
+    vatPct: safe.vatPct,
+    specialGoodsPct: safe.taxSpecialGoodsPct,
+    surtaxPct: safe.surtaxPct,
+    excisePct: safe.excisePct,
   });
 
   const cifUsdPerKg =
     qty > 0
       ? customs.cifValueUsd / qty
-      : inputs.baseCustomsReferenceUsd * (1 + inputs.cifBufferPct);
+      : safe.baseCustomsReferenceUsd * (1 + safe.cifBufferPct);
 
-  const inlandTransportEtb = qty * inputs.inlandClearancePerKgEtb;
+  const inlandTransportEtb = qty * safe.inlandClearancePerKgEtb;
   const refundableWhtVatEtb = customs.whtEtb + customs.vatEtb;
 
   const landed = calculateLandedCost({
@@ -391,21 +479,21 @@ export function calculateTradeTransit(
     totalCustomsFeeEtb: customs.totalCustomsFeeEtb,
     refundableWhtVatEtb,
     quantityKg: qty,
-    inlandClearancePerKgEtb: inputs.inlandClearancePerKgEtb,
-    bankChargePctOnCapital: inputs.bankChargePctOnCapital,
-    insuranceEtb: inputs.insuranceEtb,
-    betchemClearanceEtb: inputs.betchemClearanceEtb,
-    profitTaxPctOnPreLanded: inputs.profitTaxPctOnPreLanded,
+    inlandClearancePerKgEtb: safe.inlandClearancePerKgEtb,
+    bankChargePctOnCapital: safe.bankChargePctOnCapital,
+    insuranceEtb: safe.insuranceEtb,
+    betchemClearanceEtb: safe.betchemClearanceEtb,
+    profitTaxPctOnPreLanded: safe.profitTaxPctOnPreLanded,
   });
 
   const unitCostEtbPerKg = landed.finalLandedUnitCostEtbPerKg;
 
-  const marginDecimal = inputs.targetMarginPct / 100;
+  const marginDecimal = safe.targetMarginPct / 100;
   let targetPrice: number;
   let profitPerKgEtb: number;
   let grossMarginPct: number;
 
-  if (inputs.sellingPriceMode === "margin") {
+  if (safe.sellingPriceMode === "margin") {
     const priced = calculateSellingPriceFromTargetMargin(
       unitCostEtbPerKg,
       marginDecimal,
@@ -415,7 +503,7 @@ export function calculateTradeTransit(
     profitPerKgEtb = priced.marginValue;
     grossMarginPct = roundFinancial(priced.grossMarginDecimal * 100, 2);
   } else {
-    targetPrice = Math.max(inputs.targetSellingPriceEtbPerKg, 0);
+    targetPrice = Math.max(safe.targetSellingPriceEtbPerKg, 0);
     const manual = calculateMarginFromSellingPrice(
       unitCostEtbPerKg,
       targetPrice,
@@ -430,17 +518,17 @@ export function calculateTradeTransit(
       materialUsdPerKg,
       transportUsdPerKg,
       miscBorderUsdTotal,
-      miscBorderLines: inputs.miscBorderCosts,
+      miscBorderLines: safe.miscBorderCosts,
       borderUsdPerKg,
       totalBorderUsd,
-      capitalParallelRate: inputs.capitalParallelRate,
+      capitalParallelRate: safe.capitalParallelRate,
       capitalOutlayEtb,
     },
     stage2: {
       fobValueEtb: customs.fobValueEtb,
       cifUsdPerKg,
       totalCifUsd: customs.cifValueUsd,
-      customsOfficialRate: inputs.customsOfficialRate,
+      customsOfficialRate: safe.customsOfficialRate,
       cifBaseEtb: customs.cifValueEtb,
       vatBaseEtb: customs.vatBaseEtb,
       dutyEtb: customs.customDutyEtb,
@@ -472,8 +560,8 @@ export function calculateTradeTransit(
       profitPerKgEtb,
       grossMarginPct,
       totalExpectedRevenueEtb: roundFinancial(targetPrice * qty, 2),
-      sellingPriceMode: inputs.sellingPriceMode,
-      targetMarginPct: inputs.targetMarginPct,
+      sellingPriceMode: safe.sellingPriceMode,
+      targetMarginPct: safe.targetMarginPct,
     },
   };
 }

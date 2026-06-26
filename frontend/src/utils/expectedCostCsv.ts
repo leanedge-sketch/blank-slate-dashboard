@@ -80,17 +80,27 @@ function parseCsvRows(text: string): string[][] {
   return rows;
 }
 
+function normalizeRowLabel(cell: string | undefined): string {
+  return (cell ?? "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
 function num(value: string | undefined): number {
   if (!value) return 0;
   const cleaned = value.replace(/,/g, "").trim();
   if (!cleaned || cleaned === "—" || cleaned === "-") return 0;
-  const parsed = Number(cleaned);
+  const direct = Number(cleaned);
+  if (Number.isFinite(direct)) return direct;
+  const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return 0;
+  const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function findRow(rows: string[][], labelIncludes: string): string[] | undefined {
-  const needle = labelIncludes.toLowerCase();
-  return rows.find((row) => row[0]?.toLowerCase().includes(needle));
+  const needle = normalizeRowLabel(labelIncludes);
+  const exact = rows.find((row) => normalizeRowLabel(row[0]) === needle);
+  if (exact) return exact;
+  return rows.find((row) => normalizeRowLabel(row[0]).includes(needle));
 }
 
 function inferSupplierMarginPct(
@@ -228,11 +238,15 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
     const transportToMoyaleUsdPerKg = colAt("transportation cost");
     const moyaleUsdPerKg = colAt("cfca moyale cost");
     const capitalParallelRate = colAt("rate usd vs etb (black)");
-    const customsOfficialRate = colAt("rate usd vs etb (official)");
+    const customsOfficialRate =
+      colAt("rate usd vs etb (official)") ||
+      DEFAULT_TRADE_TRANSIT_INPUTS.customsOfficialRate;
     const amountInBirr = colAt("amount in birr");
     const bankChargesEtb = colAt("bank charges");
     const insuranceEtb = colAt("insurance");
-    const baseCustomsReferenceUsd = colAt("customs rate");
+    const baseCustomsReferenceUsd =
+      colAt("customs rate") ||
+      DEFAULT_TRADE_TRANSIT_INPUTS.baseCustomsReferenceUsd;
     const totalCustomsFeeEtb = colAt("total customs fee");
     const betchemClearanceEtb = colAt("betchem");
     const transportAddisTotalEtb = colAt("transport addis");
@@ -248,10 +262,14 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
       transportAddisTotalEtb > 0 ? transportAddisTotalEtb / quantityKg : 20;
 
     const bankChargePctOnCapital =
-      amountInBirr > 0 ? bankChargesEtb / amountInBirr : 0.078;
+      amountInBirr > 0 && bankChargesEtb > 0
+        ? bankChargesEtb / amountInBirr
+        : DEFAULT_TRADE_TRANSIT_INPUTS.bankChargePctOnCapital;
 
     const profitTaxPctOnPreLanded =
-      preProfitLandedBaseEtb > 0 ? profitTaxEtb / preProfitLandedBaseEtb : 0;
+      preProfitLandedBaseEtb > 0 && profitTaxEtb > 0
+        ? profitTaxEtb / preProfitLandedBaseEtb
+        : DEFAULT_TRADE_TRANSIT_INPUTS.profitTaxPctOnPreLanded;
 
     const targetMarginPct = 15;
 

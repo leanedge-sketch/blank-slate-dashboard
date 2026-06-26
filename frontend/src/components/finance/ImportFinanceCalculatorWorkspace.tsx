@@ -253,11 +253,14 @@ export function ImportFinanceCalculatorWorkspace({
       (p) =>
         p.product_name.trim().toLowerCase() === productName.trim().toLowerCase(),
     );
+    const customsRef = matchedFinance?.base_customs_reference_usd;
     updateActiveLine({
       chemicalTypeId: catalogId,
       productName,
       productId: matchedFinance?.id ?? null,
-      baseCustomsReferenceUsd: matchedFinance?.base_customs_reference_usd,
+      ...(Number.isFinite(customsRef) && customsRef! > 0
+        ? { baseCustomsReferenceUsd: customsRef }
+        : {}),
     });
   }
 

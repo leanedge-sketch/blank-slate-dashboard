@@ -4,43 +4,29 @@ import { Link } from "react-router-dom";
 
 export type TradeTransitDeckAccent = "blue" | "teal" | "orange" | "violet";
 
-const accentStyles: Record<
+const accentMap: Record<
   TradeTransitDeckAccent,
-  {
-    gradient: string;
-    glow: string;
-    iconBg: string;
-    button: string;
-    overline: string;
-  }
+  { gradient: string; accentHover: string; emoji: string }
 > = {
   blue: {
     gradient: "from-blue-600 via-blue-500 to-cyan-500",
-    glow: "group-hover:shadow-blue-500/35",
-    iconBg: "bg-blue-500/20 border-blue-500/30",
-    button: "bg-blue-500 hover:bg-blue-400 hover:shadow-blue-500/40",
-    overline: "text-blue-400/90",
+    accentHover: "group-hover:shadow-blue-500/40",
+    emoji: "💼",
   },
   teal: {
-    gradient: "from-emerald-600 via-teal-500 to-cyan-500",
-    glow: "group-hover:shadow-teal-500/35",
-    iconBg: "bg-teal-500/20 border-teal-500/30",
-    button: "bg-teal-500 hover:bg-teal-400 hover:shadow-teal-500/40",
-    overline: "text-teal-400/90",
+    gradient: "from-emerald-600 via-emerald-500 to-teal-500",
+    accentHover: "group-hover:shadow-teal-500/40",
+    emoji: "📦",
   },
   orange: {
-    gradient: "from-orange-600 via-amber-500 to-orange-400",
-    glow: "group-hover:shadow-orange-500/35",
-    iconBg: "bg-orange-500/20 border-orange-500/30",
-    button: "bg-orange-500 hover:bg-orange-400 hover:shadow-orange-500/40",
-    overline: "text-orange-400/90",
+    gradient: "from-orange-600 via-orange-500 to-amber-500",
+    accentHover: "group-hover:shadow-orange-500/40",
+    emoji: "📋",
   },
   violet: {
     gradient: "from-violet-600 via-purple-500 to-fuchsia-500",
-    glow: "group-hover:shadow-violet-500/35",
-    iconBg: "bg-violet-500/20 border-violet-500/30",
-    button: "bg-violet-600 hover:bg-violet-500 hover:shadow-violet-500/40",
-    overline: "text-violet-400/90",
+    accentHover: "group-hover:shadow-violet-500/40",
+    emoji: "📊",
   },
 };
 
@@ -65,57 +51,54 @@ export function TradeTransitHubDeckCard({
   accent,
   active = false,
 }: TradeTransitHubDeckCardProps) {
-  const styles = accentStyles[accent];
+  const styles = accentMap[accent];
 
   return (
-    <article
-      className={`group relative h-full overflow-hidden rounded-2xl transition-all duration-500 ${
+    <div
+      className={`pms-module-card group relative h-full overflow-hidden rounded-2xl ${
         active ? "ring-2 ring-cyan-500/50" : ""
       }`}
     >
-      <div className="absolute inset-0 rounded-2xl border border-slate-800 bg-[#111827] transition-all duration-500 group-hover:border-slate-600" />
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 via-slate-900/40 to-black/20 rounded-2xl border border-slate-700/50 transition-all duration-500 group-hover:border-slate-600 group-hover:from-slate-800/60 group-hover:via-slate-800/40 group-hover:to-slate-900/30" />
 
       <div
-        className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${styles.gradient} rounded-t-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300`}
+        className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${styles.gradient} rounded-t-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-lg ${styles.accentHover}`}
       />
 
       <div
         className={`absolute -inset-px bg-gradient-to-r ${styles.gradient} rounded-2xl opacity-0 group-hover:opacity-10 transition-opacity duration-500 blur-xl`}
       />
 
-      <div className="relative flex h-full flex-col p-6 sm:p-7">
-        <div
-          className={`mb-6 inline-flex h-14 w-14 items-center justify-center rounded-xl border ${styles.iconBg} transition-transform duration-300 group-hover:scale-110`}
-        >
+      <div className="relative p-7 sm:p-8 flex flex-col h-full">
+        <div className="flex items-center gap-4 mb-6 sm:mb-8">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br ${styles.gradient}`}
+            className={`inline-flex w-14 h-14 sm:w-16 sm:h-16 items-center justify-center rounded-xl bg-gradient-to-br ${styles.gradient} p-3 sm:p-4 group-hover:scale-110 transition-all duration-300 shadow-lg ${styles.accentHover}`}
           >
-            <Icon className="h-5 w-5 text-white" strokeWidth={1.75} />
+            <Icon className="w-7 h-7 sm:w-8 sm:h-8 text-white" strokeWidth={1.5} />
           </div>
+          <div className="text-3xl sm:text-4xl">{styles.emoji}</div>
         </div>
 
-        <p
-          className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-2 ${styles.overline}`}
-        >
+        <p className="text-xs sm:text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wider">
           {overline}
         </p>
 
-        <h3 className="text-xl font-black text-white mb-3 leading-tight group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-slate-300 group-hover:bg-clip-text transition-all duration-300">
+        <h3 className="text-xl sm:text-2xl font-black text-white mb-3 sm:mb-4 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-cyan-300 group-hover:to-teal-300 group-hover:bg-clip-text transition-all duration-300 leading-tight">
           {title}
         </h3>
 
-        <p className="text-sm text-slate-400 leading-relaxed mb-8 flex-grow font-light">
+        <p className="text-slate-400 text-sm sm:text-base leading-relaxed mb-7 sm:mb-10 flex-grow font-light">
           {description}
         </p>
 
         <Link
           to={href}
-          className={`mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-xl ${styles.button} ${styles.glow} group/btn`}
+          className={`inline-flex items-center justify-center px-6 py-3 rounded-lg bg-gradient-to-r ${styles.gradient} text-white font-bold text-sm sm:text-base transition-all duration-300 hover:shadow-xl ${styles.accentHover} hover:-translate-y-1 active:translate-y-0 group/btn`}
         >
           {buttonLabel}
-          <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+          <ArrowRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-1 transition-transform" />
         </Link>
       </div>
-    </article>
+    </div>
   );
 }
