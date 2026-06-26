@@ -34,6 +34,146 @@ export interface WorkbookImportParseResult {
   metadata: WorkbookImportMetadata;
 }
 
+type AnchorRule = {
+  include: string[];
+  exclude?: string[];
+};
+
+export type WorkbookValueField =
+  | "productHeader"
+  | "quantityKg"
+  | "supplierBasePriceUsd"
+  | "transportToMoyaleUsdPerKg"
+  | "moyaleUsdPerKg"
+  | "capitalParallelRate"
+  | "customsOfficialRate"
+  | "amountInBirr"
+  | "bankChargesEtb"
+  | "insuranceEtb"
+  | "baseCustomsReferenceUsd"
+  | "totalCustomsFeeEtb"
+  | "betchemClearanceEtb"
+  | "transportAddisTotalEtb"
+  | "preProfitLandedBaseEtb"
+  | "profitTaxEtb"
+  | "totalLandedCostEtb"
+  | "unitCostEtbPerKg"
+  | "sellingPriceEtbPerKg"
+  | "targetGrossMarginPct";
+
+/** Dynamic label anchors — no hardcoded row indices. */
+export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
+  productHeader: {
+    include: [
+      "discreption",
+      "description",
+      "product name",
+      "mix chemical",
+      "chemical",
+      "product",
+    ],
+  },
+  quantityKg: {
+    include: ["qty in kg", "quantity kg", "quantity"],
+    exclude: ["unit cost", "selling"],
+  },
+  supplierBasePriceUsd: {
+    include: [
+      "supplier base price",
+      "purchasing price",
+      "cost at sez /purchasing price",
+      "cost at sez",
+    ],
+  },
+  transportToMoyaleUsdPerKg: {
+    include: ["transportation cost", "transport to moyale", "transport moyale"],
+  },
+  moyaleUsdPerKg: {
+    include: ["cfca moyale cost", "cfcf moyale cost", "moyale cost"],
+  },
+  capitalParallelRate: {
+    include: [
+      "capital/parallel rate",
+      "capital parallel rate",
+      "parallel rate",
+      "rate usd vs etb (black)",
+      "rate usd vs etb (dashen black)",
+      "dashen black",
+      "black market rate",
+    ],
+    exclude: ["official"],
+  },
+  customsOfficialRate: {
+    include: [
+      "customs official rate",
+      "official exchange rate",
+      "rate usd vs etb (official)",
+      "official rate",
+    ],
+    exclude: ["black", "dashen", "parallel"],
+  },
+  amountInBirr: {
+    include: ["amount in birr", "capital outlay"],
+  },
+  bankChargesEtb: {
+    include: ["bank charges", "bank charge"],
+  },
+  insuranceEtb: {
+    include: ["insurance"],
+    exclude: ["freight", "cif", "0.1%"],
+  },
+  baseCustomsReferenceUsd: {
+    include: [
+      "base customs reference",
+      "customs reference usd",
+      "customs reference",
+      "customs rate",
+    ],
+    exclude: [
+      "total customs",
+      "custom duty",
+      "customs fee",
+      "insurance,fright",
+      "insurance,freight",
+    ],
+  },
+  totalCustomsFeeEtb: {
+    include: ["total customs fee", "total customs"],
+    exclude: ["reference", "rate"],
+  },
+  betchemClearanceEtb: {
+    include: ["betchem"],
+  },
+  transportAddisTotalEtb: {
+    include: ["transport addis", "transport addis and unloading"],
+  },
+  preProfitLandedBaseEtb: {
+    include: [
+      "total landing cost after refundaels",
+      "total landing cost after refundables",
+      "pre-landed base",
+    ],
+  },
+  profitTaxEtb: {
+    include: ["profit tax"],
+    exclude: ["total landed"],
+  },
+  totalLandedCostEtb: {
+    include: ["total landed cost", "total landed cost + tax"],
+    exclude: ["after refund", "unit cost"],
+  },
+  unitCostEtbPerKg: {
+    include: ["unit cost/kg", "unit cost /kg", "unit cost per kg"],
+  },
+  sellingPriceEtbPerKg: {
+    include: ["selling roice", "selling price", "final offered price"],
+    exclude: ["margin"],
+  },
+  targetGrossMarginPct: {
+    include: ["target gross margin", "target margin", "gross margin target"],
+  },
+};
+
 function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -80,7 +220,7 @@ function parseCsvRows(text: string): string[][] {
   return rows;
 }
 
-function normalizeRowLabel(cell: string | undefined): string {
+export function normalizeWorkbookLabel(cell: string | undefined): string {
   return (cell ?? "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
@@ -96,11 +236,102 @@ function num(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function findRow(rows: string[][], labelIncludes: string): string[] | undefined {
-  const needle = normalizeRowLabel(labelIncludes);
-  const exact = rows.find((row) => normalizeRowLabel(row[0]) === needle);
-  if (exact) return exact;
-  return rows.find((row) => normalizeRowLabel(row[0]).includes(needle));
+function rowLabel(row: string[]): string {
+  return normalizeWorkbookLabel(row[0]);
+}
+
+function rowMatchesAnchor(label: string, rule: AnchorRule): boolean {
+  if (rule.exclude?.some((term) => label.includes(normalizeWorkbookLabel(term)))) {
+    return false;
+  }
+  return rule.include.some((anchor) => {
+    const needle = normalizeWorkbookLabel(anchor);
+    return label === needle || label.includes(needle);
+  });
+}
+
+function anchorMatchScore(label: string, rule: AnchorRule): number {
+  if (!rowMatchesAnchor(label, rule)) return -1;
+  let best = 0;
+  for (const anchor of rule.include) {
+    const needle = normalizeWorkbookLabel(anchor);
+    if (label === needle) best = Math.max(best, 1000 + needle.length);
+    else if (label.includes(needle)) best = Math.max(best, needle.length);
+  }
+  return best;
+}
+
+/**
+ * Scan column A for the best matching anchor row (dynamic — not row-index based).
+ */
+export function findAnchoredRow(
+  rows: string[][],
+  field: WorkbookValueField,
+): string[] | undefined {
+  const rule = WORKBOOK_FIELD_ANCHORS[field];
+
+  for (const anchor of rule.include) {
+    const needle = normalizeWorkbookLabel(anchor);
+    const exact = rows.find((row) => rowLabel(row) === needle);
+    if (exact) return exact;
+  }
+
+  let best: { row: string[]; score: number } | undefined;
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!label) continue;
+    const score = anchorMatchScore(label, rule);
+    if (score < 0) continue;
+    if (!best || score > best.score) {
+      best = { row, score };
+    }
+  }
+
+  return best?.row;
+}
+
+export function extractAnchoredValue(
+  rows: string[][],
+  field: WorkbookValueField,
+  col: number,
+): number {
+  return num(findAnchoredRow(rows, field)?.[col]);
+}
+
+function parseMarginFromLabel(label: string): number {
+  const match = label.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return 0;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveTargetMarginPct(
+  rows: string[][],
+  col: number,
+): number {
+  const marginRow = findAnchoredRow(rows, "targetGrossMarginPct");
+  const fromCell = num(marginRow?.[col]);
+  if (fromCell > 0) return fromCell;
+
+  if (marginRow) {
+    const shared = marginRow
+      .slice(1)
+      .map((cell) => num(cell))
+      .find((value) => value > 0);
+    if (shared != null && shared > 0) return shared;
+  }
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!label.includes("margin") || !label.includes("selling")) continue;
+    const fromLabel = parseMarginFromLabel(row[0] ?? "");
+    if (fromLabel > 0) return fromLabel;
+    const fromSellingCell = num(row[col]);
+    if (fromSellingCell > 0 && fromSellingCell <= 100) return fromSellingCell;
+  }
+
+  return 15;
 }
 
 function inferSupplierMarginPct(
@@ -217,12 +448,16 @@ export function parseWorkbookImport(text: string): WorkbookImportParseResult {
   };
 }
 
+function findProductHeaderRow(rows: string[][]): string[] | undefined {
+  return findAnchoredRow(rows, "productHeader");
+}
+
 /**
- * Parse the legacy "Expected cost" workbook CSV (product names in columns B, C, …).
+ * Parse workbook CSV (Expected cost / Mix chemicals) using dynamic label anchors.
  */
 export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
   const rows = parseCsvRows(text);
-  const headerRow = rows.find((r) => r[0]?.toLowerCase().includes("discreption"));
+  const headerRow = findProductHeaderRow(rows);
   if (!headerRow) return [];
 
   const scenarios: ExpectedCostScenario[] = [];
@@ -231,30 +466,33 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
     const name = headerRow[col]?.trim();
     if (!name) continue;
 
-    const colAt = (label: string) => num(findRow(rows, label)?.[col]);
+    const colAt = (field: WorkbookValueField) =>
+      extractAnchoredValue(rows, field, col);
 
-    const quantityKg = colAt("qty in kg");
-    const supplierBasePriceUsd = colAt("purchasing price");
-    const transportToMoyaleUsdPerKg = colAt("transportation cost");
-    const moyaleUsdPerKg = colAt("cfca moyale cost");
-    const capitalParallelRate = colAt("rate usd vs etb (black)");
+    const quantityKg = colAt("quantityKg");
+    const supplierBasePriceUsd = colAt("supplierBasePriceUsd");
+    const transportToMoyaleUsdPerKg = colAt("transportToMoyaleUsdPerKg");
+    const moyaleUsdPerKg = colAt("moyaleUsdPerKg");
+    const capitalParallelRate =
+      colAt("capitalParallelRate") ||
+      DEFAULT_TRADE_TRANSIT_INPUTS.capitalParallelRate;
     const customsOfficialRate =
-      colAt("rate usd vs etb (official)") ||
+      colAt("customsOfficialRate") ||
       DEFAULT_TRADE_TRANSIT_INPUTS.customsOfficialRate;
-    const amountInBirr = colAt("amount in birr");
-    const bankChargesEtb = colAt("bank charges");
-    const insuranceEtb = colAt("insurance");
+    const amountInBirr = colAt("amountInBirr");
+    const bankChargesEtb = colAt("bankChargesEtb");
+    const insuranceEtb = colAt("insuranceEtb");
     const baseCustomsReferenceUsd =
-      colAt("customs rate") ||
+      colAt("baseCustomsReferenceUsd") ||
       DEFAULT_TRADE_TRANSIT_INPUTS.baseCustomsReferenceUsd;
-    const totalCustomsFeeEtb = colAt("total customs fee");
-    const betchemClearanceEtb = colAt("betchem");
-    const transportAddisTotalEtb = colAt("transport addis");
-    const preProfitLandedBaseEtb = colAt("total landing cost after refundaels");
-    const profitTaxEtb = colAt("profit tax");
-    const totalLandedCostEtb = colAt("total landed cost");
-    const unitCostEtbPerKg = colAt("unit cost/kg");
-    const sellingPriceEtbPerKg = colAt("selling roice");
+    const totalCustomsFeeEtb = colAt("totalCustomsFeeEtb");
+    const betchemClearanceEtb = colAt("betchemClearanceEtb");
+    const transportAddisTotalEtb = colAt("transportAddisTotalEtb");
+    const preProfitLandedBaseEtb = colAt("preProfitLandedBaseEtb");
+    const profitTaxEtb = colAt("profitTaxEtb");
+    const totalLandedCostEtb = colAt("totalLandedCostEtb");
+    const unitCostEtbPerKg = colAt("unitCostEtbPerKg");
+    const sellingPriceEtbPerKg = colAt("sellingPriceEtbPerKg");
 
     if (quantityKg <= 0) continue;
 
@@ -271,7 +509,7 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
         ? profitTaxEtb / preProfitLandedBaseEtb
         : DEFAULT_TRADE_TRANSIT_INPUTS.profitTaxPctOnPreLanded;
 
-    const targetMarginPct = 15;
+    const targetMarginPct = resolveTargetMarginPct(rows, col);
 
     const id = name
       .toLowerCase()

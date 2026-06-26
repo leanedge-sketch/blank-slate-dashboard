@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   Info,
@@ -38,6 +38,8 @@ type ImportFinanceCalculatorPanelProps = {
   compact?: boolean;
   /** Show every stage input at once; hide the read-only pipeline ledger. */
   expandAllInputs?: boolean;
+  /** When this changes, focus Stage 1 in the ledger + input console. */
+  focusStageSignal?: number;
 };
 
 type Accent = "cyan" | "amber" | "emerald" | "purple";
@@ -1061,8 +1063,15 @@ export function ImportFinanceCalculatorPanel({
   constants = DEFAULT_FINANCE_CONSTANTS,
   compact = false,
   expandAllInputs = false,
+  focusStageSignal = 0,
 }: ImportFinanceCalculatorPanelProps) {
   const [activeStage, setActiveStage] = useState<StageId>(1);
+
+  useEffect(() => {
+    if (focusStageSignal > 0) {
+      setActiveStage(1);
+    }
+  }, [focusStageSignal]);
 
   const result = useMemo(
     () => calculateTradeTransit(inputs, constants),

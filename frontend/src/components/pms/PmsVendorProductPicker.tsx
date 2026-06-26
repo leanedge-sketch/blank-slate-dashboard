@@ -22,6 +22,11 @@ type PmsVendorProductPickerProps = {
   onSelect: (chemical: ChemicalFullData) => void;
   onClear?: () => void;
   disabled?: boolean;
+  /** Controlled vendor filter — persists when switching product lines. */
+  vendorFilter?: string;
+  onVendorFilterChange?: (vendor: string) => void;
+  /** Focus vendor chemical pick or search when adding a new line. */
+  autoFocusSearch?: boolean;
 };
 
 function dedupeChemicals(rows: ChemicalFullData[]): ChemicalFullData[] {
@@ -50,10 +55,15 @@ export function PmsVendorProductPicker({
   onSelect,
   onClear,
   disabled = false,
+  vendorFilter: vendorFilterProp,
+  onVendorFilterChange,
+  autoFocusSearch = false,
 }: PmsVendorProductPickerProps) {
   const { chemicals: catalogChemicals, refreshCatalog } = useProductCatalog();
   const rootRef = useRef<HTMLDivElement>(null);
   const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const chemicalSelectRef = useRef<HTMLSelectElement>(null);
   const dropdownRef = useRef<HTMLUListElement>(null);
   const [dropdownStyle, setDropdownStyle] = useState<{
     top: number;
@@ -61,7 +71,12 @@ export function PmsVendorProductPicker({
     width: number;
   } | null>(null);
   const [vendors, setVendors] = useState<string[]>([]);
-  const [vendorFilter, setVendorFilter] = useState("");
+  const [internalVendorFilter, setInternalVendorFilter] = useState("");
+  const vendorFilter = vendorFilterProp ?? internalVendorFilter;
+  const setVendorFilter = (next: string) => {
+    if (onVendorFilterChange) onVendorFilterChange(next);
+    else setInternalVendorFilter(next);
+  };
   const [vendorProducts, setVendorProducts] = useState<ChemicalFullData[]>([]);
   const [loadingVendorProducts, setLoadingVendorProducts] = useState(false);
   const [query, setQuery] = useState("");
@@ -96,6 +111,20 @@ export function PmsVendorProductPicker({
       setVendorFilter(selected.vendor);
     }
   }, [selected?.vendor, vendorFilter]);
+
+  useEffect(() => {
+    if (!autoFocusSearch || disabled) return;
+    const timer = window.setTimeout(() => {
+      if (vendorFilter.trim() && chemicalSelectRef.current) {
+        chemicalSelectRef.current.focus();
+        return;
+      }
+      searchInputRef.current?.focus();
+      setIsEditing(true);
+      setOpen(true);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [autoFocusSearch, disabled, vendorFilter]);
 
   useEffect(() => {
     if (!isEditing) {
@@ -300,6 +329,7 @@ export function PmsVendorProductPicker({
           </label>
           <div className="relative">
             <select
+              ref={chemicalSelectRef}
               value={value ?? ""}
               disabled={disabled || loadingVendorProducts}
               onChange={(e) => {
@@ -346,6 +376,7 @@ export function PmsVendorProductPicker({
         >
           <Search className="h-4 w-4 shrink-0 text-slate-500" />
           <input
+            ref={searchInputRef}
             type="text"
             value={query}
             disabled={disabled}

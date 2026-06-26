@@ -128,6 +128,11 @@ export function ImportFinanceCalculatorWorkspace({
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
   const [renamingLineId, setRenamingLineId] = useState<string | null>(null);
+  const [pmsVendorFilter, setPmsVendorFilter] = useState("");
+  const [pendingProductLinkLineId, setPendingProductLinkLineId] = useState<
+    string | null
+  >(null);
+  const [calculatorFocusSignal, setCalculatorFocusSignal] = useState(0);
   const [csvScenarios, setCsvScenarios] = useState<ExpectedCostScenario[]>([]);
   const [pendingWorkbook, setPendingWorkbook] = useState<{
     fileName: string;
@@ -232,7 +237,8 @@ export function ImportFinanceCalculatorWorkspace({
       lines: [...prev.lines, line],
     }));
     setActiveLineId(line.id);
-    setRenamingLineId(line.id);
+    setRenamingLineId(null);
+    setPendingProductLinkLineId(line.id);
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
   }
@@ -254,6 +260,12 @@ export function ImportFinanceCalculatorWorkspace({
         p.product_name.trim().toLowerCase() === productName.trim().toLowerCase(),
     );
     const customsRef = matchedFinance?.base_customs_reference_usd;
+    if (chemical.vendor?.trim()) {
+      setPmsVendorFilter(chemical.vendor.trim());
+    }
+    setRenamingLineId(null);
+    setPendingProductLinkLineId(null);
+    setCalculatorFocusSignal((n) => n + 1);
     updateActiveLine({
       chemicalTypeId: catalogId,
       productName,
@@ -762,8 +774,10 @@ export function ImportFinanceCalculatorWorkspace({
             PMS product (active line)
           </label>
           <PmsVendorProductPicker
-            key={activeLine.id}
             value={activeLine.chemicalTypeId}
+            vendorFilter={pmsVendorFilter}
+            onVendorFilterChange={setPmsVendorFilter}
+            autoFocusSearch={pendingProductLinkLineId === activeLine.id}
             onSelect={handlePmsProductSelect}
             onClear={handlePmsProductClear}
             disabled={loading}
@@ -879,6 +893,7 @@ export function ImportFinanceCalculatorWorkspace({
         onChange={updateActiveLine}
         constants={constants as FinanceConstants}
         expandAllInputs={expandCalculatorInputs}
+        focusStageSignal={calculatorFocusSignal}
       />
       )}
 
