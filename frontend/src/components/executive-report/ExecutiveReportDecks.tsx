@@ -1,12 +1,15 @@
-import { Package, Users } from "lucide-react";
+import { DollarSign, Package, Users } from "lucide-react";
 import type {
+  CurrencyLedgerRow,
   CustomerLedgerRow,
   CustomerSortMode,
+  FxKpiSummary,
   ProductLedgerRow,
   ProductSortMode,
   SelectedEntity,
 } from "./executiveReportTypes";
 import { formatEtbCompact } from "./executiveReportData";
+import { formatUsdCompact } from "./executiveReportFxData";
 
 type LedgerDeckProps<T extends { id: string; name: string }> = {
   title: string;
@@ -161,5 +164,126 @@ export function CustomerLedgerDeck({
         secondary: `${formatEtbCompact(row.totalRevenueEtb)} ETB revenue · ${row.shipmentCount} runs`,
       })}
     />
+  );
+}
+
+export function FxKpiCards({ kpis }: { kpis: FxKpiSummary }) {
+  const cards = [
+    {
+      label: "Total USD revenue",
+      value: formatUsdCompact(kpis.totalUsdRevenue),
+      sub: `${kpis.usdAvgMarginPct.toFixed(1)}% avg margin`,
+      accent: "from-blue-500/20 to-slate-900/80 border-blue-500/30",
+      valueClass: "text-blue-300",
+    },
+    {
+      label: "Total ETB revenue",
+      value: `${formatEtbCompact(kpis.totalEtbRevenue)} ETB`,
+      sub: `${kpis.etbAvgMarginPct.toFixed(1)}% avg margin`,
+      accent: "from-amber-500/20 to-slate-900/80 border-amber-500/30",
+      valueClass: "text-amber-300",
+    },
+    {
+      label: "Blended margin (USD vs ETB)",
+      value: `${kpis.usdAvgMarginPct.toFixed(1)}% · ${kpis.etbAvgMarginPct.toFixed(1)}%`,
+      sub: `${kpis.blendedMarginPct.toFixed(1)}% weighted blend`,
+      accent: "from-violet-500/20 to-slate-900/80 border-violet-500/30",
+      valueClass: "text-violet-200",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {cards.map((card) => (
+        <div
+          key={card.label}
+          className={`rounded-xl border bg-gradient-to-br p-4 backdrop-blur-md ${card.accent}`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign className="h-3.5 w-3.5 text-slate-400" />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              {card.label}
+            </p>
+          </div>
+          <p className={`text-xl font-bold tabular-nums ${card.valueClass}`}>{card.value}</p>
+          <p className="text-[11px] text-slate-500 mt-1">{card.sub}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type CurrencyDeckProps = {
+  rows: CurrencyLedgerRow[];
+  selected: SelectedEntity;
+  onSelect: (type: "customer", id: string, label: string) => void;
+};
+
+export function CurrencyLedgerDeck({ rows, selected, onSelect }: CurrencyDeckProps) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-md overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-amber-400" />
+          <h3 className="text-sm font-semibold text-white">Deck C · Currency ledger</h3>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-white/5 text-[10px] uppercase tracking-wider text-slate-500">
+              <th className="px-4 py-2.5 font-semibold">Customer</th>
+              <th className="px-3 py-2.5 font-semibold">Currency</th>
+              <th className="px-3 py-2.5 font-semibold text-right">Volume</th>
+              <th className="px-4 py-2.5 font-semibold text-right">Margin</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                  No currency rows in range.
+                </td>
+              </tr>
+            ) : (
+              rows.slice(0, 14).map((row) => {
+                const isActive =
+                  selected?.type === "customer" && selected.id === row.id;
+                return (
+                  <tr
+                    key={row.id}
+                    className={`cursor-pointer transition ${
+                      isActive ? "bg-amber-500/10" : "hover:bg-white/5"
+                    }`}
+                    onClick={() => onSelect("customer", row.id, row.name)}
+                  >
+                    <td className="px-4 py-2.5 font-medium text-slate-100 truncate max-w-[140px]">
+                      {row.name}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          row.dominantCurrency === "USD"
+                            ? "bg-blue-500/20 text-blue-300"
+                            : "bg-amber-500/20 text-amber-300"
+                        }`}
+                      >
+                        {row.dominantCurrency}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">
+                      {row.totalVolumeKg.toLocaleString()} kg
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-300">
+                      {row.avgMarginPct.toFixed(1)}%
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

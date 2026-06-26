@@ -8,7 +8,7 @@ import {
 } from "../../../types/tradeParameters";
 import type { TradeParameters } from "../../../types/tradeParameters";
 import type { TradeTransitRequest } from "../../../utils/tradeTransitRequest";
-import { openNewPipelineWindow } from "../../../utils/newPipelineSession";
+import { buildNewPipelinePath } from "../../../utils/pipelineEditPaths";
 
 const inputClass =
   "w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40";
@@ -129,14 +129,13 @@ export function TradeRequestContextBar({
   if (!showCustomerFields && showProcurementLineAction && !readOnly) {
     return (
       <section className="flex justify-end">
-        <button
-          type="button"
-          onClick={openNewPipelineWindow}
+        <Link
+          to={buildNewPipelinePath()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
         >
-            <Plus className="h-4 w-4" />
-            Add pipeline
-        </button>
+          <Plus className="h-4 w-4" />
+          Add pipeline
+        </Link>
       </section>
     );
   }

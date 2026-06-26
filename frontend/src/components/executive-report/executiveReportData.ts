@@ -1,6 +1,7 @@
 import type { ImportFinanceProduct, ImportShipmentRow } from "../../services/importFinance";
 import type {
   CostStructureSlice,
+  CustomerCurrency,
   CustomerEfficiencyPoint,
   CustomerLedgerRow,
   CustomerSortMode,
@@ -54,6 +55,11 @@ function customerLabel(row: ImportShipmentRow): string {
   return row.client_name?.trim() || "Unassigned buyer";
 }
 
+export function normalizeCustomerCurrency(value: string | null | undefined): CustomerCurrency {
+  const code = (value ?? "ETB").trim().toUpperCase();
+  return code === "USD" ? "USD" : "ETB";
+}
+
 export function enrichShipments(
   rows: ImportShipmentRow[],
   products: ImportFinanceProduct[],
@@ -76,6 +82,11 @@ export function enrichShipments(
         profitPerKg > 0
           ? profitPerKg * qty
           : Math.max(0, revenue - landed);
+      const officialRate = Number(row.snapshot_official_rate) || 0;
+      const parallelRate = Number(row.snapshot_parallel_rate) || 0;
+      const currency = normalizeCustomerCurrency(row.snapshot_target_currency);
+      const revenueUsd =
+        parallelRate > 0 ? revenue / parallelRate : revenue / (officialRate || 1);
 
       return {
         id: row.id,
@@ -86,11 +97,16 @@ export function enrichShipments(
         customerName: customerLabel(row),
         quantityKg: qty,
         createdAt: row.created_at,
+        currency,
+        officialRate,
+        parallelRate,
+        fxSpread: Math.max(0, parallelRate - officialRate),
         originOutlayEtb: Number(row.capital_outlay_etb) || 0,
         customsEtb: Number(row.total_customs_paid_etb) || 0,
         transitEtb: Number(row.inland_transport_etb) || 0,
         profitEtb: profit,
         revenueEtb: revenue,
+        revenueUsd,
         landedCostEtb: landed,
         marginPct: Number(row.gross_margin_pct) || 0,
         profitPerKgEtb: profitPerKg,

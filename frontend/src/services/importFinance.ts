@@ -58,6 +58,8 @@ export interface ImportShipmentRow {
   customer_id?: string | null;
   status: string;
   created_at: string;
+  /** Customer quote currency at save (USD / ETB). */
+  snapshot_target_currency?: string | null;
 }
 
 function importFinanceDb() {
@@ -108,8 +110,14 @@ export function buildShipmentPipelinePayload(
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;
+    targetCurrency?: string | null;
   },
 ) {
+  const targetCurrency = (clientContext?.targetCurrency ?? "ETB")
+    .toString()
+    .trim()
+    .toUpperCase();
+
   return {
     product_id: productId,
     quantity_kg: inputs.quantityKg,
@@ -145,6 +153,7 @@ export function buildShipmentPipelinePayload(
     request_ref: clientContext?.requestRef?.trim() || null,
     chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
     customer_id: clientContext?.customerId?.trim() || null,
+    snapshot_target_currency: targetCurrency === "USD" ? "USD" : "ETB",
     status: "draft" as const,
   };
 }

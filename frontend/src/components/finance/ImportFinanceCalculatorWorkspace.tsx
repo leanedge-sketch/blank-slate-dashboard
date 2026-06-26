@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Database,
   FileSpreadsheet,
@@ -60,6 +61,11 @@ import {
 } from "../pms/pricing-costing/pricingApi";
 import { fetchCustomers } from "../../services/api";
 import { syncTradeTransitLinesToPricing } from "../../services/tradeTransitPricingSync";
+import {
+  buildEditProductCostingPath,
+  filterShipmentsForPipelineRequest,
+  type PipelineRequestQuery,
+} from "../../utils/pipelineEditPaths";
 
 export type TradeTransitWorkspaceSection = "trade" | "products" | "summary" | "all";
 
@@ -72,6 +78,10 @@ type ImportFinanceCalculatorWorkspaceProps = {
   showCustomerFields?: boolean;
   expandCalculatorInputs?: boolean;
   blankNewLines?: boolean;
+  /** Load a saved pipeline request from snapshots (product costing edit mode). */
+  editPipeline?: PipelineRequestQuery | null;
+  /** After save on new-pipeline, navigate to product costing edit for this request. */
+  navigateToProductCostingOnSave?: boolean;
 };
 
 const darkSelect =
@@ -86,7 +96,10 @@ export function ImportFinanceCalculatorWorkspace({
   showCustomerFields = false,
   expandCalculatorInputs = false,
   blankNewLines = false,
+  editPipeline = null,
+  navigateToProductCostingOnSave = false,
 }: ImportFinanceCalculatorWorkspaceProps) {
+  const navigate = useNavigate();
   const {
     constants,
     products,
@@ -145,6 +158,7 @@ export function ImportFinanceCalculatorWorkspace({
     csvScenarios: ExpectedCostScenario[];
   } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const loadedEditPipelineKey = useRef<string | null>(null);
 
   const scenarioOptions = [
     ...EXPECTED_COST_2026_SCENARIOS,
@@ -514,15 +528,37 @@ export function ImportFinanceCalculatorWorkspace({
       shared,
     );
     setRequest(synced);
+    syncCustomerContext({
+      customerId: first.customer_id?.trim() || "",
+      clientName: first.client_name?.trim() || "",
+      contactPerson: first.contact_person?.trim() || "",
+      requestDate: first.request_date?.trim() || "",
+      requestRef: first.request_ref?.trim() || "",
+    });
     setActiveLineId(synced.lines[0]?.id ?? "");
     setSelectedScenarioId("");
     setLoadedShipmentId(first.id);
     setImportNotice(
       lines.length > 1
         ? `Loaded ${lines.length} products for request ${first.request_ref?.trim() || "—"} — use the product tabs above.`
-        : null,
+        : editPipeline
+          ? `Editing saved pipeline ${first.request_ref?.trim() || "—"} — adjust lines and save again.`
+          : null,
     );
   }
+
+  useEffect(() => {
+    if (!editPipeline || loading) return;
+    const key = `${editPipeline.requestRef}::${editPipeline.clientName ?? ""}::${editPipeline.customerId ?? ""}`;
+    if (loadedEditPipelineKey.current === key) return;
+
+    const rows = filterShipmentsForPipelineRequest(shipments, editPipeline);
+    if (rows.length === 0) return;
+
+    loadedEditPipelineKey.current = key;
+    handleLoadShipmentGroup(rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per edit query key
+  }, [editPipeline, loading, shipments]);
 
   async function handleSaveDraft() {
     const clientLabel =
@@ -612,11 +648,27 @@ export function ImportFinanceCalculatorWorkspace({
             parameters?.customerId?.trim() ||
             request.customerId?.trim() ||
             null,
+          targetCurrency:
+            parameters?.targetCurrency?.trim() ||
+            DEFAULT_TRADE_PARAMETERS.targetCurrency,
         });
       }
       alert(
         `Saved ${linkedLines.length} pipeline line(s) for client "${clientLabel}".`,
       );
+
+      if (navigateToProductCostingOnSave && requestRefLabel) {
+        navigate(
+          buildEditProductCostingPath({
+            requestRef: requestRefLabel,
+            clientName: clientLabel,
+            customerId:
+              parameters?.customerId?.trim() ||
+              request.customerId?.trim() ||
+              undefined,
+          }),
+        );
+      }
 
       try {
         const customersRes = await fetchCustomers({ limit: 500 });

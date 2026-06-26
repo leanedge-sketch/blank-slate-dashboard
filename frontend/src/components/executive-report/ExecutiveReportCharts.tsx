@@ -14,9 +14,18 @@ import {
   ScatterChart,
   Scatter,
   ZAxis,
+  Legend,
 } from "recharts";
-import type { CostStructureSlice, CustomerEfficiencyPoint, RevenueMarginPoint } from "./executiveReportTypes";
+import type {
+  CostStructureSlice,
+  CustomerEfficiencyPoint,
+  CustomerFxMatrixRow,
+  FxSpreadSeriesPoint,
+  MarginByCurrencyPoint,
+  RevenueMarginPoint,
+} from "./executiveReportTypes";
 import { formatEtbCompact } from "./executiveReportData";
+import { FX_COLORS } from "./executiveReportFxData";
 
 const tooltipStyle = {
   backgroundColor: "rgba(15, 23, 42, 0.95)",
@@ -215,6 +224,198 @@ export function CustomerEfficiencyChart({ data }: { data: CustomerEfficiencyPoin
           <Scatter data={data} fill="#34d399" fillOpacity={0.75} />
         </ScatterChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function MarginByCurrencyChart({ data }: { data: MarginByCurrencyPoint[] }) {
+  const hasData = data.some((d) => d.shipmentCount > 0);
+  if (!hasData) {
+    return (
+      <p className="text-sm text-slate-500 py-12 text-center">No currency margin data.</p>
+    );
+  }
+
+  return (
+    <div className="h-[280px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+          <YAxis
+            tick={axisTick}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v) => `${v}%`}
+            domain={[0, "auto"]}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            formatter={(value: number, _name, item) => {
+              const row = item.payload as MarginByCurrencyPoint;
+              return [`${Number(value).toFixed(1)}% (${row.shipmentCount} runs)`, "Avg margin"];
+            }}
+          />
+          <Bar dataKey="avgMarginPct" radius={[6, 6, 0, 0]}>
+            {data.map((entry) => (
+              <Cell key={entry.currency} fill={FX_COLORS[entry.currency]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="flex justify-center gap-4 -mt-1">
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: FX_COLORS.USD }} />
+          USD
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: FX_COLORS.ETB }} />
+          ETB
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function CustomerFxMatrixChart({ data }: { data: CustomerFxMatrixRow[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 py-12 text-center">No customer FX mix data.</p>
+    );
+  }
+
+  const chartData = [...data].reverse().map((row) => ({
+    ...row,
+    usdPct: row.usdSharePct,
+    etbPct: row.etbSharePct,
+  }));
+
+  return (
+    <div className="h-[360px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={chartData}
+          layout="vertical"
+          margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
+        >
+          <XAxis
+            type="number"
+            tick={axisTick}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v) => formatEtbCompact(Number(v))}
+            domain={[0, "dataMax"]}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tick={{ ...axisTick, fontSize: 10 }}
+            width={120}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            formatter={(value: number, name: string) => {
+              if (name === "USD share") return [`${Number(value).toFixed(1)}%`, name];
+              if (name === "ETB share") return [`${Number(value).toFixed(1)}%`, name];
+              return [formatEtbCompact(Number(value)) + " ETB", name];
+            }}
+            labelFormatter={(label) => String(label)}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 11, color: "#94a3b8" }}
+            formatter={(value) => (value === "usdRevenueEtb" ? "USD" : "ETB")}
+          />
+          <Bar
+            dataKey="usdRevenueEtb"
+            name="USD"
+            stackId="mix"
+            fill={FX_COLORS.USD}
+            radius={[0, 0, 0, 0]}
+          />
+          <Bar
+            dataKey="etbRevenueEtb"
+            name="ETB"
+            stackId="mix"
+            fill={FX_COLORS.ETB}
+            radius={[0, 4, 4, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function FxSpreadErosionChart({ data }: { data: FxSpreadSeriesPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 py-12 text-center">No FX spread history in range.</p>
+    );
+  }
+
+  return (
+    <div className="h-[280px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+          <YAxis
+            yAxisId="left"
+            tick={axisTick}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+            label={{
+              value: "Spread (ETB)",
+              angle: -90,
+              position: "insideLeft",
+              fill: "#64748b",
+              fontSize: 10,
+            }}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tick={axisTick}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v) => `${v}%`}
+            domain={[0, "auto"]}
+          />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Line
+            yAxisId="left"
+            type="monotone"
+            dataKey="fxSpread"
+            name="Parallel − Official"
+            stroke={FX_COLORS.ETB}
+            strokeWidth={2.5}
+            dot={{ r: 3, fill: FX_COLORS.ETB }}
+          />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="etbMarginPct"
+            name="Avg ETB margin %"
+            stroke={FX_COLORS.USD}
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            dot={{ r: 3, fill: FX_COLORS.USD }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <div className="flex justify-center gap-4 -mt-1">
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="h-0.5 w-4 rounded" style={{ backgroundColor: FX_COLORS.ETB }} />
+          FX spread
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+          <span
+            className="h-0.5 w-4 rounded border border-dashed"
+            style={{ borderColor: FX_COLORS.USD, backgroundColor: FX_COLORS.USD }}
+          />
+          ETB margin %
+        </span>
+      </div>
     </div>
   );
 }

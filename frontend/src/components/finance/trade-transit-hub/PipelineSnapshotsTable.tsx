@@ -1,7 +1,10 @@
 import { Fragment, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { PenLine } from "lucide-react";
 import type { ImportFinanceProduct, ImportShipmentRow } from "../../../services/importFinance";
 import { formatEtb, formatNumber } from "../../../utils/importFinanceCalc";
 import { groupPipelineSnapshots } from "../../../utils/pipelineSnapshotGroups";
+import { buildEditProductCostingPath } from "../../../utils/pipelineEditPaths";
 
 function marginTone(pct: number | null | undefined): string {
   if (pct == null || Number.isNaN(pct)) return "text-slate-500";
@@ -52,11 +55,23 @@ export function PipelineSnapshotsTable({
           <th className="py-2 pr-3 font-medium text-right">Target/kg</th>
           <th className="py-2 pr-3 font-medium text-right">Margin</th>
           <th className="py-2 pr-3 font-medium text-right">Revenue</th>
-          <th className="py-2 font-medium">Status</th>
+          <th className="py-2 pr-3 font-medium">Status</th>
+          <th className="py-2 font-medium text-right">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {groups.map((group) => (
+        {groups.map((group) => {
+          const canEdit =
+            group.requestRef.trim() && group.requestRef.trim() !== "—";
+          const editHref = canEdit
+            ? buildEditProductCostingPath({
+                requestRef: group.requestRef.trim(),
+                clientName: group.clientName,
+                customerId: group.customerId ?? undefined,
+              })
+            : null;
+
+          return (
           <Fragment key={group.key}>
             {group.rows.map((row, index) => {
               const isLoaded = loadedShipmentId === row.id;
@@ -127,6 +142,18 @@ export function PipelineSnapshotsTable({
                       : "—"}
                   </td>
                   <td className="py-2.5 text-slate-500 text-xs">{row.status}</td>
+                  <td className="py-2.5 text-right">
+                    {index === 0 && editHref ? (
+                      <Link
+                        to={editHref}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
+                      >
+                        <PenLine className="h-3 w-3" />
+                        Edit costing
+                      </Link>
+                    ) : null}
+                  </td>
                 </tr>
               );
             })}
@@ -169,9 +196,21 @@ export function PipelineSnapshotsTable({
                 {formatEtb(group.totals.revenueEtb, 0)}
               </td>
               <td className="py-2.5" />
+              <td className="py-2.5 text-right">
+                {editHref ? (
+                  <Link
+                    to={editHref}
+                    className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
+                  >
+                    <PenLine className="h-3 w-3" />
+                    Edit request
+                  </Link>
+                ) : null}
+              </td>
             </tr>
           </Fragment>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );

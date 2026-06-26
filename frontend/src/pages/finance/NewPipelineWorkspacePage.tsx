@@ -33,6 +33,7 @@ export function NewPipelineWorkspacePage() {
         showProcurementLineAction={false}
         showCustomerFields
         blankNewLines
+        navigateToProductCostingOnSave
       />
     </TradeTransitWorkspaceLayout>
   );

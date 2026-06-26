@@ -4,6 +4,7 @@ import {
   Brain,
   ChevronDown,
   Download,
+  DollarSign,
   FileImage,
   FileText,
   Loader2,
@@ -25,18 +26,34 @@ import {
   formatRangeLabel,
   resolveDateRange,
 } from "./executiveReportData";
+import {
+  buildCurrencyLedger,
+  buildCustomerFxMatrix,
+  buildFxKpis,
+  buildFxSpreadSeries,
+  buildMarginByCurrency,
+} from "./executiveReportFxData";
 import { buildCognitiveSummary } from "./executiveReportSummaries";
 import { exportExecutiveReportPdf } from "./executiveReportPdf";
 import {
   CostStructureChart,
   CostStructureStackedBar,
   CustomerEfficiencyChart,
+  CustomerFxMatrixChart,
+  FxSpreadErosionChart,
+  MarginByCurrencyChart,
   RevenueMarginChart,
 } from "./ExecutiveReportCharts";
-import { CustomerLedgerDeck, ProductLedgerDeck } from "./ExecutiveReportDecks";
+import {
+  CurrencyLedgerDeck,
+  CustomerLedgerDeck,
+  FxKpiCards,
+  ProductLedgerDeck,
+} from "./ExecutiveReportDecks";
 import type {
   CustomerSortMode,
   DateRangePreset,
+  ExecutiveDeck,
   ProductSortMode,
   SelectedEntity,
 } from "./executiveReportTypes";
@@ -47,10 +64,17 @@ const RANGE_OPTIONS: { value: DateRangePreset; label: string }[] = [
   { value: "thisMonth", label: "This month" },
 ];
 
+const DECK_OPTIONS: { value: ExecutiveDeck; label: string }[] = [
+  { value: "products", label: "Deck A · Products" },
+  { value: "customers", label: "Deck B · Customers" },
+  { value: "fx", label: "Deck C · Currency & FX" },
+];
+
 export function ExecutiveReportDashboard() {
   const dashboardRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<DateRangePreset>("last90");
+  const [activeDeck, setActiveDeck] = useState<ExecutiveDeck>("products");
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity>(null);
   const [productSort, setProductSort] = useState<ProductSortMode>("frequency");
   const [customerSort, setCustomerSort] = useState<CustomerSortMode>("volume");
@@ -123,14 +147,45 @@ export function ExecutiveReportDashboard() {
     [chartShipments],
   );
 
+  const fxKpis = useMemo(() => buildFxKpis(chartShipments), [chartShipments]);
+  const marginByCurrency = useMemo(
+    () => buildMarginByCurrency(chartShipments),
+    [chartShipments],
+  );
+  const customerFxMatrix = useMemo(
+    () => buildCustomerFxMatrix(chartShipments),
+    [chartShipments],
+  );
+  const fxSpreadSeries = useMemo(
+    () => buildFxSpreadSeries(chartShipments),
+    [chartShipments],
+  );
+  const currencyLedger = useMemo(
+    () => buildCurrencyLedger(chartShipments),
+    [chartShipments],
+  );
+
   const summary = useMemo(
-    () => buildCognitiveSummary(allEnriched, chartShipments, selectedEntity),
-    [allEnriched, chartShipments, selectedEntity],
+    () =>
+      buildCognitiveSummary(allEnriched, chartShipments, selectedEntity, activeDeck),
+    [allEnriched, chartShipments, selectedEntity, activeDeck],
   );
 
   const entityLabel = selectedEntity
     ? `${selectedEntity.type === "product" ? "Product" : "Customer"}: ${selectedEntity.label}`
-    : "Global view";
+    : activeDeck === "fx"
+      ? "FX global view"
+      : "Global view";
+
+  function handleDeckChange(deck: ExecutiveDeck) {
+    setActiveDeck(deck);
+    if (deck === "products" && selectedEntity?.type === "customer") {
+      setSelectedEntity(null);
+    }
+    if (deck === "customers" && selectedEntity?.type === "product") {
+      setSelectedEntity(null);
+    }
+  }
 
   async function handleExport(mode: "full" | "textOnly") {
     const root = mode === "full" ? exportRef.current : null;
@@ -142,7 +197,10 @@ export function ExecutiveReportDashboard() {
         root ?? document.body,
         summary,
         {
-          title: "Stage 4 Executive Report",
+          title:
+            activeDeck === "fx"
+              ? "Stage 4 · Deck C Currency & FX"
+              : "Stage 4 Executive Report",
           rangeLabel: formatRangeLabel(dateRange),
           entityLabel,
         },
@@ -153,9 +211,17 @@ export function ExecutiveReportDashboard() {
     }
   }
 
+  const summaryToneClass =
+    summary.tone === "fx"
+      ? "border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-slate-900/80"
+      : summary.tone === "global"
+        ? "border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-slate-900/80"
+        : summary.tone === "product"
+          ? "border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-slate-900/80"
+          : "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-slate-900/80";
+
   return (
     <div ref={dashboardRef} className="space-y-5">
-      {/* Header controls */}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-400/90">
@@ -165,7 +231,9 @@ export function ExecutiveReportDashboard() {
             Executive Report Dashboard
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Cross-filtered pipeline BI — click a product or customer to drill down.
+            {activeDeck === "fx"
+              ? "Currency risk & FX margin analytics — official vs parallel rate exposure."
+              : "Cross-filtered pipeline BI — click a product or customer to drill down."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -248,6 +316,25 @@ export function ExecutiveReportDashboard() {
         </div>
       </header>
 
+      <div className="inline-flex flex-wrap rounded-xl border border-white/10 bg-slate-900/80 p-1 gap-1">
+        {DECK_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => handleDeckChange(opt.value)}
+            className={`rounded-lg px-4 py-2.5 text-xs font-semibold transition ${
+              activeDeck === opt.value
+                ? opt.value === "fx"
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/20"
+                  : "bg-violet-600 text-white shadow-lg shadow-violet-500/20"
+                : "text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {selectedEntity ? (
         <button
           type="button"
@@ -269,71 +356,129 @@ export function ExecutiveReportDashboard() {
       ) : null}
 
       <div ref={exportRef} className="space-y-5">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,340px)_1fr] gap-5">
-          {/* Ledgers */}
-          <div className="space-y-4">
-            <ProductLedgerDeck
-              rows={productLedger}
-              selected={selectedEntity}
-              sort={productSort}
-              onSortChange={setProductSort}
-              onSelect={(type, id, label) => setSelectedEntity({ type, id, label })}
-            />
-            <CustomerLedgerDeck
-              rows={customerLedger}
-              selected={selectedEntity}
-              sort={customerSort}
-              onSortChange={setCustomerSort}
-              onSelect={(type, id, label) => setSelectedEntity({ type, id, label })}
-            />
-          </div>
+        {activeDeck === "fx" ? (
+          <>
+            <FxKpiCards kpis={fxKpis} />
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,380px)_1fr] gap-5">
+              <CurrencyLedgerDeck
+                rows={currencyLedger}
+                selected={selectedEntity}
+                onSelect={(type, id, label) => setSelectedEntity({ type, id, label })}
+              />
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      Margin by currency
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Average net profit margin — USD vs ETB invoicing
+                    </p>
+                    <MarginByCurrencyChart data={marginByCurrency} />
+                  </section>
 
-          {/* Visualizations */}
-          <div className="space-y-4 transition-all duration-200">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
-                <h3 className="text-sm font-semibold text-white mb-1">Cost structure</h3>
-                <p className="text-[11px] text-slate-500 mb-3">
-                  Origin · customs · transit · margin
-                </p>
-                <CostStructureChart data={costStructure} />
-                <CostStructureStackedBar data={costStructure} />
-              </section>
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      FX spread erosion
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Parallel − official spread vs average ETB margin
+                    </p>
+                    <FxSpreadErosionChart data={fxSpreadSeries} />
+                  </section>
+                </div>
 
-              <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
-                <h3 className="text-sm font-semibold text-white mb-1">
-                  Revenue &amp; margin trajectory
-                </h3>
-                <p className="text-[11px] text-slate-500 mb-3">
-                  {formatRangeLabel(dateRange)} · monthly buckets
-                </p>
-                <RevenueMarginChart data={revenueSeries} />
-              </section>
+                <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                  <h3 className="text-sm font-semibold text-white mb-1">
+                    Customer FX matrix
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Top 10 customers · revenue stacked by USD vs ETB share
+                  </p>
+                  <CustomerFxMatrixChart data={customerFxMatrix} />
+                </section>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,340px)_1fr] gap-5">
+            <div className="space-y-4">
+              {activeDeck === "products" ? (
+                <ProductLedgerDeck
+                  rows={productLedger}
+                  selected={selectedEntity}
+                  sort={productSort}
+                  onSortChange={setProductSort}
+                  onSelect={(type, id, label) => setSelectedEntity({ type, id, label })}
+                />
+              ) : (
+                <CustomerLedgerDeck
+                  rows={customerLedger}
+                  selected={selectedEntity}
+                  sort={customerSort}
+                  onSortChange={setCustomerSort}
+                  onSelect={(type, id, label) => setSelectedEntity({ type, id, label })}
+                />
+              )}
             </div>
 
-            <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
-              <h3 className="text-sm font-semibold text-white mb-1">Customer efficiency</h3>
-              <p className="text-[11px] text-slate-500 mb-3">
-                Volume (kg) vs margin % — bubble size = revenue
-              </p>
-              <CustomerEfficiencyChart data={efficiencyPoints} />
-            </section>
-          </div>
-        </div>
+            <div className="space-y-4 transition-all duration-200">
+              {activeDeck === "products" ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">Cost structure</h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Origin · customs · transit · margin
+                    </p>
+                    <CostStructureChart data={costStructure} />
+                    <CostStructureStackedBar data={costStructure} />
+                  </section>
 
-        {/* Cognitive summary */}
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      Revenue &amp; margin trajectory
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      {formatRangeLabel(dateRange)} · monthly buckets
+                    </p>
+                    <RevenueMarginChart data={revenueSeries} />
+                  </section>
+                </div>
+              ) : (
+                <>
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      Customer efficiency
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Volume (kg) vs margin % — bubble size = revenue
+                    </p>
+                    <CustomerEfficiencyChart data={efficiencyPoints} />
+                  </section>
+
+                  <section className="rounded-xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-md">
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      Revenue &amp; margin trajectory
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      {formatRangeLabel(dateRange)} · monthly buckets
+                    </p>
+                    <RevenueMarginChart data={revenueSeries} />
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <section
-          className={`rounded-xl border p-5 backdrop-blur-md transition-colors duration-200 ${
-            summary.tone === "global"
-              ? "border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-slate-900/80"
-              : summary.tone === "product"
-                ? "border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-slate-900/80"
-                : "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-slate-900/80"
-          }`}
+          className={`rounded-xl border p-5 backdrop-blur-md transition-colors duration-200 ${summaryToneClass}`}
         >
           <div className="flex items-start gap-3">
             <div className="rounded-lg border border-white/10 bg-black/30 p-2.5">
-              {summary.tone === "global" ? (
+              {summary.tone === "fx" ? (
+                <DollarSign className="h-5 w-5 text-amber-300" />
+              ) : summary.tone === "global" ? (
                 <Sparkles className="h-5 w-5 text-violet-300" />
               ) : (
                 <Brain className="h-5 w-5 text-cyan-300" />
@@ -350,7 +495,13 @@ export function ExecutiveReportDashboard() {
                     key={bullet}
                     className="flex gap-2 text-sm text-slate-300 leading-relaxed"
                   >
-                    <span className="text-violet-400 shrink-0">▸</span>
+                    <span
+                      className={`shrink-0 ${
+                        summary.tone === "fx" ? "text-amber-400" : "text-violet-400"
+                      }`}
+                    >
+                      ▸
+                    </span>
                     <span>{bullet}</span>
                   </li>
                 ))}

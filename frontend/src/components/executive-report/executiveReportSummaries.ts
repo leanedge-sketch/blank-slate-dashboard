@@ -3,9 +3,15 @@ import {
   buildProductLedger,
   formatEtbCompact,
 } from "./executiveReportData";
+import {
+  buildCurrencyLedger,
+  buildFxKpis,
+  formatUsdCompact,
+} from "./executiveReportFxData";
 import type {
   CognitiveSummary,
   EnrichedShipment,
+  ExecutiveDeck,
   SelectedEntity,
 } from "./executiveReportTypes";
 
@@ -35,7 +41,11 @@ export function buildCognitiveSummary(
   allShipments: EnrichedShipment[],
   filtered: EnrichedShipment[],
   entity: SelectedEntity,
+  deck: ExecutiveDeck = "products",
 ): CognitiveSummary {
+  if (deck === "fx") {
+    return buildFxSummary(filtered.length > 0 ? filtered : allShipments);
+  }
   if (!entity) {
     return buildGlobalSummary(allShipments);
   }
@@ -43,6 +53,69 @@ export function buildCognitiveSummary(
     return buildProductSummary(filtered, entity.label);
   }
   return buildCustomerSummary(filtered, entity.label);
+}
+
+export function buildFxSummary(shipments: EnrichedShipment[]): CognitiveSummary {
+  const kpis = buildFxKpis(shipments);
+  const ledger = buildCurrencyLedger(shipments);
+
+  const usdByCustomer = new Map<string, { name: string; usdRevenue: number }>();
+  for (const s of shipments) {
+    if (s.currency !== "USD") continue;
+    const existing = usdByCustomer.get(s.customerId);
+    const add = s.revenueUsd;
+    if (!existing) {
+      usdByCustomer.set(s.customerId, { name: s.customerName, usdRevenue: add });
+    } else {
+      usdByCustomer.set(s.customerId, {
+        ...existing,
+        usdRevenue: existing.usdRevenue + add,
+      });
+    }
+  }
+  const hardCurrencyLeader = [...usdByCustomer.values()].sort(
+    (a, b) => b.usdRevenue - a.usdRevenue,
+  )[0];
+
+  const hardCurrencyText = hardCurrencyLeader
+    ? `Top hard-currency provider: ${hardCurrencyLeader.name} at ${formatUsdCompact(hardCurrencyLeader.usdRevenue)} USD invoiced volume.`
+    : "No USD-denominated pipeline runs in this window — local-currency exposure dominates.";
+
+  const avgParallel =
+    shipments.length > 0
+      ? shipments.reduce((sum, s) => sum + s.parallelRate, 0) / shipments.length
+      : 0;
+  const avgSpread =
+    shipments.length > 0
+      ? shipments.reduce((sum, s) => sum + s.fxSpread, 0) / shipments.length
+      : 0;
+  const replacementHeadwindPct =
+    avgParallel > 0 ? (avgSpread / avgParallel) * 100 : 0;
+  const dangerFloor = Math.max(8, replacementHeadwindPct + 4);
+
+  const etbHighVolume = ledger
+    .filter((row) => row.dominantCurrency === "ETB")
+    .sort((a, b) => b.totalVolumeKg - a.totalVolumeKg)[0];
+
+  const erosionText =
+    avgSpread > 0
+      ? `Parallel–official spread averages ${avgSpread.toFixed(2)} ETB (${replacementHeadwindPct.toFixed(1)}% replacement headwind on restock).`
+      : "FX spread data is thin in this range — confirm rate snapshots on new pipeline saves.";
+
+  const etbRiskText =
+    etbHighVolume && etbHighVolume.avgMarginPct < dangerFloor
+      ? `Alert: ${etbHighVolume.name} is a high-volume ETB account at ${etbHighVolume.avgMarginPct.toFixed(1)}% margin — below the ${dangerFloor.toFixed(0)}% floor implied by the current parallel replacement rate.`
+      : etbHighVolume
+        ? `ETB anchor account ${etbHighVolume.name} (${etbHighVolume.totalVolumeKg.toLocaleString()} kg) holds ${etbHighVolume.avgMarginPct.toFixed(1)}% margin — within FX-adjusted tolerance.`
+        : "No dominant ETB buyers with material volume in this period.";
+
+  const blendText = `Blended margin posture: USD ${kpis.usdAvgMarginPct.toFixed(1)}% vs ETB ${kpis.etbAvgMarginPct.toFixed(1)}% (${kpis.blendedMarginPct.toFixed(1)}% weighted average).`;
+
+  return {
+    tone: "fx",
+    headline: "Currency & FX strategy lens",
+    bullets: [hardCurrencyText, erosionText, etbRiskText, blendText],
+  };
 }
 
 function buildGlobalSummary(shipments: EnrichedShipment[]): CognitiveSummary {
