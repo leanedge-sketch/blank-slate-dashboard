@@ -3,7 +3,7 @@ import type { AuthChangeEvent } from "@supabase/supabase-js";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
-import { checkEmployeeStatus as checkEmployeeStatusAPI } from "../services/api";
+import { resolveEmployeeStatus } from "../services/employeeAccess";
 import { CANONICAL_PRODUCTION_URL } from "../lib/canonical-host";
 import { isRequestAborted } from "../lib/request-errors";
 
@@ -128,6 +128,23 @@ function outcomeToLookup(outcome: EmployeeCheckOutcome): EmployeeLookupResult {
   return { status: "error" };
 }
 
+/** Grant access to any signed-in Supabase Auth user (invite-only auth). */
+function employeeFromAuthenticatedUser(authUser: User): EmployeeData {
+  const email = authUser.email!.toLowerCase().trim();
+  const meta = authUser.user_metadata ?? {};
+  const app = authUser.app_metadata ?? {};
+  const rawRole =
+    (typeof meta.role === "string" && meta.role) ||
+    (typeof app.role === "string" && app.role) ||
+    "sales";
+  const role = rawRole.trim().toLowerCase() as EmployeeRole;
+  const name =
+    (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+    (typeof meta.name === "string" && meta.name.trim()) ||
+    undefined;
+  return { email, role, name };
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -188,7 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const result = await Promise.race([
-        checkEmployeeStatusAPI(normalizedEmail),
+        resolveEmployeeStatus(normalizedEmail),
         new Promise<never>((_, reject) => {
           window.setTimeout(
             () => reject(new Error("Employee check timed out")),
@@ -263,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const applyEmployeeFromSession = async (
     email: string | undefined | null,
+    authUser: User | null | undefined,
     event: AuthChangeEvent,
     generation: number,
     options?: { background?: boolean },
@@ -320,6 +338,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (outcome.kind === "not_employee") {
+      if (authUser?.email) {
+        applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
+        return;
+      }
       clearVerifiedEmployee();
       return;
     }
@@ -374,7 +396,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setEmployeeLoading(true);
       }
 
-      void applyEmployeeFromSession(email, event, generation, {
+      void applyEmployeeFromSession(email, session?.user ?? null, event, generation, {
         background: useCacheWhileLoading || alreadyVerified,
       })
         .catch((err) => {
@@ -568,8 +590,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         applyVerifiedEmployee(lookup.employee);
         return;
       }
-      if (lookup.status === "not_found") {
-        clearVerifiedEmployee();
+      if (lookup.status === "not_found" && user) {
+        applyVerifiedEmployee(employeeFromAuthenticatedUser(user));
         return;
       }
       const cached = readEmployeeCache(normalized);

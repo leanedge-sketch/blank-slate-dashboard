@@ -54,3 +54,16 @@ def clear_supabase_cache():
     get_supabase_service_client.cache_clear()
 
 
+def get_supabase_admin_client() -> Client:
+    """
+    Prefer the service-role client for directory lookups.
+    Falls back to the anon client when SERVICE_KEY is unset (RLS applies).
+    """
+    if settings.SUPABASE_SERVICE_KEY:
+        try:
+            return get_supabase_service_client()
+        except Exception:
+            pass
+    return get_supabase_client()
+
+

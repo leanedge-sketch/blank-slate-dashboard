@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from supabase import Client
 from app.database.connection import (
     get_supabase_client,
+    get_supabase_admin_client,
     get_supabase_service_client,
 )
 from app.dependencies import get_current_user
@@ -24,6 +25,165 @@ from app.services.password_change_service import (
 )
 
 router = APIRouter()
+
+VALID_EMPLOYEE_ROLES = {
+    "admin",
+    "product manager",
+    "sales and stock",
+    "sales",
+    "logistic",
+}
+
+
+def _normalize_email(email: str | None) -> str:
+    return (email or "").lower().strip()
+
+
+def _normalize_role(role: str | None) -> str | None:
+    if not role:
+        return None
+    cleaned = str(role).strip().lower()
+    if cleaned in VALID_EMPLOYEE_ROLES:
+        return cleaned
+    # Common aliases from Supabase metadata / admin UI
+    aliases = {
+        "product_manager": "product manager",
+        "sales_and_stock": "sales and stock",
+        "logistics": "logistic",
+        "logistics_manager": "logistic",
+    }
+    return aliases.get(cleaned.replace(" ", "_"))
+
+
+def _role_from_auth_metadata(user: dict) -> tuple[str | None, str | None]:
+    """Read role/name hints from Supabase Auth user metadata."""
+    user_meta = user.get("user_metadata") or {}
+    app_meta = user.get("app_metadata") or {}
+    if not isinstance(user_meta, dict):
+        user_meta = {}
+    if not isinstance(app_meta, dict):
+        app_meta = {}
+
+    role = _normalize_role(
+        user_meta.get("role")
+        or app_meta.get("role")
+        or user_meta.get("employee_role")
+        or app_meta.get("employee_role")
+    )
+    name = (
+        user_meta.get("full_name")
+        or user_meta.get("name")
+        or app_meta.get("name")
+        or app_meta.get("full_name")
+    )
+    if isinstance(name, str):
+        name = name.strip() or None
+    else:
+        name = None
+
+    is_employee = (
+        user_meta.get("is_employee")
+        or app_meta.get("is_employee")
+        or user_meta.get("employee")
+        or app_meta.get("employee")
+    )
+    if not role and is_employee in (True, "true", "1", 1):
+        role = "sales"
+    return role, name
+
+
+def _upsert_employee_row(
+    supabase: Client,
+    email: str,
+    role: str,
+    name: str | None = None,
+) -> dict | None:
+    payload: dict = {"email": email, "role": role}
+    if name:
+        payload["name"] = name
+    try:
+        supabase.table("employees").upsert(payload, on_conflict="email").execute()
+    except Exception as exc:
+        print(f"[employees] upsert failed for {email!r}: {exc}")
+    return _find_employee_row(supabase, email) or payload
+
+
+def _provision_employee_for_auth_user(
+    supabase: Client,
+    user: dict,
+) -> dict | None:
+    """
+    Ensure an employees row exists for a signed-in Supabase Auth user.
+    Uses metadata role when present; otherwise defaults to sales when auto-provision is on.
+    """
+    email = _normalize_email(user.get("email"))
+    if not email:
+        return None
+
+    existing = _find_employee_row(supabase, email)
+    if existing:
+        return existing
+
+    meta_role, meta_name = _role_from_auth_metadata(user)
+    role = meta_role
+    if not role and settings.EMPLOYEE_AUTO_PROVISION_AUTH_USERS:
+        role = "sales"
+    if not role:
+        return None
+
+    print(f"[employees] provisioning {email!r} with role={role!r}")
+    row = _upsert_employee_row(supabase, email, role, meta_name)
+    if row:
+        return row
+    # Table missing or upsert blocked — still grant session access in-memory.
+    return {"email": email, "role": role, "name": meta_name}
+
+
+def _find_employee_row(supabase: Client, email: str) -> dict | None:
+    """Match employees by normalized email (case/whitespace tolerant)."""
+    lookup = _normalize_email(email)
+    if not lookup:
+        return None
+
+    # Exact match first (fast path when emails are stored lowercase).
+    exact = (
+        supabase.table("employees")
+        .select("email, role, name")
+        .eq("email", lookup)
+        .limit(1)
+        .execute()
+    )
+    if exact.data:
+        return exact.data[0]
+
+    # Case-insensitive fallback for legacy rows.
+    loose = (
+        supabase.table("employees")
+        .select("email, role, name")
+        .ilike("email", lookup)
+        .limit(20)
+        .execute()
+    )
+    for row in loose.data or []:
+        if _normalize_email(row.get("email")) == lookup:
+            return row
+    return None
+
+
+def _employee_check_payload(employee: dict | None, email: str) -> dict:
+    if employee:
+        return {
+            "is_employee": True,
+            "email": employee["email"],
+            "role": employee.get("role"),
+            "name": employee.get("name"),
+        }
+    return {
+        "is_employee": False,
+        "email": email,
+        "role": None,
+        "name": None,
+    }
 
 
 class PasswordChangeBody(BaseModel):
@@ -97,44 +257,17 @@ async def public_supabase_config():
 @router.get("/auth/check-employee")
 async def check_employee_status(
     email: str = Query(..., description="Email address to check"),
-    supabase: Client = Depends(get_supabase_service_client)  # Use service client for full access
+    supabase: Client = Depends(get_supabase_admin_client),
 ):
     """
     Check if an email exists in the employees table.
-    This endpoint uses the service role key to bypass RLS.
+    Uses service role when configured; otherwise anon (may return not found if RLS blocks).
     """
     try:
-        # Query employees table using service client (bypasses RLS)
-        lookup = email.lower().strip()
-        result = (
-            supabase.table("employees")
-            .select("email, role, name")
-            .ilike("email", lookup)
-            .limit(10)
-            .execute()
-        )
-        print(f"[check-employee] lookup={lookup!r} result.data={result.data!r}")
-
-        employee = None
-        for row in result.data or []:
-            if (row.get("email") or "").lower().strip() == lookup:
-                employee = row
-                break
-
-        if employee:
-            return {
-                "is_employee": True,
-                "email": employee["email"],
-                "role": employee["role"],
-                "name": employee.get("name"),
-            }
-        else:
-            return {
-                "is_employee": False,
-                "email": email,
-                "role": None,
-                "name": None,
-            }
+        lookup = _normalize_email(email)
+        employee = _find_employee_row(supabase, lookup)
+        print(f"[check-employee] lookup={lookup!r} found={employee is not None}")
+        return _employee_check_payload(employee, lookup or email)
     except Exception as e:
         print(f"Error checking employee status: {e}")
         raise HTTPException(
@@ -143,10 +276,28 @@ async def check_employee_status(
         )
 
 
+@router.get("/auth/verify-employee")
+async def verify_employee_for_session(
+    user: dict = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_admin_client),
+):
+    """
+    Verify the signed-in user's email against the employees table.
+    Preferred after login when the public check-employee call returns false.
+    """
+    email = _normalize_email(user.get("email"))
+    if not email:
+        raise HTTPException(status_code=400, detail="User email not found in session")
+    employee = _provision_employee_for_auth_user(supabase, user)
+    if not employee:
+        employee = _find_employee_row(supabase, email)
+    return _employee_check_payload(employee, email)
+
+
 @router.get("/auth/me")
 async def get_current_employee_info(
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase_service_client)
+    supabase: Client = Depends(get_supabase_admin_client)
 ):
     """
     Get current authenticated user's employee information.
@@ -156,22 +307,23 @@ async def get_current_employee_info(
         if not email:
             raise HTTPException(status_code=400, detail="User email not found")
         
-        email_lower = email.lower().strip()
-        result = supabase.table("employees").select("email, role, name").eq("email", email_lower).execute()
+        email_lower = _normalize_email(email)
+        employee = _provision_employee_for_auth_user(supabase, user)
+        if not employee:
+            employee = _find_employee_row(supabase, email_lower)
         
         # Debug logging for local development
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"Checking employee status for email: {email_lower}")
         logger.info(f"Supabase URL: {supabase.url if hasattr(supabase, 'url') else 'N/A'}")
-        logger.info(f"Query result: {result.data if result.data else 'No data'}")
+        logger.info(f"Employee found: {employee is not None}")
         
-        if result.data and len(result.data) > 0:
-            employee = result.data[0]
+        if employee:
             return {
                 "is_employee": True,
                 "email": employee["email"],
-                "role": employee["role"],
+                "role": employee.get("role"),
                 "name": employee.get("name"),
                 "user_id": user.get("id"),
             }

@@ -68,8 +68,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
               : "Your account is not registered as an employee."}
           </p>
           <p className="text-slate-500 text-xs">
-            Ask an administrator to add you to the employees table in Supabase, then
-            try again. If you were just added, use retry below.
+            Your Supabase login is separate from the <code className="text-slate-400">employees</code>{" "}
+            table. The email here must match a row in that table exactly (e.g.{" "}
+            <code className="text-slate-400">{user.email}</code>). After an admin adds you, click retry
+            below.
           </p>
           <div className="flex flex-col gap-2 pt-2">
             <button

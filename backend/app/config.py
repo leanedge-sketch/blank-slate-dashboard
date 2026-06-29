@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    # When true, signed-in Supabase Auth users without an employees row are
+    # auto-inserted (default role: sales). Safe when Auth sign-up is invite-only.
+    EMPLOYEE_AUTO_PROVISION_AUTH_USERS: bool = True
     
     # Pagination Defaults
     DEFAULT_PAGE_SIZE: int = 20  # How many items per page by default

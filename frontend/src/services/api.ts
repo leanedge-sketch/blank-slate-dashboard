@@ -1894,6 +1894,12 @@ export async function checkEmployeeStatus(email: string): Promise<EmployeeCheckR
   return response.data;
 }
 
+/** Verify employee using the signed-in user's JWT (server uses admin/service client). */
+export async function verifyEmployeeWithSession(): Promise<EmployeeCheckResponse> {
+  const response = await api.get<EmployeeCheckResponse>("/auth/verify-employee");
+  return response.data;
+}
+
 export interface PasswordChangeMessageResponse {
   message: string;
   expires_in_minutes?: number;
