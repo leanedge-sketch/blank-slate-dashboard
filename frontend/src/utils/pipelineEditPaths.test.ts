@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildEditProductCostingPath,
+  buildProductCostingLinePath,
   filterShipmentsForPipelineRequest,
   parseEditProductCostingSearchParams,
 } from "./pipelineEditPaths";
@@ -18,6 +19,12 @@ describe("pipelineEditPaths", () => {
     expect(href).toContain("requestRef=TT-2026-001");
     expect(href).toContain("client=Acme");
     expect(href).toContain("customerId=cust-1");
+  });
+
+  it("builds product costing URL with line id", () => {
+    const href = buildProductCostingLinePath("ttl-abc-123");
+    expect(href).toContain("/finance/product-costing?");
+    expect(href).toContain("line=ttl-abc-123");
   });
 
   it("parses edit search params", () => {

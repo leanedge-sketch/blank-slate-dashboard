@@ -12,6 +12,8 @@ type TransitSummaryTableProps = {
   className?: string;
   /** Full-panel mode when opened from the Transit Summary deck (no nested dropdown). */
   fullPanel?: boolean;
+  onEditLine?: (lineId: string) => void;
+  onRemoveLine?: (lineId: string) => void;
 };
 
 const COLUMNS = [
@@ -23,6 +25,7 @@ const COLUMNS = [
   "Profit/kg",
   "Margin %",
   "Revenue",
+  "Actions",
 ] as const;
 
 export function TransitSummaryTable({
@@ -32,6 +35,8 @@ export function TransitSummaryTable({
   customsPaidEtb,
   className = "",
   fullPanel = false,
+  onEditLine,
+  onRemoveLine,
 }: TransitSummaryTableProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const label = clientName.trim() || "Unnamed client";
@@ -70,7 +75,11 @@ export function TransitSummaryTable({
                 <th
                   key={col}
                   className={`py-2.5 font-semibold whitespace-nowrap ${
-                    i === 0 ? "pr-2 pl-1 text-left" : "pr-2 text-right"
+                    col === "Actions"
+                      ? "pl-2 pr-1 text-center"
+                      : i === 0
+                        ? "pr-2 pl-1 text-left"
+                        : "pr-2 text-right"
                   }`}
                 >
                   {col}
@@ -79,14 +88,29 @@ export function TransitSummaryTable({
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
-              <TransitSummaryTableRow
-                key={item.lineId}
-                item={item}
-                expanded={expandedIds.has(item.lineId)}
-                onToggle={() => toggleRow(item.lineId)}
-              />
-            ))}
+            {items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={COLUMNS.length}
+                  className="py-10 text-center text-sm text-slate-500"
+                >
+                  No product lines in this request. Add a deal from product costing or
+                  restore a line to continue.
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => (
+                <TransitSummaryTableRow
+                  key={item.lineId}
+                  item={item}
+                  expanded={expandedIds.has(item.lineId)}
+                  onToggle={() => toggleRow(item.lineId)}
+                  onEdit={onEditLine ? () => onEditLine(item.lineId) : undefined}
+                  onRemove={onRemoveLine ? () => onRemoveLine(item.lineId) : undefined}
+                  canRemove={items.length > 0}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>

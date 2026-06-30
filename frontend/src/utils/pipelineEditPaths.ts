@@ -23,6 +23,13 @@ export function buildEditProductCostingPath(query: PipelineRequestQuery): string
   return `${TRADE_TRANSIT_ROUTES.productCosting}?${params.toString()}`;
 }
 
+/** Open product costing with a specific pipeline line selected. */
+export function buildProductCostingLinePath(lineId: string): string {
+  const params = new URLSearchParams();
+  params.set("line", lineId.trim());
+  return `${TRADE_TRANSIT_ROUTES.productCosting}?${params.toString()}`;
+}
+
 export function parseEditProductCostingSearchParams(
   searchParams: URLSearchParams,
 ): PipelineRequestQuery | null {

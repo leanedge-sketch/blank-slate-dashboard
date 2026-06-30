@@ -6,6 +6,8 @@ type TradeTransitRequestSummaryTableProps = {
   summary: TradeTransitRequestSummary;
   className?: string;
   fullPanel?: boolean;
+  onEditLine?: (lineId: string) => void;
+  onRemoveLine?: (lineId: string) => void;
 };
 
 export function TradeTransitRequestSummaryTable({
@@ -13,6 +15,8 @@ export function TradeTransitRequestSummaryTable({
   summary,
   className = "",
   fullPanel = false,
+  onEditLine,
+  onRemoveLine,
 }: TradeTransitRequestSummaryTableProps) {
   return (
     <TransitSummaryTable
@@ -22,6 +26,8 @@ export function TradeTransitRequestSummaryTable({
       customsPaidEtb={summary.totals.customsPaidEtb}
       className={className}
       fullPanel={fullPanel}
+      onEditLine={onEditLine}
+      onRemoveLine={onRemoveLine}
     />
   );
 }

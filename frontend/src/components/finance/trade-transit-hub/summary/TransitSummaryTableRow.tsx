@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { formatEtb, formatNumber } from "../../../../utils/importFinanceCalc";
 import type { TransitRequestItem } from "../../../../utils/transitRequestItem";
 import { TransitSummaryExpandedRowDetails } from "./TransitSummaryExpandedRowDetails";
@@ -14,12 +14,18 @@ type TransitSummaryTableRowProps = {
   item: TransitRequestItem;
   expanded: boolean;
   onToggle: () => void;
+  onEdit?: () => void;
+  onRemove?: () => void;
+  canRemove?: boolean;
 };
 
 export function TransitSummaryTableRow({
   item,
   expanded,
   onToggle,
+  onEdit,
+  onRemove,
+  canRemove = true,
 }: TransitSummaryTableRowProps) {
   const qtyLabel = `${item.quantity.toLocaleString()} ${item.uom}`;
 
@@ -77,10 +83,40 @@ export function TransitSummaryTableRow({
             )}
           </div>
         </td>
+        <td className="py-2.5 pl-2 pr-1">
+          <div className="flex items-center justify-end gap-1">
+            {onEdit ? (
+              <button
+                type="button"
+                title="Edit product costing"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-cyan-500/30 bg-cyan-500/10 p-1.5 text-cyan-300 hover:bg-cyan-500/20 transition"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            {onRemove && canRemove ? (
+              <button
+                type="button"
+                title="Remove from summary (session only)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 p-1.5 text-rose-300 hover:bg-rose-500/20 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        </td>
       </tr>
       {expanded && (
         <tr className="border-b border-white/5 bg-[#0B1120]/60">
-          <td colSpan={8} className="px-3 py-3 sm:px-4">
+          <td colSpan={9} className="px-3 py-3 sm:px-4">
             <TransitSummaryExpandedRowDetails
               breakdown={item.costBreakdown}
               quantity={item.quantity}

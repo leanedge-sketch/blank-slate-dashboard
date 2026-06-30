@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Database,
   FileSpreadsheet,
@@ -63,6 +63,7 @@ import { fetchCustomers } from "../../services/api";
 import { syncTradeTransitLinesToPricing } from "../../services/tradeTransitPricingSync";
 import {
   buildEditProductCostingPath,
+  buildProductCostingLinePath,
   filterShipmentsForPipelineRequest,
   type PipelineRequestQuery,
 } from "../../utils/pipelineEditPaths";
@@ -100,6 +101,8 @@ export function ImportFinanceCalculatorWorkspace({
   navigateToProductCostingOnSave = false,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const lineFromUrl = searchParams.get("line")?.trim() ?? "";
   const {
     constants,
     products,
@@ -196,6 +199,12 @@ export function ImportFinanceCalculatorWorkspace({
     }
   }, [activeLine, request.lines]);
 
+  useEffect(() => {
+    if (!lineFromUrl) return;
+    if (!request.lines.some((line) => line.id === lineFromUrl)) return;
+    setActiveLineId(lineFromUrl);
+  }, [lineFromUrl, request.lines]);
+
   function updateActiveLine(
     patch: Partial<TradeTransitInputs> & {
       productName?: string;
@@ -259,11 +268,34 @@ export function ImportFinanceCalculatorWorkspace({
 
   function removeActiveLine() {
     if (request.lines.length <= 1) return;
-    const nextLines = request.lines.filter((line) => line.id !== activeLineId);
+    removeLineById(activeLineId);
+  }
+
+  function removeLineById(lineId: string) {
+    const nextLines = request.lines.filter((line) => line.id !== lineId);
     setRequest((prev) => ({ ...prev, lines: nextLines }));
-    setActiveLineId(nextLines[0]?.id ?? "");
+    if (activeLineId === lineId) {
+      setActiveLineId(nextLines[0]?.id ?? "");
+    }
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
+    setImportNotice("Line removed from this session — saved snapshots are unchanged.");
+  }
+
+  function editLineById(lineId: string) {
+    if (!request.lines.some((line) => line.id === lineId)) return;
+    setActiveLineId(lineId);
+    setRenamingLineId(null);
+    setSelectedScenarioId("");
+    if (activeSection === "summary") {
+      navigate(buildProductCostingLinePath(lineId));
+      return;
+    }
+    setCalculatorFocusSignal((n) => n + 1);
+    document.getElementById("trade-transit-product-workspace")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   function handlePmsProductSelect(chemical: ChemicalFullData) {
@@ -707,17 +739,18 @@ export function ImportFinanceCalculatorWorkspace({
     }
   }
 
-  if (!activeLine) {
+  const showProducts =
+    activeSection === "all" || activeSection === "products";
+  const showSummary =
+    activeSection === "all" || activeSection === "summary";
+
+  if (!activeLine && !showSummary) {
     return null;
   }
 
-  const showProducts =
-    activeSection === "all" || activeSection === "products";
   const procurementLauncherOnly =
     showProcurementLineAction && !showCustomerFields && !historyOnly;
   const showWorkspace = showProducts && !procurementLauncherOnly;
-  const showSummary =
-    activeSection === "all" || activeSection === "summary";
   const showTooling = showWorkspace && !historyOnly;
   const showCalculator = showWorkspace && !historyOnly;
   const showShipments =
@@ -797,11 +830,13 @@ export function ImportFinanceCalculatorWorkspace({
           clientName={request.clientName}
           summary={summary}
           fullPanel={activeSection === "summary"}
+          onEditLine={editLineById}
+          onRemoveLine={removeLineById}
         />
       )}
 
-      {showTooling && (
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-visible">
+      {showTooling && activeLine && (
+      <div id="trade-transit-product-workspace" className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-visible">
         <div className="min-w-[200px] flex-1">
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5">
             <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
@@ -938,7 +973,7 @@ export function ImportFinanceCalculatorWorkspace({
         </p>
       )}
 
-      {showCalculator && (
+      {showCalculator && activeLine && (
       <ImportFinanceCalculatorPanel
         key={activeLine.id}
         inputs={activeLine.inputs}
