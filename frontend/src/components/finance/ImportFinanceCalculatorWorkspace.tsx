@@ -47,7 +47,9 @@ import {
   ImportFinanceCalculatorPanel,
 } from "./ImportFinanceCalculatorPanel";
 import { PipelineSnapshotsTable } from "./trade-transit-hub/PipelineSnapshotsTable";
+import { SavedPipelinesTransitSummary } from "./trade-transit-hub/SavedPipelinesTransitSummary";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
+import { notifyPipelineSaved } from "../../lib/importFinanceEvents";
 import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
 import {
   WorkbookImportReviewModal,
@@ -689,6 +691,13 @@ export function ImportFinanceCalculatorWorkspace({
         `Saved ${linkedLines.length} pipeline line(s) for client "${clientLabel}".`,
       );
 
+      await reload();
+      notifyPipelineSaved({
+        count: linkedLines.length,
+        clientName: clientLabel,
+        requestRef: requestRefLabel || undefined,
+      });
+
       if (navigateToProductCostingOnSave && requestRefLabel) {
         navigate(
           buildEditProductCostingPath({
@@ -832,6 +841,15 @@ export function ImportFinanceCalculatorWorkspace({
           fullPanel={activeSection === "summary"}
           onEditLine={editLineById}
           onRemoveLine={removeLineById}
+        />
+      )}
+
+      {activeSection === "summary" && (
+        <SavedPipelinesTransitSummary
+          shipments={shipments}
+          products={products}
+          constants={constants}
+          onReload={reload}
         />
       )}
 

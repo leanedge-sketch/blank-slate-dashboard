@@ -116,3 +116,52 @@ export function groupPipelineSnapshots(
       return dateB.localeCompare(dateA);
     });
 }
+
+export type CustomerSnapshotBucket = {
+  key: string;
+  clientName: string;
+  customerId: string | null;
+  requestGroups: PipelineSnapshotGroup[];
+  latestCreatedAt: string;
+};
+
+/** Cluster saved pipeline requests by customer (newest customers first). */
+export function groupSnapshotsByCustomer(
+  shipments: ImportShipmentRow[],
+  products: ImportFinanceProduct[],
+): CustomerSnapshotBucket[] {
+  const requestGroups = groupPipelineSnapshots(shipments, products);
+  const map = new Map<string, CustomerSnapshotBucket>();
+
+  for (const group of requestGroups) {
+    const key = `${group.clientName.toLowerCase().trim()}::${group.customerId ?? ""}`;
+    const created = group.rows[0]?.created_at ?? "";
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        key,
+        clientName: group.clientName,
+        customerId: group.customerId,
+        requestGroups: [group],
+        latestCreatedAt: created,
+      });
+      continue;
+    }
+    map.set(key, {
+      ...existing,
+      requestGroups: [...existing.requestGroups, group].sort((a, b) => {
+        const dateA = a.rows[0]?.created_at ?? "";
+        const dateB = b.rows[0]?.created_at ?? "";
+        return dateB.localeCompare(dateA);
+      }),
+      latestCreatedAt:
+        created.localeCompare(existing.latestCreatedAt) > 0
+          ? created
+          : existing.latestCreatedAt,
+    });
+  }
+
+  return [...map.values()].sort((a, b) =>
+    b.latestCreatedAt.localeCompare(a.latestCreatedAt),
+  );
+}

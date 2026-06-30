@@ -14,6 +14,8 @@ import {
   type ImportFinanceInputs,
 } from "../utils/importFinanceCalc";
 
+const RECENT_SHIPMENTS_LIMIT = 200;
+
 export function useImportFinanceData(enabled = true) {
   const [constants, setConstants] = useState<FinanceConstants>(
     DEFAULT_FINANCE_CONSTANTS,
@@ -34,7 +36,7 @@ export function useImportFinanceData(enabled = true) {
       const [constantsRes, productsRes, shipmentsRes] = await Promise.all([
         fetchImportFinanceConstants(),
         fetchImportFinanceProducts(),
-        fetchRecentImportShipments(),
+        fetchRecentImportShipments(RECENT_SHIPMENTS_LIMIT),
       ]);
       setConstants(constantsRes);
       setProducts(productsRes);
@@ -78,7 +80,7 @@ export function useImportFinanceData(enabled = true) {
           constantsOverride ?? constants,
           clientContext,
         );
-        setShipments((prev) => [row, ...prev].slice(0, 20));
+        setShipments((prev) => [row, ...prev].slice(0, RECENT_SHIPMENTS_LIMIT));
         return row;
       } catch (err: unknown) {
         const hint = importFinanceSetupHint(err);

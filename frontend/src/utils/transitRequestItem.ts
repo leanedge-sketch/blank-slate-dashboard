@@ -1,3 +1,9 @@
+import type { ImportFinanceProduct, ImportShipmentRow } from "../services/importFinance";
+import type { FinanceConstants } from "./importFinanceCalc";
+import {
+  calculateTradeTransit,
+  legacyShipmentToTradeTransit,
+} from "./tradeTransitCalc";
 import type { TradeTransitInputs, TradeTransitResult } from "./tradeTransitCalc";
 import { roundFinancial } from "./tradeTransitCalc";
 
@@ -63,6 +69,7 @@ export function mapTransitRequestItem(
     uom?: TransitUom;
     quoteAsOfDate?: string;
     isVatInclusive?: boolean;
+    targetCurrency?: string;
   },
 ): TransitRequestItem {
   const qty = Math.max(inputs.quantityKg, 0);
@@ -91,6 +98,8 @@ export function mapTransitRequestItem(
   const sellingPerUnit = result.stage4.targetSellingPriceEtbPerKg;
   const profitPerUnit = result.stage4.profitPerKgEtb;
   const marginPct = marginPctFromSelling(profitPerUnit, sellingPerUnit);
+  const currency =
+    options?.targetCurrency?.trim().toUpperCase() === "USD" ? "USD" : "ETB";
 
   return {
     lineId,
@@ -113,12 +122,35 @@ export function mapTransitRequestItem(
     financial: {
       exchangeRate: inputs.capitalParallelRate,
       baseCurrency: "USD",
-      targetCurrency: "ETB",
+      targetCurrency: currency,
       isVatInclusive: options?.isVatInclusive ?? false,
       quoteAsOfDate:
         options?.quoteAsOfDate ?? new Date().toISOString().slice(0, 10),
     },
   };
+}
+
+export function transitItemsFromShipments(
+  rows: ImportShipmentRow[],
+  products: ImportFinanceProduct[],
+  constants: FinanceConstants,
+): TransitRequestItem[] {
+  const productById = new Map(products.map((p) => [p.id, p.product_name]));
+
+  return rows.map((row) => {
+    const inputs = legacyShipmentToTradeTransit(row);
+    const result = calculateTradeTransit(inputs, constants);
+    const productName =
+      productById.get(row.product_id) ??
+      row.chemical_type_id?.slice(0, 8) ??
+      `Product ${row.product_id.slice(0, 8)}`;
+    const currency = (row.snapshot_target_currency ?? "ETB").trim().toUpperCase();
+
+    return mapTransitRequestItem(row.id, productName, inputs, result, {
+      quoteAsOfDate: row.created_at?.slice(0, 10),
+      targetCurrency: currency === "USD" ? "USD" : "ETB",
+    });
+  });
 }
 
 export function aggregateTransitFinancialTotals(

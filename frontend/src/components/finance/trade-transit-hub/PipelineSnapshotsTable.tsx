@@ -1,10 +1,17 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PenLine } from "lucide-react";
 import type { ImportFinanceProduct, ImportShipmentRow } from "../../../services/importFinance";
 import { formatEtb, formatNumber } from "../../../utils/importFinanceCalc";
 import { groupPipelineSnapshots } from "../../../utils/pipelineSnapshotGroups";
 import { buildEditProductCostingPath } from "../../../utils/pipelineEditPaths";
+import {
+  ListPager,
+  paginateSlice,
+  totalPagesFor,
+} from "./ListPager";
+
+const GROUPS_PER_PAGE = 5;
 
 function marginTone(pct: number | null | undefined): string {
   if (pct == null || Number.isNaN(pct)) return "text-slate-500";
@@ -19,11 +26,9 @@ type PipelineSnapshotsTableProps = {
   loadedShipmentId: string | null;
   onLoadGroup: (rows: ImportShipmentRow[]) => void;
   onLoadRow: (row: ImportShipmentRow) => void;
-  /** Max saved request groups to show (newest first). */
-  maxGroups?: number;
+  /** Saved request groups per page (newest first). */
+  groupsPerPage?: number;
 };
-
-const DEFAULT_SNAPSHOT_GROUP_LIMIT = 4;
 
 export function PipelineSnapshotsTable({
   shipments,
@@ -31,14 +36,23 @@ export function PipelineSnapshotsTable({
   loadedShipmentId,
   onLoadGroup,
   onLoadRow,
-  maxGroups = DEFAULT_SNAPSHOT_GROUP_LIMIT,
+  groupsPerPage = GROUPS_PER_PAGE,
 }: PipelineSnapshotsTableProps) {
+  const [page, setPage] = useState(1);
+
   const groups = useMemo(
     () => groupPipelineSnapshots(shipments, products),
     [shipments, products],
   );
-  const visibleGroups = groups.slice(0, maxGroups);
-  const hiddenGroupCount = Math.max(0, groups.length - visibleGroups.length);
+
+  const totalPages = totalPagesFor(groups.length, groupsPerPage);
+  const safePage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const visibleGroups = paginateSlice(groups, safePage, groupsPerPage);
 
   if (groups.length === 0) {
     return (
@@ -49,13 +63,15 @@ export function PipelineSnapshotsTable({
   }
 
   return (
-    <div className="space-y-2">
-      {hiddenGroupCount > 0 ? (
-        <p className="text-[11px] text-slate-500">
-          Showing the {visibleGroups.length} most recent saved request
-          {visibleGroups.length === 1 ? "" : "s"} ({hiddenGroupCount} older hidden).
-        </p>
-      ) : null}
+    <div className="space-y-3">
+      <ListPager
+        page={safePage}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        itemLabel="saved requests"
+        totalItems={groups.length}
+        pageSize={groupsPerPage}
+      />
     <table className="w-full min-w-[960px] text-sm text-left">
       <thead>
         <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
@@ -227,6 +243,14 @@ export function PipelineSnapshotsTable({
         })}
       </tbody>
     </table>
+      <ListPager
+        page={safePage}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        itemLabel="saved requests"
+        totalItems={groups.length}
+        pageSize={groupsPerPage}
+      />
     </div>
   );
 }

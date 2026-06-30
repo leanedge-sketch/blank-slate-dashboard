@@ -35,6 +35,7 @@ import {
 } from "./executiveReportFxData";
 import { buildCognitiveSummary } from "./executiveReportSummaries";
 import { exportExecutiveReportPdf } from "./executiveReportPdf";
+import { PIPELINE_SAVED_EVENT } from "../../lib/importFinanceEvents";
 import {
   CostStructureChart,
   CostStructureStackedBar,
@@ -112,6 +113,14 @@ export function ExecutiveReportDashboard() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    const onPipelineSaved = () => {
+      void load();
+    };
+    window.addEventListener(PIPELINE_SAVED_EVENT, onPipelineSaved);
+    return () => window.removeEventListener(PIPELINE_SAVED_EVENT, onPipelineSaved);
   }, [load]);
 
   const allEnriched = useMemo(
