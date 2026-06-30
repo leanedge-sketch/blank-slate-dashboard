@@ -263,6 +263,7 @@ export function TradeRequestContextBar({
                   onSync({
                     requestRef: generatePipelineRequestRef(
                       parameters?.requestDate ?? request.requestDate,
+                      "PROC",
                     ),
                   })
                 }

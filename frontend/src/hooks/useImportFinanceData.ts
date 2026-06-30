@@ -16,6 +16,7 @@ import {
 import {
   type ImportFinancePipelineDomain,
   PROCUREMENT_PIPELINE_DOMAIN,
+  filterShipmentsByDomain,
 } from "../lib/pipelineDomains";
 
 const RECENT_SHIPMENTS_LIMIT = 200;
@@ -47,7 +48,7 @@ export function useImportFinanceData(
       ]);
       setConstants(constantsRes);
       setProducts(productsRes);
-      setShipments(shipmentsRes);
+      setShipments(filterShipmentsByDomain(shipmentsRes, pipelineDomain));
     } catch (err: unknown) {
       const hint = importFinanceSetupHint(err);
       setSetupHint(hint);

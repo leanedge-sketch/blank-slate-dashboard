@@ -544,7 +544,7 @@ export function WorkbookImportReviewModal({
                       type="button"
                       onClick={() =>
                         patchDraft({
-                          requestRef: generatePipelineRequestRef(draft.requestDate),
+                          requestRef: generatePipelineRequestRef(draft.requestDate, "PROC"),
                         })
                       }
                       className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"

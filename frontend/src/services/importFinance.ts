@@ -11,6 +11,7 @@ import {
 import {
   type ImportFinancePipelineDomain,
   PROCUREMENT_PIPELINE_DOMAIN,
+  filterShipmentsByDomain,
   parsePipelineDomain,
 } from "../lib/pipelineDomains";
 
@@ -213,6 +214,26 @@ export function importFinanceSetupHint(error: unknown): string | null {
   return null;
 }
 
+function isMissingPipelineDomainColumn(error: unknown): boolean {
+  const msg = String(
+    (error as { message?: string; details?: string })?.message ??
+      (error as { details?: string })?.details ??
+      error,
+  ).toLowerCase();
+  return (
+    msg.includes("pipeline_domain") ||
+    msg.includes("sales_pipeline_id") ||
+    (msg.includes("column") && msg.includes("import_finance"))
+  );
+}
+
+function stripDomainFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { pipeline_domain, sales_pipeline_id, ...rest } = payload;
+  return rest;
+}
+
 export async function fetchImportFinanceConstants(): Promise<FinanceConstants> {
   const { data, error } = await importFinanceDb()
     .from(TABLES.constants)
@@ -302,11 +323,21 @@ export async function saveImportShipmentDraft(
     clientContext,
   );
 
-  const { data, error } = await importFinanceDb()
+  let { data, error } = await importFinanceDb()
     .from(TABLES.shipments)
     .insert(payload)
     .select("*")
     .single();
+
+  if (error && isMissingPipelineDomainColumn(error)) {
+    const retry = await importFinanceDb()
+      .from(TABLES.shipments)
+      .insert(stripDomainFields(payload as Record<string, unknown>))
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) throw error;
   return data as ImportShipmentRow;
@@ -316,20 +347,37 @@ export async function fetchRecentImportShipments(
   limit = 20,
   options?: { pipelineDomain?: ImportFinancePipelineDomain },
 ): Promise<ImportShipmentRow[]> {
-  let query = importFinanceDb()
+  const domain = options?.pipelineDomain;
+
+  if (domain) {
+    const filtered = await importFinanceDb()
+      .from(TABLES.shipments)
+      .select("*")
+      .eq("pipeline_domain", domain)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (!filtered.error) {
+      return filterShipmentsByDomain(
+        (filtered.data ?? []) as ImportShipmentRow[],
+        domain,
+      );
+    }
+
+    if (!isMissingPipelineDomainColumn(filtered.error)) {
+      throw filtered.error;
+    }
+  }
+
+  const { data, error } = await importFinanceDb()
     .from(TABLES.shipments)
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (options?.pipelineDomain) {
-    query = query.eq("pipeline_domain", options.pipelineDomain);
-  }
-
-  const { data, error } = await query;
+    .limit(domain ? Math.max(limit, 200) : limit);
 
   if (error) throw error;
-  return (data ?? []) as ImportShipmentRow[];
+  const rows = (data ?? []) as ImportShipmentRow[];
+  return domain ? filterShipmentsByDomain(rows, domain).slice(0, limit) : rows;
 }
 
 /** Shipments for executive report dashboards (date-filtered, higher limit). */
@@ -341,14 +389,40 @@ export async function fetchImportShipmentsForReport(
     pipelineDomain?: ImportFinancePipelineDomain;
   },
 ): Promise<ImportShipmentRow[]> {
+  const domain = options?.pipelineDomain;
+  const rowLimit = options?.limit ?? 500;
+
+  if (domain) {
+    let query = importFinanceDb()
+      .from(TABLES.shipments)
+      .select("*")
+      .eq("pipeline_domain", domain)
+      .order("created_at", { ascending: true });
+
+    if (options?.startIso) {
+      query = query.gte("created_at", options.startIso);
+    }
+    if (options?.endIso) {
+      query = query.lte("created_at", options.endIso);
+    }
+    query = query.limit(rowLimit);
+
+    const filtered = await query;
+    if (!filtered.error) {
+      return filterShipmentsByDomain(
+        (filtered.data ?? []) as ImportShipmentRow[],
+        domain,
+      );
+    }
+    if (!isMissingPipelineDomainColumn(filtered.error)) {
+      throw filtered.error;
+    }
+  }
+
   let query = importFinanceDb()
     .from(TABLES.shipments)
     .select("*")
     .order("created_at", { ascending: true });
-
-  if (options?.pipelineDomain) {
-    query = query.eq("pipeline_domain", options.pipelineDomain);
-  }
 
   if (options?.startIso) {
     query = query.gte("created_at", options.startIso);
@@ -356,15 +430,14 @@ export async function fetchImportShipmentsForReport(
   if (options?.endIso) {
     query = query.lte("created_at", options.endIso);
   }
-  if (options?.limit) {
-    query = query.limit(options.limit);
-  } else {
-    query = query.limit(500);
-  }
+  query = query.limit(domain ? Math.max(rowLimit, 500) : rowLimit);
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as ImportShipmentRow[];
+  const rows = (data ?? []) as ImportShipmentRow[];
+  return domain
+    ? filterShipmentsByDomain(rows, domain).slice(0, rowLimit)
+    : rows;
 }
 
 export async function fetchImportShipmentsForCustomer(

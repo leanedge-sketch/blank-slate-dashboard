@@ -8,6 +8,7 @@ import {
   useTradeTransitRequest,
 } from "../../contexts/TradeTransitRequestContext";
 import { parseEditProductCostingSearchParams } from "../../utils/pipelineEditPaths";
+import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 
 export function ProductCostingWorkspacePage() {
   const [searchParams] = useSearchParams();
@@ -67,6 +68,7 @@ export function ProductCostingWorkspacePage() {
         showProcurementLineAction={!isEditMode}
         showCustomerFields={false}
         editPipeline={editPipeline}
+        pipelineDomain={PROCUREMENT_PIPELINE_DOMAIN}
       />
     </TradeTransitWorkspaceLayout>
   );

@@ -6,6 +6,7 @@ import {
   aggregateTransitFinancialTotals,
   transitItemsFromShipments,
 } from "../../../utils/transitRequestItem";
+import { PIPELINE_SAVED_EVENT } from "../../../lib/importFinanceEvents";
 import {
   type ImportFinancePipelineDomain,
   pipelineDomainLabel,
