@@ -67,20 +67,26 @@ export function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Unique pipeline / request number when not supplied by workbook or user. */
-export function generatePipelineRequestRef(requestDate?: string): string {
+/** Unique request number when not supplied by workbook or user. */
+export function generatePipelineRequestRef(
+  requestDate?: string,
+  prefix: "PROC" | "SALES" | "TT" = "PROC",
+): string {
   const d = (requestDate?.trim() || todayIsoDate()).replace(/-/g, "");
   const suffix = Math.floor(1000 + Math.random() * 9000);
-  return `TT-${d}-${suffix}`;
+  return `${prefix}-${d}-${suffix}`;
 }
 
-export function ensurePipelineRequestIds(fields: {
-  requestDate?: string;
-  requestRef?: string;
-}): { requestDate: string; requestRef: string } {
+export function ensurePipelineRequestIds(
+  fields: {
+    requestDate?: string;
+    requestRef?: string;
+  },
+  refPrefix: "PROC" | "SALES" | "TT" = "PROC",
+): { requestDate: string; requestRef: string } {
   const requestDate = fields.requestDate?.trim() || todayIsoDate();
   const requestRef =
-    fields.requestRef?.trim() || generatePipelineRequestRef(requestDate);
+    fields.requestRef?.trim() || generatePipelineRequestRef(requestDate, refPrefix);
   return { requestDate, requestRef };
 }
 

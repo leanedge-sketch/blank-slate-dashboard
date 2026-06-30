@@ -134,7 +134,7 @@ export function TradeRequestContextBar({
           className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
         >
           <Plus className="h-4 w-4" />
-          Add pipeline
+          Add procurement request
         </Link>
       </section>
     );
@@ -148,7 +148,7 @@ export function TradeRequestContextBar({
     <section className="rounded-xl border border-cyan-500/25 bg-gradient-to-br from-slate-900/95 to-slate-950/95 p-4 sm:p-5 shadow-[0_0_24px_rgba(6,182,212,0.08)]">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90">
-          Customer request · pipeline entry
+          Procurement request
         </p>
         {!readOnly && productCount > 0 ? (
           <span className="text-xs text-slate-500 tabular-nums shrink-0">

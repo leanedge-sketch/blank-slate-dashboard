@@ -779,7 +779,14 @@ export function PipelineDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                to={`/finance/sales-costing/${selectedPipeline.id}`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-all font-semibold text-sm"
+              >
+                <DollarSign className="w-4 h-4" />
+                Sales costing
+              </Link>
               {selectedPipeline.stage === "Proposal" && (
                 <button
                   onClick={generateQuote}

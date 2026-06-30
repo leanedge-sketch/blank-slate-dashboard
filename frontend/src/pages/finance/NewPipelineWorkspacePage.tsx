@@ -7,6 +7,7 @@ import {
   TRADE_TRANSIT_ROUTES,
   useTradeTransitRequest,
 } from "../../contexts/TradeTransitRequestContext";
+import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 
 export function NewPipelineWorkspacePage() {
   const [searchParams] = useSearchParams();
@@ -22,7 +23,7 @@ export function NewPipelineWorkspacePage() {
   return (
     <TradeTransitWorkspaceLayout
       title="Procurement pipeline"
-      subtitle="Fill in the customer request, then add product lines. Tax rates, transport, and customs reference use defaults — enter quantity and supplier price for each line."
+      subtitle="Procurement import request — fill in the customer request, then add product lines. Saved separately from CRM sales deals."
       icon={<PenLine className="h-5 w-5 text-emerald-400" />}
       backHref={TRADE_TRANSIT_ROUTES.hub}
       backLabel="Back to hub"
@@ -34,6 +35,7 @@ export function NewPipelineWorkspacePage() {
         showCustomerFields
         blankNewLines
         navigateToProductCostingOnSave
+        pipelineDomain={PROCUREMENT_PIPELINE_DOMAIN}
       />
     </TradeTransitWorkspaceLayout>
   );

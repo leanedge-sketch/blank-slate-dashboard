@@ -6,7 +6,11 @@ import {
   aggregateTransitFinancialTotals,
   transitItemsFromShipments,
 } from "../../../utils/transitRequestItem";
-import { PIPELINE_SAVED_EVENT } from "../../../lib/importFinanceEvents";
+import {
+  type ImportFinancePipelineDomain,
+  pipelineDomainLabel,
+  PROCUREMENT_PIPELINE_DOMAIN,
+} from "../../../lib/pipelineDomains";
 import { TransitSummaryTable } from "./summary/TransitSummaryTable";
 import {
   ListPager,
@@ -21,6 +25,7 @@ type SavedPipelinesTransitSummaryProps = {
   products: ImportFinanceProduct[];
   constants: FinanceConstants;
   onReload?: () => void;
+  pipelineDomain?: ImportFinancePipelineDomain;
 };
 
 export function SavedPipelinesTransitSummary({
@@ -28,6 +33,7 @@ export function SavedPipelinesTransitSummary({
   products,
   constants,
   onReload,
+  pipelineDomain = PROCUREMENT_PIPELINE_DOMAIN,
 }: SavedPipelinesTransitSummaryProps) {
   const [page, setPage] = useState(1);
 
@@ -61,7 +67,8 @@ export function SavedPipelinesTransitSummary({
   if (customerBuckets.length === 0) {
     return (
       <p className="rounded-xl border border-white/10 bg-slate-900/60 px-4 py-8 text-center text-sm text-slate-500">
-        No saved pipelines yet. Save product lines from costing to populate this view.
+        No saved {pipelineDomainLabel(pipelineDomain).toLowerCase()} requests yet. Save
+        product lines from costing to populate this view.
       </p>
     );
   }
@@ -71,10 +78,14 @@ export function SavedPipelinesTransitSummary({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-500/90">
-            Saved pipelines
+            Saved {pipelineDomainLabel(pipelineDomain).toLowerCase()} requests
           </p>
           <p className="text-sm text-slate-400 mt-1">
-            All customers with saved pipeline snapshots — updates when you save new lines.
+            {pipelineDomainLabel(pipelineDomain)} snapshots only — separate from{" "}
+            {pipelineDomain === PROCUREMENT_PIPELINE_DOMAIN
+              ? "CRM sales deals"
+              : "procurement import requests"}
+            .
           </p>
         </div>
         <ListPager

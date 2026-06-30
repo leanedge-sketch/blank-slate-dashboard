@@ -36,6 +36,7 @@ import {
 import { buildCognitiveSummary } from "./executiveReportSummaries";
 import { exportExecutiveReportPdf } from "./executiveReportPdf";
 import { PIPELINE_SAVED_EVENT } from "../../lib/importFinanceEvents";
+import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 import {
   CostStructureChart,
   CostStructureStackedBar,
@@ -99,6 +100,7 @@ export function ExecutiveReportDashboard() {
         fetchImportShipmentsForReport({
           startIso: start.toISOString(),
           endIso: end.toISOString(),
+          pipelineDomain: PROCUREMENT_PIPELINE_DOMAIN,
         }),
         fetchImportFinanceProducts(),
       ]);

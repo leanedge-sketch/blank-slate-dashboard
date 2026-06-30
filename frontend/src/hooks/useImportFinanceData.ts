@@ -13,10 +13,17 @@ import {
   type FinanceConstants,
   type ImportFinanceInputs,
 } from "../utils/importFinanceCalc";
+import {
+  type ImportFinancePipelineDomain,
+  PROCUREMENT_PIPELINE_DOMAIN,
+} from "../lib/pipelineDomains";
 
 const RECENT_SHIPMENTS_LIMIT = 200;
 
-export function useImportFinanceData(enabled = true) {
+export function useImportFinanceData(
+  enabled = true,
+  pipelineDomain: ImportFinancePipelineDomain = PROCUREMENT_PIPELINE_DOMAIN,
+) {
   const [constants, setConstants] = useState<FinanceConstants>(
     DEFAULT_FINANCE_CONSTANTS,
   );
@@ -36,7 +43,7 @@ export function useImportFinanceData(enabled = true) {
       const [constantsRes, productsRes, shipmentsRes] = await Promise.all([
         fetchImportFinanceConstants(),
         fetchImportFinanceProducts(),
-        fetchRecentImportShipments(RECENT_SHIPMENTS_LIMIT),
+        fetchRecentImportShipments(RECENT_SHIPMENTS_LIMIT, { pipelineDomain }),
       ]);
       setConstants(constantsRes);
       setProducts(productsRes);
@@ -53,7 +60,7 @@ export function useImportFinanceData(enabled = true) {
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, pipelineDomain]);
 
   useEffect(() => {
     void reload();
@@ -66,9 +73,13 @@ export function useImportFinanceData(enabled = true) {
       constantsOverride?: FinanceConstants,
       clientContext?: {
         clientName?: string;
+        contactPerson?: string;
+        requestDate?: string;
         requestRef?: string;
         chemicalTypeId?: string | null;
         customerId?: string | null;
+        targetCurrency?: string | null;
+        salesPipelineId?: string | null;
       },
     ) => {
       setSaving(true);
@@ -78,7 +89,10 @@ export function useImportFinanceData(enabled = true) {
           productId,
           inputs,
           constantsOverride ?? constants,
-          clientContext,
+          {
+            ...clientContext,
+            pipelineDomain,
+          },
         );
         setShipments((prev) => [row, ...prev].slice(0, RECENT_SHIPMENTS_LIMIT));
         return row;
@@ -95,7 +109,7 @@ export function useImportFinanceData(enabled = true) {
         setSaving(false);
       }
     },
-    [constants],
+    [constants, pipelineDomain],
   );
 
   return {
@@ -108,5 +122,6 @@ export function useImportFinanceData(enabled = true) {
     setupHint,
     reload,
     saveDraft,
+    pipelineDomain,
   };
 }

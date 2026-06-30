@@ -50,6 +50,11 @@ import { PipelineSnapshotsTable } from "./trade-transit-hub/PipelineSnapshotsTab
 import { SavedPipelinesTransitSummary } from "./trade-transit-hub/SavedPipelinesTransitSummary";
 import { TradeTransitRequestSummaryTable } from "./trade-transit-hub/TradeTransitRequestSummaryTable";
 import { notifyPipelineSaved } from "../../lib/importFinanceEvents";
+import {
+  type ImportFinancePipelineDomain,
+  PROCUREMENT_PIPELINE_DOMAIN,
+  pipelineDomainLabel,
+} from "../../lib/pipelineDomains";
 import { TradeRequestContextBar } from "./trade-transit-hub/TradeRequestContextBar";
 import {
   WorkbookImportReviewModal,
@@ -85,6 +90,10 @@ type ImportFinanceCalculatorWorkspaceProps = {
   editPipeline?: PipelineRequestQuery | null;
   /** After save on new-pipeline, navigate to product costing edit for this request. */
   navigateToProductCostingOnSave?: boolean;
+  /** procurement (Trade & Transit) or sales (costing linked to a CRM deal). */
+  pipelineDomain?: ImportFinancePipelineDomain;
+  /** CRM sales_pipeline.id when pipelineDomain is sales. */
+  salesPipelineId?: string | null;
 };
 
 const darkSelect =
@@ -101,6 +110,8 @@ export function ImportFinanceCalculatorWorkspace({
   blankNewLines = false,
   editPipeline = null,
   navigateToProductCostingOnSave = false,
+  pipelineDomain = PROCUREMENT_PIPELINE_DOMAIN,
+  salesPipelineId = null,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -115,7 +126,7 @@ export function ImportFinanceCalculatorWorkspace({
     setupHint,
     reload,
     saveDraft,
-  } = useImportFinanceData(enabled);
+  } = useImportFinanceData(enabled, pipelineDomain);
 
   const transitCtx = useTradeTransitRequestOptional();
   const [localRequest, setLocalRequest] = useState<TradeTransitRequest>(() =>
@@ -685,10 +696,11 @@ export function ImportFinanceCalculatorWorkspace({
           targetCurrency:
             parameters?.targetCurrency?.trim() ||
             DEFAULT_TRADE_PARAMETERS.targetCurrency,
+          salesPipelineId: salesPipelineId?.trim() || null,
         });
       }
       alert(
-        `Saved ${linkedLines.length} pipeline line(s) for client "${clientLabel}".`,
+        `Saved ${linkedLines.length} ${pipelineDomainLabel(pipelineDomain).toLowerCase()} line(s) for client "${clientLabel}".`,
       );
 
       await reload();
@@ -850,6 +862,7 @@ export function ImportFinanceCalculatorWorkspace({
           products={products}
           constants={constants}
           onReload={reload}
+          pipelineDomain={pipelineDomain}
         />
       )}
 
@@ -1005,7 +1018,7 @@ export function ImportFinanceCalculatorWorkspace({
       {showShipments && (
         <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 overflow-x-auto">
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
-            Saved pipeline snapshots
+            Saved procurement requests
             <span className="ml-2 text-xs font-normal text-slate-500">
               click request ID to load all products, or a row for one line
             </span>

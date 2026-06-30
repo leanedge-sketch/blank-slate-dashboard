@@ -218,6 +218,7 @@ def get_trade_transit_report_summary(limit: int = 10) -> TradeTransitReportSumma
                 "id, client_name, customer_id, chemical_type_id, quantity_kg, "
                 "final_landed_unit_cost_etb_per_kg, gross_margin_pct, status, created_at"
             )
+            .eq("pipeline_domain", "procurement")
             .order("created_at", desc=True)
             .limit(500)
             .execute()

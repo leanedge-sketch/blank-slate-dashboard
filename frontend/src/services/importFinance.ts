@@ -8,6 +8,11 @@ import {
   type ImportFinanceInputs,
   type ImportFinanceResult,
 } from "../utils/importFinanceCalc";
+import {
+  type ImportFinancePipelineDomain,
+  PROCUREMENT_PIPELINE_DOMAIN,
+  parsePipelineDomain,
+} from "../lib/pipelineDomains";
 
 export interface ImportFinanceProduct {
   id: string;
@@ -60,6 +65,10 @@ export interface ImportShipmentRow {
   created_at: string;
   /** Customer quote currency at save (USD / ETB). */
   snapshot_target_currency?: string | null;
+  /** procurement | sales — separates Trade & Transit from sales-deal costing. */
+  pipeline_domain?: ImportFinancePipelineDomain | string | null;
+  /** Set when pipeline_domain is sales and costing is tied to a CRM deal. */
+  sales_pipeline_id?: string | null;
 }
 
 function importFinanceDb() {
@@ -111,6 +120,8 @@ export function buildShipmentPipelinePayload(
     chemicalTypeId?: string | null;
     customerId?: string | null;
     targetCurrency?: string | null;
+    pipelineDomain?: ImportFinancePipelineDomain;
+    salesPipelineId?: string | null;
   },
 ) {
   const targetCurrency = (clientContext?.targetCurrency ?? "ETB")
@@ -154,6 +165,10 @@ export function buildShipmentPipelinePayload(
     chemical_type_id: clientContext?.chemicalTypeId?.trim() || null,
     customer_id: clientContext?.customerId?.trim() || null,
     snapshot_target_currency: targetCurrency === "USD" ? "USD" : "ETB",
+    pipeline_domain: parsePipelineDomain(
+      clientContext?.pipelineDomain ?? PROCUREMENT_PIPELINE_DOMAIN,
+    ),
+    sales_pipeline_id: clientContext?.salesPipelineId?.trim() || null,
     status: "draft" as const,
   };
 }
@@ -191,7 +206,8 @@ export function importFinanceSetupHint(error: unknown): string | null {
   ) {
     return (
       "Run docs/0013b_import_finance_public_tables.sql, then " +
-      "docs/0014_import_finance_pipeline_columns.sql in the Supabase SQL Editor."
+      "docs/0014_import_finance_pipeline_columns.sql and " +
+      "docs/0025_import_finance_pipeline_domain.sql in the Supabase SQL Editor."
     );
   }
   return null;
@@ -273,6 +289,9 @@ export async function saveImportShipmentDraft(
     requestRef?: string;
     chemicalTypeId?: string | null;
     customerId?: string | null;
+    targetCurrency?: string | null;
+    pipelineDomain?: ImportFinancePipelineDomain;
+    salesPipelineId?: string | null;
   },
 ): Promise<ImportShipmentRow> {
   const payload = buildShipmentPipelinePayload(
@@ -295,12 +314,19 @@ export async function saveImportShipmentDraft(
 
 export async function fetchRecentImportShipments(
   limit = 20,
+  options?: { pipelineDomain?: ImportFinancePipelineDomain },
 ): Promise<ImportShipmentRow[]> {
-  const { data, error } = await importFinanceDb()
+  let query = importFinanceDb()
     .from(TABLES.shipments)
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (options?.pipelineDomain) {
+    query = query.eq("pipeline_domain", options.pipelineDomain);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []) as ImportShipmentRow[];
@@ -308,12 +334,21 @@ export async function fetchRecentImportShipments(
 
 /** Shipments for executive report dashboards (date-filtered, higher limit). */
 export async function fetchImportShipmentsForReport(
-  options?: { startIso?: string; endIso?: string; limit?: number },
+  options?: {
+    startIso?: string;
+    endIso?: string;
+    limit?: number;
+    pipelineDomain?: ImportFinancePipelineDomain;
+  },
 ): Promise<ImportShipmentRow[]> {
   let query = importFinanceDb()
     .from(TABLES.shipments)
     .select("*")
     .order("created_at", { ascending: true });
+
+  if (options?.pipelineDomain) {
+    query = query.eq("pipeline_domain", options.pipelineDomain);
+  }
 
   if (options?.startIso) {
     query = query.gte("created_at", options.startIso);

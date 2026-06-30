@@ -27,22 +27,16 @@ import {
   Plus,
   Loader2,
   ChevronLeft,
-  ChevronRight,
   Filter,
-  Edit2,
-  Trash2,
-  Calendar,
-  User,
-  Package,
   AlertCircle,
   CheckCircle,
   X,
   Activity,
   FileText,
-  Folder,
-  ChevronDown,
   RefreshCw,
 } from "lucide-react";
+import { PipelineRecordsList } from "../../components/sales/PipelineRecordsList";
+import { PipelineStageBoard } from "../../components/sales/PipelineStageBoard";
 import { QuotationForm, QuotationFormData, QuotationFormType } from "../../components/QuotationForm";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { ProductMultiSelect } from "../../components/sales/ProductMultiSelect";
@@ -147,23 +141,11 @@ export function SalesPipelinePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  // Debug: Log when component mounts or pipelineId changes
-  useEffect(() => {
-    console.log("SalesPipelinePage mounted/updated:", { 
-      urlPipelineId, 
-      pathname: window.location.pathname,
-      isEditRoute: window.location.pathname.includes("/edit")
-    });
-  }, [urlPipelineId]);
-  const [pipelines, setPipelines] = useState<SalesPipeline[]>([]);
-  const [stageBoardPipelines, setStageBoardPipelines] = useState<SalesPipeline[]>([]);
-  const [total, setTotal] = useState(0);
+  const [allPipelines, setAllPipelines] = useState<SalesPipeline[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncingAllFromCrm, setSyncingAllFromCrm] = useState(false);
   const [syncProgress, setSyncProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [offset, setOffset] = useState(0);
-  const limit = 50;
 
   // Filters - initialize from URL params
   const [selectedCustomer, setSelectedCustomer] = useState<string>(
@@ -515,8 +497,6 @@ export function SalesPipelinePage() {
   const editProcessedRef = useRef<string | null>(null);
 
   // Grouped view: which customers (companies) are expanded
-  const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set());
-
   // Load customers, Chemical Types, business models, and currencies for dropdowns
   useEffect(() => {
     async function loadDropdownData() {
@@ -575,18 +555,7 @@ export function SalesPipelinePage() {
         [...res.pipelines],
         chemicalFullData,
       );
-      const paginatedPipelines = sortedPipelines.slice(offset, offset + limit);
-
-      setStageBoardPipelines(sortedPipelines);
-      setPipelines(paginatedPipelines);
-      setTotal(sortedPipelines.length);
-      setExpandedCustomers(
-        new Set(
-          sortedPipelines
-            .map((p) => p.customer_id)
-            .filter((id): id is string => Boolean(id))
-        )
-      );
+      setAllPipelines(sortedPipelines);
     } catch (err: any) {
       console.error(err);
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load pipelines");
@@ -597,7 +566,7 @@ export function SalesPipelinePage() {
 
   useEffect(() => {
     loadPipelines();
-  }, [offset, selectedCustomer, selectedChemicalType, selectedStage, chemicalFullData.length]);
+  }, [selectedCustomer, selectedChemicalType, selectedStage, chemicalFullData.length]);
 
   async function handleSyncAllFromCrm() {
     if (
@@ -660,7 +629,6 @@ export function SalesPipelinePage() {
     setSelectedChemicalType("");
     setSelectedStage("");
     setSearchQuery("");
-    setOffset(0);
   }
 
   function openCreateForm() {
@@ -1190,7 +1158,7 @@ export function SalesPipelinePage() {
 
     try {
       // Save quotation data to pipeline metadata
-      const pipeline = pipelines.find((p) => p.id === quotationPipelineId);
+      const pipeline = allPipelines.find((p) => p.id === quotationPipelineId);
       if (pipeline) {
         const updateData: SalesPipelineUpdate = {
           metadata: {
@@ -1211,15 +1179,6 @@ export function SalesPipelinePage() {
   }
 
 
-  function formatDate(dateString: string | null | undefined): string {
-    if (!dateString) return "—";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }
-
   function getCustomerName(customerId: string): string {
     const customer = customers.find((c) => c.customer_id === customerId);
     return customer?.customer_name || customerId;
@@ -1229,9 +1188,8 @@ export function SalesPipelinePage() {
     return getPipelineProductLabel(pipeline, pipelineLabelOptions);
   }
 
-  const totalPages = Math.ceil(total / limit);
-  const currentPage = Math.floor(offset / limit) + 1;
-  const hasFilters = selectedCustomer || selectedChemicalType || selectedStage;
+  const hasFilters =
+    selectedCustomer || selectedChemicalType || selectedStage || searchQuery.trim();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 text-slate-900">
@@ -1256,7 +1214,7 @@ export function SalesPipelinePage() {
                 Sales Pipeline
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">
-                Track deals through the sales pipeline. Monitor stages, deal values, and expected close dates.
+                Track CRM sales deals through the pipeline. Procurement import costing is managed separately under Finance.
               </p>
             </div>
 
@@ -1312,7 +1270,6 @@ export function SalesPipelinePage() {
                 value={selectedCustomer}
                 onChange={(e) => {
                   setSelectedCustomer(e.target.value);
-                  setOffset(0);
                 }}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
@@ -1332,7 +1289,6 @@ export function SalesPipelinePage() {
                 value={selectedChemicalType}
                 onChange={(e) => {
                   setSelectedChemicalType(e.target.value);
-                  setOffset(0);
                 }}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
@@ -1355,7 +1311,6 @@ export function SalesPipelinePage() {
                 value={selectedStage}
                 onChange={(e) => {
                   setSelectedStage(e.target.value as PipelineStage | "");
-                  setOffset(0);
                 }}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
@@ -2223,302 +2178,29 @@ export function SalesPipelinePage() {
           </div>
         )}
 
-        {/* Stage board — one card per active deal in each pipeline stage */}
-        {!loading && stageBoardPipelines.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-900">Pipeline by stage</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Each company can have multiple product deals at different stages (new customers
-                start at Lead ID). CRM sync links interactions to the right product deal.
-              </p>
-            </div>
-            <div className="overflow-x-auto p-4 sm:p-6">
-              <div className="flex gap-4 min-w-max">
-                {PIPELINE_STAGES.filter((s) => s !== "Lost").map((stage) => {
-                  const stageDeals = stageBoardPipelines.filter((p) => p.stage === stage);
-                  return (
-                    <div
-                      key={stage}
-                      className="w-56 flex-shrink-0 rounded-xl border border-slate-200 bg-slate-50/80"
-                    >
-                      <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${STAGE_COLORS[stage]}`}
-                        >
-                          {stage}
-                        </span>
-                        <span className="text-xs font-medium text-slate-500">
-                          {stageDeals.length}
-                        </span>
-                      </div>
-                      <div className="p-2 space-y-2 max-h-72 overflow-y-auto">
-                        {stageDeals.length === 0 ? (
-                          <p className="text-xs text-slate-400 px-2 py-4 text-center">—</p>
-                        ) : (
-                          stageDeals.map((pipeline) => (
-                            <button
-                              key={pipeline.id}
-                              type="button"
-                              onClick={() => handlePipelineClick(pipeline.id)}
-                              className="w-full text-left rounded-lg border border-slate-200 bg-white p-2.5 hover:border-emerald-400 hover:shadow-sm transition-all"
-                            >
-                              <p className="text-xs font-semibold text-slate-900 truncate">
-                                {getCustomerName(pipeline.customer_id)}
-                              </p>
-                              <p className="text-xs text-slate-500 truncate mt-0.5">
-                                {getChemicalTypeName(pipeline)}
-                              </p>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        {!loading && allPipelines.length > 0 && (
+          <PipelineStageBoard
+            pipelines={allPipelines}
+            getCustomerName={getCustomerName}
+            getProductName={getChemicalTypeName}
+            onSelect={handlePipelineClick}
+          />
         )}
 
-        {/* Pipeline List */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Pipeline Records ({total})
-              </h2>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="p-12 text-center">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto mb-4" />
-              <p className="text-slate-600">Loading pipelines...</p>
-            </div>
-          ) : pipelines.length === 0 ? (
-            <div className="p-12 text-center">
-              <TrendingUp className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-600">No pipeline records found.</p>
-              <button
-                onClick={openCreateForm}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Create First Pipeline
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="p-6 space-y-4">
-                {Object.entries(
-                  pipelines.reduce<Record<string, SalesPipeline[]>>((acc, pipeline) => {
-                    const key = pipeline.customer_id || "unknown";
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(pipeline);
-                    return acc;
-                  }, {})
-                ).map(([customerId, customerPipelines]) => {
-                  const isExpanded = expandedCustomers.has(customerId);
-                  const customerName = getCustomerName(customerId);
-                  return (
-                    <div
-                      key={customerId}
-                      className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-                    >
-                      {/* Folder header for company */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = new Set(expandedCustomers);
-                          if (next.has(customerId)) {
-                            next.delete(customerId);
-                          } else {
-                            next.add(customerId);
-                          }
-                          setExpandedCustomers(next);
-                        }}
-                        className="w-full flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 hover:bg-slate-100 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700">
-                            <Folder className="w-5 h-5" />
-                          </div>
-                          <div className="text-left">
-                            <p className="text-sm font-semibold text-slate-900">
-                              {customerName || "Unknown Customer"}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {customerPipelines.length} product deal
-                              {customerPipelines.length !== 1 ? "s" : ""} — each can be at a
-                              different stage
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronDown
-                          className={`w-5 h-5 text-slate-500 transition-transform ${
-                            isExpanded ? "rotate-180" : ""
-                          }`}
-                        />
-                      </button>
-
-                      {/* Folder contents: pipeline cards for this company */}
-                      {isExpanded && (
-                        <div className="px-4 sm:px-6 pb-4 sm:pb-6 pt-3">
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                            {customerPipelines.map((pipeline) => (
-                              <div
-                                key={pipeline.id}
-                                className="bg-white rounded-xl border-2 border-slate-200 hover:border-emerald-400 hover:shadow-lg transition-all cursor-pointer p-5 space-y-4"
-                                onClick={() => handlePipelineClick(pipeline.id)}
-                              >
-                                {/* Header */}
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Package className="w-4 h-4 text-slate-400" />
-                                      <span className="text-sm font-semibold text-slate-800">
-                                        {getChemicalTypeName(pipeline)}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <User className="w-3 h-3 text-slate-400" />
-                                      <span className="text-xs text-slate-500">
-                                        {customerName || "Unknown Customer"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div
-                                    className="flex items-center gap-1.5"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenQuotationForm(pipeline.id);
-                                      }}
-                                      className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                      title="Create Quotation"
-                                    >
-                                      <FileText className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        navigate(`/sales/pipeline/${pipeline.id}/edit`);
-                                      }}
-                                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                      title="Edit"
-                                    >
-                                      <Edit2 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete(pipeline.id);
-                                      }}
-                                      disabled={deleting === pipeline.id}
-                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                      title="Delete"
-                                    >
-                                      {deleting === pipeline.id ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="w-4 h-4" />
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Stage */}
-                                <div>
-                                  <span
-                                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${
-                                      STAGE_COLORS[pipeline.stage]
-                                    }`}
-                                  >
-                                    {pipeline.stage}
-                                  </span>
-                                </div>
-
-                                {/* Quantity */}
-                                <div className="flex items-center gap-2">
-                                  <Package className="w-5 h-5 text-emerald-600" />
-                                  <div>
-                                    <p className="text-xs text-slate-500">Quantity</p>
-                                    <p className="text-lg font-bold text-slate-900">
-                                      {formatPipelineQuantity(
-                                        pipeline.amount,
-                                        pipeline.unit,
-                                      )}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {/* Expected Close Date */}
-                                <div className="flex items-center gap-2">
-                                  <Calendar className="w-5 h-5 text-blue-600" />
-                                  <div>
-                                    <p className="text-xs text-slate-500">Expected Close</p>
-                                    <p className="text-sm font-semibold text-slate-900">
-                                      {formatDate(pipeline.expected_close_date || null)}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {/* Footer */}
-                                <div className="pt-4 border-t border-slate-200">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePipelineClick(pipeline.id);
-                                    }}
-                                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold hover:shadow-lg transition-all"
-                                  >
-                                    View Details
-                                    <ChevronRight className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
-                  <div className="text-sm text-slate-600">
-                    Showing {offset + 1} to {Math.min(offset + limit, total)} of {total} pipelines
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setOffset(Math.max(0, offset - limit))}
-                      disabled={offset === 0}
-                      className="px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-sm text-slate-600">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setOffset(Math.min((totalPages - 1) * limit, offset + limit))}
-                      disabled={offset + limit >= total}
-                      className="px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <PipelineRecordsList
+          pipelines={allPipelines}
+          customers={customers}
+          productLabelOptions={pipelineLabelOptions}
+          loading={loading}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onView={handlePipelineClick}
+          onEdit={(id) => navigate(`/sales/pipeline/${id}/edit`)}
+          onDelete={handleDelete}
+          onQuotation={handleOpenQuotationForm}
+          deletingId={deleting}
+          onCreateFirst={openCreateForm}
+        />
       </main>
 
       {/* Quotation Form Modal */}
@@ -2527,9 +2209,9 @@ export function SalesPipelinePage() {
           <div className="mx-auto bg-white rounded-xl shadow-xl max-w-6xl w-full my-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
             <QuotationForm
               pipelineId={quotationPipelineId}
-              customerId={pipelines.find((p) => p.id === quotationPipelineId)?.customer_id}
+              customerId={allPipelines.find((p) => p.id === quotationPipelineId)?.customer_id}
               pipelineData={(() => {
-                const pipeline = pipelines.find((p) => p.id === quotationPipelineId);
+                const pipeline = allPipelines.find((p) => p.id === quotationPipelineId);
                 if (!pipeline) return null;
                 
                 // Get product name from chemical_full_data
@@ -2566,7 +2248,7 @@ export function SalesPipelinePage() {
               onCancel={handleCloseQuotationForm}
               initialData={
                 quotationPipelineId
-                  ? pipelines.find((p) => p.id === quotationPipelineId)?.metadata?.quotation
+                  ? allPipelines.find((p) => p.id === quotationPipelineId)?.metadata?.quotation
                   : undefined
               }
             />
