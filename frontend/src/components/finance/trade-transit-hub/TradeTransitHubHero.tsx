@@ -37,13 +37,13 @@ export function TradeTransitHubHero({
             transit summaries—all in one streamlined workspace.
           </p>
 
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-4 pt-2">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 pt-2">
             <ProcurementPipelineActions layout="hero" workbookNavigateTo={newRequestHref} />
             <Link
               to={historyHref}
-              className="inline-flex items-center justify-center px-8 py-4 rounded-xl border-2 border-slate-700 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:border-slate-500 hover:bg-slate-800/40 backdrop-blur-sm group"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-800/40 backdrop-blur-sm group shrink-0 whitespace-nowrap"
             >
-              <History className="w-5 h-5 mr-2 text-slate-400 group-hover:text-cyan-300 transition-colors" />
+              <History className="h-4 w-4 text-slate-400 group-hover:text-cyan-300 transition-colors" />
               View History
             </Link>
           </div>

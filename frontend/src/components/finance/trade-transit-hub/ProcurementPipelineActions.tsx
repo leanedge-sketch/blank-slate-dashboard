@@ -13,7 +13,7 @@ type ProcurementPipelineActionsProps = {
 
 const addLinkClass = {
   hero:
-    "inline-flex items-center justify-center px-8 py-4 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/30 hover:-translate-y-0.5 active:translate-y-0 group shrink-0 whitespace-nowrap",
+    "inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition shrink-0 whitespace-nowrap group",
   compact:
     "inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition shrink-0 whitespace-nowrap",
   launcher:
@@ -30,8 +30,8 @@ export function ProcurementPipelineActions({
 
   const workbook = (
     <WorkbookImportActions
-      variant={layout === "hero" ? "hero" : "secondary"}
-      layout={layout === "launcher" ? "launcher" : layout === "hero" ? "hero" : "compact"}
+      variant="secondary"
+      layout="compact"
       navigateTo={workbookNavigateTo}
       className="shrink-0"
     />
@@ -39,10 +39,10 @@ export function ProcurementPipelineActions({
 
   const addLink = (
     <Link to={newPipelineHref} className={addLinkClass[layout === "launcher" ? "launcher" : layout === "hero" ? "hero" : "compact"]}>
-      <Plus className={layout === "hero" ? "w-5 h-5 mr-2" : "h-4 w-4"} />
+      <Plus className="h-4 w-4" />
       {addLabel}
       {layout === "hero" ? (
-        <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+        <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
       ) : null}
     </Link>
   );
