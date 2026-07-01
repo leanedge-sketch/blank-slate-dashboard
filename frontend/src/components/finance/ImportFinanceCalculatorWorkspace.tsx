@@ -525,40 +525,33 @@ export function ImportFinanceCalculatorWorkspace({
       requestRef: draft.requestRef,
     });
 
-    const shared = sharedRatesFromInputs(lines[0]?.inputs ?? {});
     const tradeLines = lines.map((line) =>
-      applySharedRatesToLine(
-        createTradeTransitLine(line.productName, {
-          ...applyWorkbookExpectedAnchors(line.inputs, line.expected),
-          quantityKg: line.quantityKg,
-          chemicalTypeId: line.chemicalTypeId,
-          productId: null,
-          workbookExpected: line.expected,
-        }),
-        shared,
-      ),
+      createTradeTransitLine(line.productName, {
+        ...applyWorkbookExpectedAnchors(line.inputs, line.expected),
+        quantityKg: line.quantityKg,
+        chemicalTypeId: line.chemicalTypeId,
+        productId: null,
+        workbookExpected: line.expected,
+      }),
     );
 
-    let synced = syncSharedRatesAcrossRequest(
-      {
-        ...createTradeTransitRequest(
-          draft.clientName,
-          tradeLines,
-          draft.customerId,
-          draft.contactPerson,
-          draft.requestDate,
-        ),
-        requestRef: draft.requestRef,
-      },
-      shared,
-    );
+    const synced = {
+      ...createTradeTransitRequest(
+        draft.clientName,
+        tradeLines,
+        draft.customerId,
+        draft.contactPerson,
+        draft.requestDate,
+      ),
+      requestRef: draft.requestRef,
+    };
 
     setRequest(synced);
     setActiveLineId(synced.lines[0]?.id ?? "");
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
     setImportNotice(
-      `Loaded ${synced.lines.length} product line${synced.lines.length === 1 ? "" : "s"} from workbook — Excel costs and sell prices preserved. Review any discrepancy warnings on saved lines.`,
+      `Loaded ${synced.lines.length} product line${synced.lines.length === 1 ? "" : "s"} from workbook — Excel costs and sell prices preserved. Use the product tabs above; each column in your sheet is a separate line.`,
     );
 
     setCsvScenarios(
@@ -603,20 +596,16 @@ export function ImportFinanceCalculatorWorkspace({
     if (rows.length === 0) return;
     const first = rows[0]!;
     const lines = rows.map((row) => shipmentToLine(row));
-    const shared = sharedRatesFromInputs(lines[0]!.inputs);
-    const synced = syncSharedRatesAcrossRequest(
-      {
-        ...createTradeTransitRequest(
-          first.client_name?.trim() || "",
-          lines.map((line) => applySharedRatesToLine(line, shared)),
-          first.customer_id?.trim() || "",
-          first.contact_person?.trim() || "",
-          first.request_date?.trim() || "",
-        ),
-        requestRef: first.request_ref?.trim() || "",
-      },
-      shared,
-    );
+    const synced = {
+      ...createTradeTransitRequest(
+        first.client_name?.trim() || "",
+        lines,
+        first.customer_id?.trim() || "",
+        first.contact_person?.trim() || "",
+        first.request_date?.trim() || "",
+      ),
+      requestRef: first.request_ref?.trim() || "",
+    };
     setRequest(synced);
     syncCustomerContext({
       customerId: first.customer_id?.trim() || "",
@@ -1081,6 +1070,7 @@ export function ImportFinanceCalculatorWorkspace({
       {showCalculator && activeLine && (
       <ImportFinanceCalculatorPanel
         key={activeLine.id}
+        productName={activeLine.productName}
         inputs={activeLine.inputs}
         workbookExpected={activeLine.workbookExpected}
         onChange={updateActiveLine}

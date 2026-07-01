@@ -235,6 +235,56 @@ describe("workbookImportAlign", () => {
     expect(discrepanciesForScenario(scenario!)).toHaveLength(0);
   });
 
+  it("parses each Mix cehemicals column independently (image scenario)", () => {
+    const csv = [
+      ",Sodium Gluconate SNF,Citric Acid",
+      "QTY in kg,1000,1000",
+      "Cost at,0.78,1.1",
+      "Transport,0.1,0.1",
+      "Rate US,180,180",
+      "Rate US,154,154",
+      "Amoun,198000,216000",
+      "Total cu,31389.39,51988.86",
+      "Unit Cos,213.39,288.54",
+    ].join("\n");
+
+    const scenarios = parseExpectedCostCsv(csv);
+    expect(scenarios).toHaveLength(2);
+
+    const sodium = scenarios[0]!;
+    const citric = scenarios[1]!;
+    expect(sodium.name).toBe("Sodium Gluconate SNF");
+    expect(citric.name).toBe("Citric Acid");
+
+    expect(sodium.expected.capitalOutlayEtb).toBe(198000);
+    expect(sodium.expected.totalCustomsFeeEtb).toBeCloseTo(31389.39, 2);
+    expect(sodium.expected.unitCostEtbPerKg).toBeCloseTo(213.39, 2);
+
+    expect(citric.expected.capitalOutlayEtb).toBe(216000);
+    expect(citric.expected.totalCustomsFeeEtb).toBeCloseTo(51988.86, 2);
+    expect(citric.expected.unitCostEtbPerKg).toBeCloseTo(288.54, 2);
+
+    for (const scenario of scenarios) {
+      expect(discrepanciesForScenario(scenario)).toHaveLength(0);
+      const result = calculateTradeTransit(
+        tradeTransitInputsForCalculation(scenario.inputs, scenario.expected),
+      );
+      expect(result.stage2.totalCustomsPaidEtb).toBeCloseTo(
+        scenario.expected.totalCustomsFeeEtb,
+        2,
+      );
+      expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(
+        scenario.expected.unitCostEtbPerKg,
+        2,
+      );
+    }
+
+    expect(sodium.inputs.capitalParallelRate).toBe(180);
+    expect(citric.inputs.capitalParallelRate).toBe(180);
+    expect(sodium.inputs.supplierBasePriceUsd).toBe(0.78);
+    expect(citric.inputs.supplierBasePriceUsd).toBe(1.1);
+  });
+
   it("parses sheets with common spelling variants", () => {
     const csv = [
       "Discrepion,Typo Product",

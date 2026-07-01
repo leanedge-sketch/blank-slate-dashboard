@@ -35,6 +35,7 @@ export const DEFAULT_IMPORT_FINANCE_INPUTS = DEFAULT_TRADE_TRANSIT_INPUTS;
 type StageId = 1 | 2 | 3 | 4;
 
 type ImportFinanceCalculatorPanelProps = {
+  productName?: string;
   inputs: TradeTransitInputs;
   workbookExpected?: ExpectedCostScenario["expected"] | null;
   onChange: (patch: Partial<TradeTransitInputs>) => void;
@@ -76,7 +77,58 @@ const stageAccent: Record<StageId, Accent> = {
   4: "purple",
 };
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function WorkbookExcelMatchBanner({
+  productName,
+  expected,
+}: {
+  productName?: string;
+  expected: ExpectedCostScenario["expected"];
+}) {
+  const label = productName?.trim() || "This product";
+  return (
+    <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
+        Excel workbook match
+      </p>
+      <p className="mt-1 text-sm text-slate-200">
+        <strong className="text-white">{label}</strong>
+        <span className="text-slate-400">
+          {" "}
+          — compare this tab to the same product column in your sheet (not the
+          column beside it).
+        </span>
+      </p>
+      <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+        <div className="rounded-lg border border-white/10 bg-slate-950/50 px-2.5 py-2">
+          <p className="text-slate-500">Stage 1 capital</p>
+          <p className="tabular-nums font-semibold text-cyan-300">
+            {formatEtbWorkbook(expected.capitalOutlayEtb)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/50 px-2.5 py-2">
+          <p className="text-slate-500">Stage 2 customs</p>
+          <p className="tabular-nums font-semibold text-amber-300">
+            {formatEtbWorkbook(expected.totalCustomsFeeEtb)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/50 px-2.5 py-2">
+          <p className="text-slate-500">Stage 3 unit / kg</p>
+          <p className="tabular-nums font-semibold text-emerald-300">
+            {formatNumber(expected.unitCostEtbPerKg, 2)} ETB
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/50 px-2.5 py-2">
+          <p className="text-slate-500">Stage 4 sell / kg</p>
+          <p className="tabular-nums font-semibold text-purple-300">
+            {expected.sellingPriceEtbPerKg > 0
+              ? `${formatNumber(expected.sellingPriceEtbPerKg, 2)} ETB`
+              : "—"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5 text-xs">
       <span className="text-slate-500">{label}</span>
@@ -322,9 +374,9 @@ function PipelineStack({
         title="Customs Tax Waterfall"
         accent="amber"
         icon={<ShieldCheck className="h-4 w-4" />}
-        kpiLabel="Total customs · official"
+        kpiLabel="Total customs fee"
         kpiValue={formatEtbWorkbook(s2.totalCustomsPaidEtb)}
-        kpiSub={`@ ${formatNumber(s2.customsOfficialRate, 0)} ETB/USD`}
+        kpiSub={`Duty math @ ${formatNumber(s2.customsOfficialRate, 0)} ETB/USD official`}
         open={openStage === 2}
         active={activeStage === 2}
         onSelect={() => selectStage(2)}
@@ -1062,6 +1114,7 @@ function InputConsole({
 }
 
 export function ImportFinanceCalculatorPanel({
+  productName = "",
   inputs,
   workbookExpected = null,
   onChange,
@@ -1116,7 +1169,15 @@ export function ImportFinanceCalculatorPanel({
     <div
       className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2 xl:grid-cols-[1.1fr_0.9fr]"}`}
     >
-      <div className="min-w-0 order-1">
+      {workbookExpected ? (
+        <div className="order-1 lg:col-span-2">
+          <WorkbookExcelMatchBanner
+            productName={productName}
+            expected={workbookExpected}
+          />
+        </div>
+      ) : null}
+      <div className="min-w-0 order-2">
         <PipelineStack
           result={result}
           inputs={inputs}
@@ -1125,7 +1186,7 @@ export function ImportFinanceCalculatorPanel({
           onStageChange={setActiveStage}
         />
       </div>
-      <div className="min-w-0 order-2">
+      <div className="min-w-0 order-3 lg:order-3">
         <InputConsole
           activeStage={activeStage}
           inputs={inputs}
