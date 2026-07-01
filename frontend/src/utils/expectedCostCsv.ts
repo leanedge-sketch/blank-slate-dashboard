@@ -212,7 +212,13 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "total land",
       "total la",
     ],
-    exclude: ["after refund", "unit cost"],
+    exclude: [
+      "after refund",
+      "unit cost",
+      "total lan",
+      "total invest",
+      "total uni",
+    ],
   },
   unitCostEtbPerKg: {
     include: [
@@ -485,6 +491,130 @@ function extractWorkbookExchangeRates(
     customsOfficialRate:
       official || DEFAULT_TRADE_TRANSIT_INPUTS.customsOfficialRate,
   };
+}
+
+const MAX_PLAUSIBLE_UNIT_COST_ETB_PER_KG = 50_000;
+
+/**
+ * Prefer explicit Unit Cos/kg rows; fall back to Total uni (ETB total) ÷ qty.
+ * Reject totals mistaken for per-kg (values > 50k ETB).
+ */
+function extractWorkbookUnitCostEtbPerKg(
+  rows: string[][],
+  col: number,
+  quantityKg: number,
+): number {
+  const rule = WORKBOOK_FIELD_ANCHORS.unitCostEtbPerKg;
+  let best: { value: number; score: number } | undefined;
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!rowMatchesAnchor(label, rule)) continue;
+    const value = num(row[col]);
+    if (value <= 0) continue;
+
+    let perKg = value;
+    if (value > MAX_PLAUSIBLE_UNIT_COST_ETB_PER_KG && quantityKg > 0) {
+      perKg = value / quantityKg;
+    }
+    if (perKg <= 0 || perKg > MAX_PLAUSIBLE_UNIT_COST_ETB_PER_KG) continue;
+
+    const score = anchorMatchScore(label, rule);
+    if (!best || score > best.score) {
+      best = { value: perKg, score };
+    }
+  }
+
+  if (best) return best.value;
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!label.startsWith("total uni") && !label.startsWith("total unit")) {
+      continue;
+    }
+    const total = num(row[col]);
+    if (total > 0 && quantityKg > 0) {
+      return total / quantityKg;
+    }
+  }
+
+  return 0;
+}
+
+/** Pick final landed total — skip intermediate Total lan / investment subtotals. */
+function extractWorkbookTotalLandedCostEtb(
+  rows: string[][],
+  col: number,
+  quantityKg: number,
+  unitCostEtbPerKg: number,
+): number {
+  const rule = WORKBOOK_FIELD_ANCHORS.totalLandedCostEtb;
+  let best: { value: number; score: number } | undefined;
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!rowMatchesAnchor(label, rule)) continue;
+    if (label.startsWith("total lan") && !label.includes("landed")) continue;
+
+    const value = num(row[col]);
+    if (value <= 0) continue;
+
+    let score = anchorMatchScore(label, rule);
+    if (label === "total la" || label.startsWith("total landed cost")) {
+      score += 500;
+    }
+
+    if (!best || score > best.score) {
+      best = { value, score };
+    }
+  }
+
+  if (best) return best.value;
+  if (unitCostEtbPerKg > 0 && quantityKg > 0) {
+    return unitCostEtbPerKg * quantityKg;
+  }
+  return 0;
+}
+
+/** Selling price from labeled row, or trailing unlabeled numeric rows after unit cost. */
+function extractWorkbookSellingPriceEtbPerKg(
+  rows: string[][],
+  col: number,
+  unitCostEtbPerKg: number,
+): number {
+  const labeled = extractAnchoredValue(rows, "sellingPriceEtbPerKg", col);
+  if (labeled > 0) return labeled;
+
+  const unitRowIndex = rows.findIndex((row) => {
+    const label = rowLabel(row);
+    return (
+      rowMatchesAnchor(label, WORKBOOK_FIELD_ANCHORS.unitCostEtbPerKg) ||
+      label.startsWith("total uni")
+    );
+  });
+
+  const searchFrom = unitRowIndex >= 0 ? unitRowIndex + 1 : 0;
+  let bestCandidate = 0;
+
+  for (const row of rows.slice(searchFrom)) {
+    const label = rowLabel(row[0]);
+    const value = num(row[col]);
+    if (value <= 0) continue;
+
+    const isSellingLabel = rowMatchesAnchor(
+      label,
+      WORKBOOK_FIELD_ANCHORS.sellingPriceEtbPerKg,
+    );
+    if (!label || isSellingLabel) {
+      if (unitCostEtbPerKg > 0 && value >= unitCostEtbPerKg) {
+        bestCandidate = value;
+      } else if (!label && value > bestCandidate) {
+        bestCandidate = value;
+      }
+    }
+  }
+
+  return bestCandidate;
 }
 
 function parseMarginFromLabel(label: string): number {
@@ -761,9 +891,18 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
     const transportAddisTotalEtb = colAt("transportAddisTotalEtb");
     const preProfitLandedBaseEtb = colAt("preProfitLandedBaseEtb");
     const profitTaxEtb = colAt("profitTaxEtb");
-    const totalLandedCostEtb = colAt("totalLandedCostEtb");
-    const unitCostEtbPerKg = colAt("unitCostEtbPerKg");
-    const sellingPriceEtbPerKg = colAt("sellingPriceEtbPerKg");
+    const unitCostEtbPerKg = extractWorkbookUnitCostEtbPerKg(rows, col, quantityKg);
+    const totalLandedCostEtb = extractWorkbookTotalLandedCostEtb(
+      rows,
+      col,
+      quantityKg,
+      unitCostEtbPerKg,
+    );
+    const sellingPriceEtbPerKg = extractWorkbookSellingPriceEtbPerKg(
+      rows,
+      col,
+      unitCostEtbPerKg,
+    );
 
     if (quantityKg <= 0) continue;
 

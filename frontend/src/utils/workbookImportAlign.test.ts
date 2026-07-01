@@ -199,6 +199,42 @@ describe("workbookImportAlign", () => {
     expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(213.29, 2);
   });
 
+  it("parses Dicromate / Mix cehemicals layout with Total lan vs Unit Cos rows", () => {
+    const csv = [
+      ",Sodium Gluconate SNF",
+      "QTY in kg,1000",
+      "Cost at,0.78",
+      "Transport,0.1",
+      "Rate US,180",
+      "Rate US,154",
+      "Amoun,158400",
+      "Total cu,31193.32",
+      "Total lan,225008.82",
+      "Total La,206788.57",
+      "Total uni,210464.70",
+      "Unit Cos,210.46",
+      ",21.32",
+      ",234.62",
+    ].join("\n");
+
+    const [scenario] = parseExpectedCostCsv(csv);
+    expect(scenario).toBeDefined();
+    expect(scenario!.expected.totalCustomsFeeEtb).toBeCloseTo(31193.32, 2);
+    expect(scenario!.expected.unitCostEtbPerKg).toBeCloseTo(210.46, 2);
+    expect(scenario!.expected.totalLandedCostEtb).toBeCloseTo(206788.57, 0);
+    expect(scenario!.expected.sellingPriceEtbPerKg).toBeCloseTo(234.62, 2);
+
+    const result = calculateTradeTransit(
+      tradeTransitInputsForCalculation(
+        scenario!.inputs,
+        scenario!.expected,
+      ),
+    );
+    expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(210.46, 2);
+    expect(result.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(234.62, 2);
+    expect(discrepanciesForScenario(scenario!)).toHaveLength(0);
+  });
+
   it("parses sheets with common spelling variants", () => {
     const csv = [
       "Discrepion,Typo Product",
