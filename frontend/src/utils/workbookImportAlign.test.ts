@@ -152,6 +152,53 @@ describe("workbookImportAlign", () => {
     }
   });
 
+  it("parses Mix cehemicals sheet with truncated column-A labels", () => {
+    const csv = [
+      ",Sodium Gluconate SNF,Citric Acid",
+      "QTY in kg,1000,2000",
+      "Cost at,0.78,1.1",
+      "Transport,0.1,0.12",
+      "Cost,880,2440",
+      "Rate US,180,190",
+      "Rate US,154,155",
+      "Amoun,158400,418000",
+      "Bank Charges,12355,32562",
+      "Insuranc,500,500",
+      "Customs rate,0.792,1.2",
+      "CUSTOM DUTY (5% CIF),12000,21000",
+      "SCAN FEE (0.07% CIF),1680,2940",
+      "Social Fee (3%),7200,12600",
+      "WHT (2%),4800,8400",
+      "VAT (15%),36000,63000",
+      "Total cu,31192.51,61680",
+      "Belchen Customes clerance,10500,10500",
+      "Transport Addis,10000,20000",
+      "Total Landing cost after refundabels,175000,300000",
+      "Profit Tax,12000,23000",
+      "Total La,213289.20,523000",
+      "Unit Cos,213.29,261.5",
+      "Selling roice 0% Margin,213.29,261.5",
+    ].join("\n");
+
+    const scenarios = parseExpectedCostCsv(csv);
+    expect(scenarios).toHaveLength(2);
+    expect(scenarios[0]!.name).toBe("Sodium Gluconate SNF");
+    expect(scenarios[0]!.inputs.capitalParallelRate).toBe(180);
+    expect(scenarios[0]!.inputs.customsOfficialRate).toBe(154);
+    expect(scenarios[0]!.expected.totalCustomsFeeEtb).toBeCloseTo(31192.51, 2);
+    expect(scenarios[0]!.expected.unitCostEtbPerKg).toBeCloseTo(213.29, 2);
+    expect(discrepanciesForScenario(scenarios[0]!)).toHaveLength(0);
+
+    const result = calculateTradeTransit(
+      tradeTransitInputsForCalculation(
+        scenarios[0]!.inputs,
+        scenarios[0]!.expected,
+      ),
+    );
+    expect(result.stage2.totalCustomsPaidEtb).toBeCloseTo(31192.51, 2);
+    expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(213.29, 2);
+  });
+
   it("parses sheets with common spelling variants", () => {
     const csv = [
       "Discrepion,Typo Product",

@@ -168,6 +168,12 @@ export function formatEtb(value: number, fractionDigits = 2): string {
   }).format(value);
 }
 
+/** Show Excel-style cents when the workbook value is not a whole birr amount. */
+export function formatEtbWorkbook(value: number): string {
+  const hasCents = Math.abs(value - Math.round(value)) > 0.004;
+  return formatEtb(value, hasCents ? 2 : 0);
+}
+
 export function formatUsd(value: number, fractionDigits = 4): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

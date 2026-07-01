@@ -74,6 +74,8 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "product name",
       "mix chemical",
       "mix chemicals",
+      "mix cehemicals",
+      "mix cehemical",
       "chemical",
       "product",
     ],
@@ -90,8 +92,10 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "cost at sez /purchasing price",
       "cost at sez",
       "cost at sez/purchasing price",
+      "cost at",
       "sez cost",
     ],
+    exclude: ["moyale", "total", "landed", "customs"],
   },
   transportToMoyaleUsdPerKg: {
     include: [
@@ -119,6 +123,8 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "rate usd vs etb (dashen black)",
       "dashen black",
       "black market rate",
+      "rate us",
+      "rate usd",
     ],
     exclude: ["official"],
   },
@@ -128,6 +134,8 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "official exchange rate",
       "rate usd vs etb (official)",
       "official rate",
+      "rate us",
+      "rate usd",
     ],
     exclude: ["black", "dashen", "parallel"],
   },
@@ -135,6 +143,7 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     include: [
       "amount in birr",
       "amout in birr",
+      "amoun",
       "capital outlay",
       "amount birr",
     ],
@@ -143,7 +152,7 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     include: ["bank charges", "bank charge"],
   },
   insuranceEtb: {
-    include: ["insurance"],
+    include: ["insurance", "insuranc"],
     exclude: ["freight", "cif", "0.1%"],
   },
   baseCustomsReferenceUsd: {
@@ -162,8 +171,13 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     ],
   },
   totalCustomsFeeEtb: {
-    include: ["total customs fee", "total customs"],
-    exclude: ["reference", "rate"],
+    include: [
+      "total customs fee",
+      "total customs",
+      "total custom",
+      "total cu",
+    ],
+    exclude: ["reference", "rate", "clearing"],
   },
   betchemClearanceEtb: {
     include: [
@@ -192,7 +206,12 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     exclude: ["total landed"],
   },
   totalLandedCostEtb: {
-    include: ["total landed cost", "total landed cost + tax"],
+    include: [
+      "total landed cost",
+      "total landed cost + tax",
+      "total land",
+      "total la",
+    ],
     exclude: ["after refund", "unit cost"],
   },
   unitCostEtbPerKg: {
@@ -202,7 +221,10 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "unit cost per kg",
       "unit cost/kg (before vat)",
       "unit cost/kg before vat",
+      "unit cos",
+      "unit cost",
     ],
+    exclude: ["total"],
   },
   sellingPriceEtbPerKg: {
     include: [
@@ -287,6 +309,9 @@ const WORKBOOK_LABEL_TYPOS: Array<[RegExp, string]> = [
   [/cfcf/g, "cfca"],
   [/mojok/g, "moyale"],
   [/amout/g, "amount"],
+  [/amoun\b/g, "amount"],
+  [/insuranc\b/g, "insurance"],
+  [/cehemical/g, "chemical"],
   [/descripion/g, "description"],
 ];
 
@@ -315,6 +340,35 @@ function rowLabel(row: string[]): string {
   return fuzzyWorkbookLabel(row[0]);
 }
 
+/** Match full labels and truncated Excel column-A text (e.g. "total cu" → customs). */
+function labelMatchesAnchor(fuzzy: string, needle: string): boolean {
+  if (!fuzzy || !needle) return false;
+  if (fuzzy === needle || fuzzy.includes(needle) || needle.includes(fuzzy)) {
+    return true;
+  }
+  const fuzzyTokens = fuzzy.split(" ").filter(Boolean);
+  const needleTokens = needle.split(" ").filter(Boolean);
+  if (fuzzyTokens.length >= 2 && needleTokens.length >= 2) {
+    if (
+      fuzzyTokens[0] === needleTokens[0] &&
+      (needleTokens[1]?.startsWith(fuzzyTokens[1]!) ||
+        fuzzyTokens[1]?.startsWith(needleTokens[1]!))
+    ) {
+      return true;
+    }
+  }
+  if (fuzzy.length >= 4 && needle.length >= 4 && needle.startsWith(fuzzy)) {
+    if (fuzzyTokens.length === 1 && needleTokens.length > 1) {
+      return fuzzy.length >= 6;
+    }
+    return true;
+  }
+  if (fuzzy.length >= 4 && needle.length >= 4 && fuzzy.startsWith(needle)) {
+    return true;
+  }
+  return false;
+}
+
 function rowMatchesAnchor(label: string, rule: AnchorRule): boolean {
   const fuzzy = fuzzyWorkbookLabel(label);
   if (
@@ -326,17 +380,20 @@ function rowMatchesAnchor(label: string, rule: AnchorRule): boolean {
   }
   return rule.include.some((anchor) => {
     const needle = fuzzyWorkbookLabel(anchor);
-    return fuzzy === needle || fuzzy.includes(needle);
+    return labelMatchesAnchor(fuzzy, needle);
   });
 }
 
 function anchorMatchScore(label: string, rule: AnchorRule): number {
   if (!rowMatchesAnchor(label, rule)) return -1;
+  const fuzzy = fuzzyWorkbookLabel(label);
   let best = 0;
   for (const anchor of rule.include) {
-    const needle = normalizeWorkbookLabel(anchor);
-    if (label === needle) best = Math.max(best, 1000 + needle.length);
-    else if (label.includes(needle)) best = Math.max(best, needle.length);
+    const needle = fuzzyWorkbookLabel(anchor);
+    if (fuzzy === needle) best = Math.max(best, 1000 + needle.length);
+    else if (labelMatchesAnchor(fuzzy, needle)) {
+      best = Math.max(best, Math.min(fuzzy.length, needle.length));
+    }
   }
   return best;
 }
@@ -351,7 +408,7 @@ export function findAnchoredRow(
   const rule = WORKBOOK_FIELD_ANCHORS[field];
 
   for (const anchor of rule.include) {
-    const needle = normalizeWorkbookLabel(anchor);
+    const needle = fuzzyWorkbookLabel(anchor);
     const exact = rows.find((row) => rowLabel(row) === needle);
     if (exact) return exact;
   }
@@ -379,6 +436,55 @@ export function extractAnchoredValue(
   col: number,
 ): number {
   return num(findAnchoredRow(rows, field)?.[col]);
+}
+
+/**
+ * When several rows share a truncated label (e.g. two "Rate US" rows),
+ * pick parallel (black) = higher rate and official = lower rate.
+ */
+function extractWorkbookExchangeRates(
+  rows: string[][],
+  col: number,
+): { capitalParallelRate: number; customsOfficialRate: number } {
+  const parallel = extractAnchoredValue(rows, "capitalParallelRate", col);
+  const official = extractAnchoredValue(rows, "customsOfficialRate", col);
+  if (parallel > 0 && official > 0 && parallel !== official) {
+    return { capitalParallelRate: parallel, customsOfficialRate: official };
+  }
+
+  const rateRows = rows.filter((row) => {
+    const label = rowLabel(row);
+    return (
+      label.startsWith("rate us") ||
+      label.startsWith("rate usd") ||
+      label.includes("rate usd vs etb")
+    );
+  });
+
+  const values = rateRows
+    .map((row) => num(row[col]))
+    .filter((value) => value >= 100 && value <= 250);
+
+  const unique = [...new Set(values)].sort((a, b) => b - a);
+  if (unique.length >= 2) {
+    return {
+      capitalParallelRate: unique[0]!,
+      customsOfficialRate: unique[unique.length - 1]!,
+    };
+  }
+  if (unique.length === 1) {
+    return {
+      capitalParallelRate: unique[0]!,
+      customsOfficialRate: official > 0 ? official : unique[0]!,
+    };
+  }
+
+  return {
+    capitalParallelRate:
+      parallel || DEFAULT_TRADE_TRANSIT_INPUTS.capitalParallelRate,
+    customsOfficialRate:
+      official || DEFAULT_TRADE_TRANSIT_INPUTS.customsOfficialRate,
+  };
 }
 
 function parseMarginFromLabel(label: string): number {
@@ -595,7 +701,29 @@ export function parseWorkbookImport(text: string): WorkbookImportParseResult {
 }
 
 function findProductHeaderRow(rows: string[][]): string[] | undefined {
-  return findAnchoredRow(rows, "productHeader");
+  const anchored = findAnchoredRow(rows, "productHeader");
+  if (anchored) return anchored;
+
+  for (const row of rows.slice(0, 8)) {
+    const label = rowLabel(row[0]);
+    const productNames = row
+      .slice(1)
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 1 && num(cell) === 0);
+    if (productNames.length === 0) continue;
+
+    const looksLikeHeader =
+      !label ||
+      label.includes("chemical") ||
+      label.includes("product") ||
+      label.includes("description");
+    const qtyRow = findAnchoredRow(rows, "quantityKg");
+    if (looksLikeHeader && qtyRow) {
+      return row;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -620,12 +748,8 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
     const supplierBasePriceUsd = colAt("supplierBasePriceUsd");
     const transportToMoyaleUsdPerKg = colAt("transportToMoyaleUsdPerKg");
     const moyaleUsdPerKg = colAt("moyaleUsdPerKg");
-    const capitalParallelRate =
-      colAt("capitalParallelRate") ||
-      DEFAULT_TRADE_TRANSIT_INPUTS.capitalParallelRate;
-    const customsOfficialRate =
-      colAt("customsOfficialRate") ||
-      DEFAULT_TRADE_TRANSIT_INPUTS.customsOfficialRate;
+    const { capitalParallelRate, customsOfficialRate } =
+      extractWorkbookExchangeRates(rows, col);
     const amountInBirr = colAt("amountInBirr");
     const bankChargesEtb = colAt("bankChargesEtb");
     const insuranceEtb = colAt("insuranceEtb");

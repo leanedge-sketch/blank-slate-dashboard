@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   formatEtb,
+  formatEtbWorkbook,
   formatNumber,
   formatUsd,
   type FinanceConstants,
@@ -280,7 +281,7 @@ function PipelineStack({
         accent="cyan"
         icon={<MapPin className="h-4 w-4" />}
         kpiLabel="Capital outlay · parallel"
-        kpiValue={formatEtb(s1.capitalOutlayEtb, 0)}
+        kpiValue={formatEtbWorkbook(s1.capitalOutlayEtb)}
         kpiSub={`@ ${formatNumber(s1.capitalParallelRate, 0)} ETB/USD`}
         open={openStage === 1}
         active={activeStage === 1}
@@ -311,7 +312,7 @@ function PipelineStack({
           rate={s1.capitalParallelRate}
           rateLabel="Parallel"
           rightLabel="Capital outlay (ETB)"
-          rightValue={formatEtb(s1.capitalOutlayEtb, 0)}
+          rightValue={formatEtbWorkbook(s1.capitalOutlayEtb)}
           accent="cyan"
         />
       </PipelineAccordion>
@@ -322,7 +323,7 @@ function PipelineStack({
         accent="amber"
         icon={<ShieldCheck className="h-4 w-4" />}
         kpiLabel="Total customs · official"
-        kpiValue={formatEtb(s2.totalCustomsPaidEtb, 0)}
+        kpiValue={formatEtbWorkbook(s2.totalCustomsPaidEtb)}
         kpiSub={`@ ${formatNumber(s2.customsOfficialRate, 0)} ETB/USD`}
         open={openStage === 2}
         active={activeStage === 2}
@@ -387,13 +388,13 @@ function PipelineStack({
       >
         <DetailRow
           label="Capital outlay (from Stage 1)"
-          value={formatEtb(s1.capitalOutlayEtb, 0)}
+          value={formatEtbWorkbook(s1.capitalOutlayEtb)}
         />
         <DetailRow label="+ Bank charges" value={formatEtb(s3.bankChargesEtb, 0)} />
         <DetailRow label="+ Insurance" value={formatEtb(s3.insuranceEtb, 0)} />
         <DetailRow
           label="+ Total customs (Stage 2)"
-          value={formatEtb(s2.totalCustomsPaidEtb, 0)}
+          value={formatEtbWorkbook(s2.totalCustomsPaidEtb)}
         />
         <DetailRow
           label="+ Betchem clearance"
@@ -412,7 +413,7 @@ function PipelineStack({
           value={formatEtb(s3.preProfitLandedBaseEtb, 0)}
         />
         <DetailRow label="+ Profit tax" value={formatEtb(s3.profitTaxEtb, 0)} />
-        <DetailRow label="Total landed cost" value={formatEtb(s3.netLandedCostEtb, 0)} />
+        <DetailRow label="Total landed cost" value={formatEtbWorkbook(s3.netLandedCostEtb)} />
       </PipelineAccordion>
 
       <PipelineAccordion
@@ -819,7 +820,7 @@ function StageInputPanel({
           <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2 text-xs text-slate-400">
             Total customs (preview):{" "}
             <span className="font-bold text-amber-200 tabular-nums">
-              {formatEtb(result.stage2.totalCustomsPaidEtb, 0)}
+              {formatEtbWorkbook(result.stage2.totalCustomsPaidEtb)}
             </span>
           </div>
         </div>
@@ -890,7 +891,7 @@ function StageInputPanel({
             <p>
               Total landed:{" "}
               <span className="font-bold text-emerald-300 tabular-nums">
-                {formatEtb(result.stage3.netLandedCostEtb, 0)}
+                {formatEtbWorkbook(result.stage3.netLandedCostEtb)}
               </span>
             </p>
             <p>
