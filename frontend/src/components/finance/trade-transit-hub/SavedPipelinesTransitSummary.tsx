@@ -99,41 +99,44 @@ export function SavedPipelinesTransitSummary({
         />
       </div>
 
-      {visibleCustomers.map((bucket) => {
-        const rows = bucket.requestGroups.flatMap((group) => group.rows);
-        const items = transitItemsFromShipments(rows, products, constants);
-        const totals = aggregateTransitFinancialTotals(items, {
-          quantityKg: rows.reduce(
-            (sum, row) => sum + (Number(row.quantity_kg) || 0),
-            0,
-          ),
-          capitalOutlayEtb: rows.reduce(
-            (sum, row) => sum + (Number(row.capital_outlay_etb) || 0),
-            0,
-          ),
-          customsPaidEtb: rows.reduce(
-            (sum, row) => sum + (Number(row.total_customs_paid_etb) || 0),
-            0,
-          ),
-        });
+      {visibleCustomers.map((bucket) => (
+        <div key={bucket.key} className="space-y-4">
+          {bucket.requestGroups.length > 1 ? (
+            <p className="text-sm font-semibold text-slate-200">{bucket.clientName}</p>
+          ) : null}
+          {bucket.requestGroups.map((group) => {
+            const items = transitItemsFromShipments(group.rows, products, constants);
+            const totals = aggregateTransitFinancialTotals(items, {
+              quantityKg: group.totals.quantityKg,
+              capitalOutlayEtb: group.totals.capitalOutlayEtb,
+              customsPaidEtb: group.totals.customsEtb,
+            });
 
-        return (
-          <div key={bucket.key} className="space-y-2">
-            <p className="text-[11px] text-slate-500">
-              {bucket.requestGroups.length} saved request
-              {bucket.requestGroups.length === 1 ? "" : "s"} ·{" "}
-              {items.length} product line{items.length === 1 ? "" : "s"}
-            </p>
-            <TransitSummaryTable
-              clientName={bucket.clientName}
-              items={items}
-              totals={totals}
-              customsPaidEtb={totals.customsPaidEtb}
-              fullPanel
-            />
-          </div>
-        );
-      })}
+            return (
+              <div key={group.key} className="space-y-2">
+                <p className="text-[11px] text-slate-500">
+                  {group.rows.length} product line{group.rows.length === 1 ? "" : "s"}
+                  {group.contactPerson && group.contactPerson !== "—"
+                    ? ` · ${group.contactPerson}`
+                    : ""}
+                  {group.requestRef && group.requestRef !== "—"
+                    ? ` · ${group.requestRef}`
+                    : ""}
+                </p>
+                <TransitSummaryTable
+                  clientName={group.clientName}
+                  contactPerson={group.contactPerson}
+                  requestRef={group.requestRef}
+                  items={items}
+                  totals={totals}
+                  customsPaidEtb={totals.customsPaidEtb}
+                  fullPanel
+                />
+              </div>
+            );
+          })}
+        </div>
+      ))}
 
       <ListPager
         page={safePage}

@@ -6,6 +6,8 @@ import { TransitSummaryTableRow } from "./TransitSummaryTableRow";
 
 type TransitSummaryTableProps = {
   clientName: string;
+  contactPerson?: string;
+  requestRef?: string;
   items: TransitRequestItem[];
   totals: TransitRequestFinancialTotals;
   customsPaidEtb?: number;
@@ -30,6 +32,8 @@ const COLUMNS = [
 
 export function TransitSummaryTable({
   clientName,
+  contactPerson,
+  requestRef,
   items,
   totals,
   customsPaidEtb,
@@ -40,6 +44,8 @@ export function TransitSummaryTable({
 }: TransitSummaryTableProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const label = clientName.trim() || "Unnamed client";
+  const contactLabel = contactPerson?.trim() || "";
+  const refLabel = requestRef?.trim() || "";
 
   function toggleRow(lineId: string) {
     setExpandedIds((prev) => {
@@ -63,9 +69,27 @@ export function TransitSummaryTable({
         </p>
       </div>
 
-      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70 mb-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70 mb-1">
         Request summary — {label}
       </p>
+      {(contactLabel || (refLabel && refLabel !== "—")) ? (
+        <p className="text-xs text-slate-400 mb-4 flex flex-wrap gap-x-4 gap-y-1">
+          {contactLabel ? (
+            <span>
+              <span className="text-slate-500">Contact:</span>{" "}
+              <span className="text-slate-200">{contactLabel}</span>
+            </span>
+          ) : null}
+          {refLabel && refLabel !== "—" ? (
+            <span>
+              <span className="text-slate-500">Request ID:</span>{" "}
+              <span className="font-mono text-cyan-300/90">{refLabel}</span>
+            </span>
+          ) : null}
+        </p>
+      ) : (
+        <div className="mb-4" />
+      )}
 
       <div className="overflow-x-auto -mx-1 px-1">
         <table className="w-full min-w-[900px] text-left">

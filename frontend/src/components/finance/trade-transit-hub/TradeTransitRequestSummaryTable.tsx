@@ -3,6 +3,8 @@ import { TransitSummaryTable } from "./summary/TransitSummaryTable";
 
 type TradeTransitRequestSummaryTableProps = {
   clientName: string;
+  contactPerson?: string;
+  requestRef?: string;
   summary: TradeTransitRequestSummary;
   className?: string;
   fullPanel?: boolean;
@@ -12,6 +14,8 @@ type TradeTransitRequestSummaryTableProps = {
 
 export function TradeTransitRequestSummaryTable({
   clientName,
+  contactPerson,
+  requestRef,
   summary,
   className = "",
   fullPanel = false,
@@ -21,6 +25,8 @@ export function TradeTransitRequestSummaryTable({
   return (
     <TransitSummaryTable
       clientName={clientName}
+      contactPerson={contactPerson}
+      requestRef={requestRef}
       items={summary.items}
       totals={summary.totals}
       customsPaidEtb={summary.totals.customsPaidEtb}

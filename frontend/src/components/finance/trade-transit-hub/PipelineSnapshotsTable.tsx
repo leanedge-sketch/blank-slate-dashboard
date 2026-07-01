@@ -77,6 +77,7 @@ export function PipelineSnapshotsTable({
         <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
           <th className="py-2 pr-3 font-medium">Request ID</th>
           <th className="py-2 pr-3 font-medium">Customer</th>
+          <th className="py-2 pr-3 font-medium">Contact</th>
           <th className="py-2 pr-3 font-medium">Product</th>
           <th className="py-2 pr-3 font-medium text-right">Qty</th>
           <th className="py-2 pr-3 font-medium text-right">Capital</th>
@@ -130,6 +131,13 @@ export function PipelineSnapshotsTable({
                   </td>
                   <td className="py-2.5 pr-3 text-slate-200 align-top">
                     {index === 0 ? group.clientName : null}
+                  </td>
+                  <td className="py-2.5 pr-3 text-slate-400 align-top text-xs">
+                    {index === 0
+                      ? group.contactPerson && group.contactPerson !== "—"
+                        ? group.contactPerson
+                        : "—"
+                      : null}
                   </td>
                   <td className="py-2.5 pr-3 text-slate-200">{row.productLabel}</td>
                   <td className="py-2.5 pr-3 text-right tabular-nums text-slate-400">
@@ -189,7 +197,7 @@ export function PipelineSnapshotsTable({
             })}
             <tr className="border-b border-white/10 bg-white/[0.03] font-semibold">
               <td
-                colSpan={3}
+                colSpan={4}
                 className="py-2.5 pr-3 text-slate-400 text-xs uppercase tracking-wide"
               >
                 Total ({group.rows.length} product{group.rows.length === 1 ? "" : "s"})

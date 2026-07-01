@@ -380,6 +380,34 @@ export async function fetchRecentImportShipments(
   return domain ? filterShipmentsByDomain(rows, domain).slice(0, limit) : rows;
 }
 
+/** Search saved import pipelines by client company and/or contact person. */
+export async function searchImportShipmentsByClientContact(
+  clientName?: string,
+  contactPerson?: string,
+  limit = 80,
+): Promise<ImportShipmentRow[]> {
+  const company = clientName?.trim() ?? "";
+  const contact = contactPerson?.trim() ?? "";
+  if (!company && !contact) return [];
+
+  let query = importFinanceDb()
+    .from(TABLES.shipments)
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (company) {
+    query = query.ilike("client_name", `%${company}%`);
+  }
+  if (contact) {
+    query = query.ilike("contact_person", `%${contact}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ImportShipmentRow[];
+}
+
 /** Shipments for executive report dashboards (date-filtered, higher limit). */
 export async function fetchImportShipmentsForReport(
   options?: {

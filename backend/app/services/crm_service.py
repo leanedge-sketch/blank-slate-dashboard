@@ -190,17 +190,29 @@ def search_customers_by_name(query: str, limit: int = 20) -> List[Customer]:
     This uses Postgres ILIKE under the hood to match anywhere in the name.
     Example: query='sika' will match 'Sika Abyssinia', 'Sika Ethiopia', etc.
     """
+    return search_customers(name_query=query, limit=limit)
+
+
+def search_customers(
+    name_query: Optional[str] = None,
+    contact_query: Optional[str] = None,
+    limit: int = 50,
+) -> List[Customer]:
+    """Search customers by company name and/or primary contact (case-insensitive)."""
+    name = (name_query or "").strip()
+    contact = (contact_query or "").strip()
+    if not name and not contact:
+        return []
+
     supabase: Client = get_supabase_client()
+    query = supabase.table("customers").select("*")
 
-    response = (
-        supabase.table("customers")
-        .select("*")
-        .ilike("customer_name", f"%{query}%")
-        .order("customer_name", desc=False)
-        .limit(limit)
-        .execute()
-    )
+    if name:
+        query = query.ilike("customer_name", f"%{name}%")
+    if contact:
+        query = query.ilike("primary_contact_name", f"%{contact}%")
 
+    response = query.order("customer_name", desc=False).limit(limit).execute()
     return [Customer(**row) for row in (response.data or [])]
 
 

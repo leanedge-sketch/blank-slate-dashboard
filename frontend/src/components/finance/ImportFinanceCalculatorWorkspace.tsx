@@ -849,6 +849,8 @@ export function ImportFinanceCalculatorWorkspace({
       {showSummary && (
         <TradeTransitRequestSummaryTable
           clientName={request.clientName}
+          contactPerson={request.contactPerson}
+          requestRef={request.requestRef}
           summary={summary}
           fullPanel={activeSection === "summary"}
           onEditLine={editLineById}

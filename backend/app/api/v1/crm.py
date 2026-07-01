@@ -33,6 +33,7 @@ from app.services.crm_service import (
     delete_customer,
     build_customer_profile,
     search_customers_by_name,
+    search_customers,
     get_interactions_for_customer,
     get_interactions_count_for_customer,
     get_conversation_logs_for_customer,
@@ -72,6 +73,9 @@ async def list_customers(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of customers to return"),
     offset: int = Query(0, ge=0, description="Number of customers to skip (for pagination)"),
     q: Optional[str] = Query(None, description="Optional search query to filter by customer_name"),
+    contact: Optional[str] = Query(
+        None, description="Optional search query to filter by primary_contact_name"
+    ),
     start_date: Optional[str] = Query(None, description="Filter customers with interactions from this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter customers with interactions up to this date (YYYY-MM-DD)"),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
@@ -83,9 +87,12 @@ async def list_customers(
     - If `q` is empty → returns all customers (paginated).
     """
     try:
-        if q:
-            # Simple search mode – ignore pagination for now and just cap by limit
-            customers = search_customers_by_name(q, limit=limit)
+        if q or contact:
+            customers = search_customers(
+                name_query=q,
+                contact_query=contact,
+                limit=limit,
+            )
             total = len(customers)
         else:
             customers = get_all_customers(limit=limit, offset=offset, start_date=start_date, end_date=end_date)

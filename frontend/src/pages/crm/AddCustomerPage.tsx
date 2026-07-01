@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { api, Customer, buildCustomerProfile } from "../../services/api";
+import { CompanyContactSearchPanel } from "../../components/crm/CompanyContactSearchPanel";
 import {
   PipelineDealModeTabs,
   type DealLinkMode,
@@ -206,6 +207,18 @@ export function AddCustomerPage() {
               </div>
             </div>
           ) : (
+          <>
+          <div className="mb-6 pb-6 border-b border-slate-200">
+            <CompanyContactSearchPanel
+              variant="light"
+              initialCompany={form.customer_name}
+              onUseCrmCustomer={(customer) => {
+                setPipelineDealMode("existing");
+                setSelectedExistingCustomerId(customer.customer_id);
+                setError(null);
+              }}
+            />
+          </div>
           <form className="form" onSubmit={handleSubmit}>
             <div className="form-field">
               <label htmlFor="customer_name">Customer name</label>
@@ -250,6 +263,7 @@ export function AddCustomerPage() {
               </button>
             </div>
           </form>
+          </>
           )}
         </section>
       ) : (

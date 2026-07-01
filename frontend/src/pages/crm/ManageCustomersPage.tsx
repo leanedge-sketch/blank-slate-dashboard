@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Customer, CustomerListResponse, CustomerUpdate, buildCustomerProfile } from "../../services/api";
+import { CompanyContactSearchPanel } from "../../components/crm/CompanyContactSearchPanel";
 import { Plus, Edit2, Trash2, X, Save, Search, Sparkles } from "lucide-react";
 
 // Sales stage definitions
@@ -369,6 +370,22 @@ export function ManageCustomersPage() {
       {showAddForm && (
         <section className="card" style={{ marginBottom: "2rem" }}>
           <h3>Add New Customer</h3>
+          <div style={{ marginBottom: "1.5rem" }}>
+            <CompanyContactSearchPanel
+              variant="light"
+              initialCompany={newCustomerName}
+              initialContact={newPrimaryContactName}
+              onUseCrmCustomer={(customer) => {
+                setNewCustomerName(customer.customer_name || "");
+                setNewDisplayId(customer.display_id || "");
+                setNewWebsiteUrl(customer.website_url || "");
+                setNewLinkedinUrl(customer.linkedin_company_url || "");
+                setNewPrimaryContactName(customer.primary_contact_name || "");
+                setNewPrimaryContactEmail(customer.primary_contact_email || "");
+                setNewPrimaryContactPhone(customer.primary_contact_phone || "");
+              }}
+            />
+          </div>
           <form onSubmit={handleAddCustomer}>
             <div className="form-field">
               <label htmlFor="new_customer_name">Customer Name *</label>

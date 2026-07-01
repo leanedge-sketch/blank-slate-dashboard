@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revised Project Deliverables Report — LeanChem Connect</title>
+  <style>
+    :root {
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --blue: #38bdf8;
+      --cyan: #22d3ee;
+      --emerald: #34d399;
+      --purple: #a78bfa;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --accent: linear-gradient(135deg, #38bdf8, #34d399);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: #020617;
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .deck-toolbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 1.25rem;
+      background: rgba(2, 6, 23, 0.92);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      backdrop-filter: blur(8px);
+    }
+
+    .deck-toolbar button {
+      background: #1e293b;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: var(--text);
+      padding: 0.45rem 0.9rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .deck-toolbar button:hover { border-color: var(--cyan); color: var(--cyan); }
+    .deck-toolbar .hint { font-size: 0.8rem; color: var(--muted); }
+
+    .slides { padding: 4.5rem 0 2rem; }
+
+    .slide {
+      width: min(1120px, 96vw);
+      min-height: 630px;
+      margin: 1.5rem auto;
+      padding: 3rem 3.5rem;
+      background: linear-gradient(145deg, #0f172a 0%, #111827 55%, #0c1222 100%);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 1rem;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      top: -80px; right: -80px;
+      width: 260px; height: 260px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.12), transparent 70%);
+      pointer-events: none;
+    }
+
+    .slide-num {
+      position: absolute;
+      bottom: 1.25rem; right: 1.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    .kicker {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+      background: var(--accent);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2.1rem);
+      font-weight: 800;
+      margin-bottom: 1.25rem;
+      color: #fff;
+    }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--cyan);
+      margin: 1rem 0 0.5rem;
+    }
+
+    p, li { font-size: 0.98rem; color: #cbd5e1; }
+    li { margin: 0.35rem 0; }
+    ul { margin: 0.5rem 0 0 1.25rem; }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 52rem;
+    }
+
+    .meta {
+      margin-top: 2rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .card {
+      background: rgba(30, 41, 59, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 0.75rem;
+      padding: 1rem 1.1rem;
+    }
+
+    .card strong {
+      display: block;
+      font-size: 0.95rem;
+      color: #fff;
+      margin-bottom: 0.35rem;
+    }
+
+    .card span, .card p { font-size: 0.88rem; color: var(--muted); }
+
+    .module-list { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+    .module-list li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .module-list li:last-child { border-bottom: none; }
+    .module-list strong { color: #fff; }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      margin-bottom: 0.5rem;
+    }
+
+    .tag-crm { background: rgba(56, 189, 248, 0.15); color: var(--blue); }
+    .tag-pms { background: rgba(52, 211, 153, 0.15); color: var(--emerald); }
+    .tag-sales { background: rgba(167, 139, 250, 0.15); color: var(--purple); }
+    .tag-stock { background: rgba(251, 191, 36, 0.15); color: var(--amber); }
+    .tag-finance { background: rgba(34, 211, 238, 0.15); color: var(--cyan); }
+    .tag-reports { background: rgba(251, 113, 133, 0.15); color: var(--rose); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.75rem;
+      font-size: 0.86rem;
+    }
+
+    th, td {
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: rgba(30, 41, 59, 0.9); color: #e2e8f0; font-weight: 700; }
+    td { color: #cbd5e1; }
+    .check { color: var(--emerald); font-weight: 700; }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0.75rem 0 1rem;
+      font-size: 0.82rem;
+    }
+
+    .flow .step {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 0.4rem 0.65rem;
+      border-radius: 0.5rem;
+      color: #e2e8f0;
+    }
+
+    .flow .arrow { color: var(--muted); }
+
+    .arch-item {
+      background: rgba(30, 41, 59, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1rem;
+      margin-top: 0.65rem;
+    }
+
+    .arch-item strong { color: var(--cyan); font-size: 0.85rem; letter-spacing: 0.04em; }
+
+    .goal-line {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .goal-line strong { color: #fff; }
+
+    .live-ready {
+      margin-top: 1rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--emerald);
+    }
+
+    .phase-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 0.35rem;
+    }
+
+    @media print {
+      body { background: #fff; }
+      .deck-toolbar { display: none !important; }
+      .slides { padding: 0; }
+      .slide {
+        width: 100%;
+        min-height: auto;
+        height: 100vh;
+        margin: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .slide:last-child { page-break-after: auto; }
+    }
+
+    @media (max-width: 900px) {
+      .slide { padding: 2rem; min-height: auto; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck-toolbar">
+    <div>
+      <strong>LeanChem Connect</strong>
+      <span class="hint"> — Revised Project Deliverables Report · June 2026</span>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <span class="hint">Arrow keys to scroll · Ctrl+P for PDF</span>
+      <button type="button" onclick="window.print()">Save as PDF</button>
+    </div>
+  </div>
+
+  <main class="slides" id="slides">
+
+    <!-- 1 -->
+    <section class="slide">
+      <p class="kicker">Project deliverables</p>
+      <h1>Presentation on LeanChem Connect</h1>
+      <p class="subtitle">
+        Project deliverables — unified platform for CRM, product management, sales pipeline,
+        stock, import procurement costing, and executive reporting. One connected system
+        for LeanChem's chemical import and distribution operations.
+      </p>
+      <p class="meta">Version June 2026 &nbsp;|&nbsp; blank-slate-dashboard</p>
+      <span class="slide-num">1 / 15</span>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide">
+      <p class="kicker">Executive summary</p>
+      <h2>One workspace, six connected modules</h2>
+      <ul class="module-list">
+        <li><strong>CRM:</strong> Customer profiles, interactions, intelligent assistance</li>
+        <li><strong>PMS:</strong> Product catalog, technical data, vendors, pricing</li>
+        <li><strong>SALES:</strong> Pipeline tracking, deal progression, win/loss metrics</li>
+        <li><strong>STOCK:</strong> Multi-warehouse inventory ledger</li>
+        <li><strong>TRADE &amp; TRANSIT:</strong> Procurement and multi-stage import costing</li>
+        <li><strong>REPORTS:</strong> Business intelligence, forecasting, secure export capabilities</li>
+      </ul>
+      <p class="goal-line">
+        <strong>Strategic goal:</strong>
+        Single source of truth from first customer contact through deal progression,
+        stock fulfillment, import economics, and leadership reporting.
+      </p>
+      <span class="slide-num">2 / 15</span>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide">
+      <p class="kicker">Why we built it</p>
+      <h2>Business problems solved</h2>
+      <div class="grid-2">
+        <ul>
+          <li>Siloed data across sales, procurement, warehouse, and finance departments</li>
+          <li>Disconnected communication between customer relations and product deal tracking</li>
+          <li>Manual calculations for complex import costing (landed cost, customs, margin)</li>
+          <li>Weak pipeline visibility lacking historical tracking</li>
+        </ul>
+        <ul>
+          <li>Open deals not programmatically compared against available warehouse stock</li>
+          <li>No cross-module reporting for executive leadership</li>
+          <li>Duplicated product data across multiple incompatible tools</li>
+          <li>Decisions being made without consolidated operational data</li>
+        </ul>
+      </div>
+      <span class="slide-num">3 / 15</span>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide">
+      <p class="kicker">Architecture</p>
+      <h2>How the platform is structured</h2>
+      <div class="arch-item">
+        <strong>FRONTEND — React 18 + TypeScript + Vite</strong>
+        <p>Single-page application providing a unified workspace for CRM, PMS, Sales, Stock, Trade &amp; Transit, and Reports. Styled with Tailwind CSS; communicates via REST and Supabase client.</p>
+      </div>
+      <div class="arch-item">
+        <strong>BACKEND — FastAPI (Python) on Vercel</strong>
+        <p>High-performance REST API handling CRM, PMS, sales pipeline, stock, integrated reports, and AI services — cross-module business logic and data orchestration.</p>
+      </div>
+      <div class="arch-item">
+        <strong>DATA LAYER — Supabase (PostgreSQL + Auth + Storage)</strong>
+        <p>Secure relational cloud database with row-level security, employee authentication, and file storage — structural integrity across customers, sales, inventory, and finance.</p>
+      </div>
+      <div class="arch-item">
+        <strong>INTEGRATIONS</strong>
+        <p>Google Gemini for AI (profiles, TDS extraction, summaries) · Supabase JWT and role-based access control (RBAC) for team access</p>
+      </div>
+      <span class="slide-num">4 / 15</span>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>CRM — Customer Relationship Management</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Capabilities</h3>
+          <ul>
+            <li>Centralized customer master data and automated onboarding flows</li>
+            <li>Interaction timeline with file management and automated response drafting</li>
+            <li>Intelligently generated customer profiles utilizing web research</li>
+            <li>Dashboard tracking coverage metrics</li>
+            <li>Secure external communication archive integration</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Connections</h3>
+          <ul>
+            <li>Automatically initializes pipeline deals for new customer accounts</li>
+            <li>Interactions intrinsically link to pipeline data and technical product sheets</li>
+            <li>Bulk synchronization engine advances and links deals systematically</li>
+            <li>Global customer identifier shared seamlessly across stock and import finance modules</li>
+          </ul>
+        </div>
+      </div>
+      <span class="slide-num">5 / 15</span>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>PMS — Product Management System</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Capabilities</h3>
+          <ul>
+            <li>Chemical master catalog featuring automated supplier grouping</li>
+            <li>Technical document processing with automated data extraction</li>
+            <li>Comprehensive market view including partners and partner chemicals</li>
+            <li>Dynamic pricing and costing matrices by location</li>
+            <li>Curated product shortlists</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Product spine</h3>
+          <p>A universal primary key strategy anchors the catalog and is utilized by:</p>
+          <ul>
+            <li>Sales pipeline transactions</li>
+            <li>Import finance shipment tracking</li>
+            <li>Inventory stock item linking</li>
+            <li>Complex pricing junction datasets</li>
+          </ul>
+        </div>
+      </div>
+      <span class="slide-num">6 / 15</span>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>Sales Pipeline</h2>
+      <p>Per-customer, per-product deals with comprehensive version history auditing.</p>
+      <div class="flow">
+        <span class="step">Lead ID</span><span class="arrow">→</span>
+        <span class="step">Discovery</span><span class="arrow">→</span>
+        <span class="step">Sample</span><span class="arrow">→</span>
+        <span class="step">Validation</span><span class="arrow">→</span>
+        <span class="step">Proposal</span><span class="arrow">→</span>
+        <span class="step">Confirmation</span><span class="arrow">→</span>
+        <span class="step">Closed / Lost</span>
+      </div>
+      <ul>
+        <li>Stage progression requires justification codes, creating a full audit trail</li>
+        <li>Automated quotation generation configured for specific regional partners</li>
+        <li>Live validation against primary distribution center availability</li>
+        <li>Searchable and paginated deal repository</li>
+        <li>Deal-level financial costing linked directly to the import calculator</li>
+      </ul>
+      <span class="slide-num">7 / 15</span>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>Stock Management</h2>
+      <p><strong style="color:#fff;">Locations monitored:</strong>
+        Primary Hub (Addis Ababa) · SEZ Operations (Kenya) · Regional Partner (Nairobi)</p>
+      <h3>Strict ledger model</h3>
+      <ul>
+        <li>Core movement ledger acts as the immutable source of truth</li>
+        <li>All stock transitions strictly link to customer and pipeline identifiers</li>
+        <li>Inter-company transfers enforce paired systemic movements to prevent discrepancies</li>
+        <li>Integrated reporting engine automatically flags pipeline deals that exceed current availability</li>
+      </ul>
+      <span class="slide-num">8 / 15</span>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>Trade &amp; Transit — Import procurement</h2>
+      <h3>Automated 4-stage costing flow</h3>
+      <table>
+        <thead>
+          <tr><th>Stage</th><th>What is calculated</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Capital</strong></td>
+            <td>Border capital outlay assessments (including parallel exchange metrics)</td>
+          </tr>
+          <tr>
+            <td><strong>Customs</strong></td>
+            <td>Automated computation of CIF, duty, scanning, social taxes, WHT, and VAT</td>
+          </tr>
+          <tr>
+            <td><strong>Landed</strong></td>
+            <td>Inland transportation factoring yielding net landed cost (ETB/kg)</td>
+          </tr>
+          <tr>
+            <td><strong>Margin</strong></td>
+            <td>Target price generation, profit per kg, gross margin percentage, and revenue projections</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:0.85rem;font-size:0.92rem;">
+        Output integrates directly into executive snapshots, syncs with PMS pricing, and generates transit summaries.
+      </p>
+      <span class="slide-num">9 / 15</span>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide">
+      <p class="kicker">Data model</p>
+      <h2>How datasets interconnect</h2>
+      <ul>
+        <li>Customer records map bi-directionally to sales pipelines and interaction logs</li>
+        <li>Product master data dictates categorical routing in the sales pipeline and import finance ledgers</li>
+        <li>Sales pipelines act as the central nervous system, connecting pricing structures, interaction histories, and stock ledgers</li>
+        <li>Stock inventories maintain strict relational integrity with the product master data and financial import records</li>
+      </ul>
+      <span class="slide-num">10 / 15</span>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide">
+      <p class="kicker">End-to-end</p>
+      <h2>Typical business workflows</h2>
+      <div class="grid-2">
+        <div class="card">
+          <strong>A — Customer to closed deal</strong>
+          <span>System adds customer → auto-generates pipeline → logs interactions →
+          advances stages → generates quotation → closes Won/Lost</span>
+        </div>
+        <div class="card">
+          <strong>B — Import procurement</strong>
+          <span>Request initiated → multi-stage calculation executed → data snapshotted →
+          transit summary generated → pushed to executive reporting</span>
+        </div>
+        <div class="card">
+          <strong>C — Fulfillment check</strong>
+          <span>System analyzes open deal → compares required quantity against primary stock →
+          triggers integrated risk report → logs paired stock movement upon fulfillment</span>
+        </div>
+        <div class="card">
+          <strong>D — Leadership reporting</strong>
+          <span>Customer metrics + stock availability + pipeline forecasting aggregated into
+          PDF-ready executive BI dashboards</span>
+        </div>
+      </div>
+      <span class="slide-num">11 / 15</span>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide">
+      <p class="kicker">Module deep-dive</p>
+      <h2>Reports &amp; Analysis</h2>
+      <div class="grid-2">
+        <ul>
+          <li>Customer coverage and engagement volume metrics</li>
+          <li>Pipeline forecasting and conversion insights</li>
+          <li>Activity visualization charting</li>
+          <li>Algorithmic identification of dormant client accounts</li>
+          <li>Cross-module data snapshots</li>
+        </ul>
+        <ul>
+          <li>Fulfillment risk analysis (demand vs. actual stock)</li>
+          <li>Trade transit and procurement summaries</li>
+          <li>Multi-deck executive reports analyzing product, customer, and foreign exchange impacts</li>
+        </ul>
+      </div>
+      <span class="slide-num">12 / 15</span>
+    </section>
+
+    <!-- 13 -->
+    <section class="slide">
+      <p class="kicker">Delivery status</p>
+      <h2>Key deliverables — achieved</h2>
+      <table>
+        <thead>
+          <tr><th>Area</th><th>Deliverable</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Platform</td><td>Unified enterprise workspace, backend infrastructure, and database layer</td><td class="check">Complete</td></tr>
+          <tr><td>CRM</td><td>Customer management, interaction tracking, automated syncs</td><td class="check">Complete</td></tr>
+          <tr><td>PMS</td><td>Catalog structuring, automated document extraction, pricing grids</td><td class="check">Complete</td></tr>
+          <tr><td>Sales</td><td>Version-controlled UI, pipeline progression, quotation engine</td><td class="check">Complete</td></tr>
+          <tr><td>Stock</td><td>Multi-location ledger with pipeline validation</td><td class="check">Complete</td></tr>
+          <tr><td>Finance</td><td>4-stage calculator and executive business intelligence</td><td class="check">Complete</td></tr>
+          <tr><td>Reports</td><td>Integrated cross-module data structuring</td><td class="check">Complete</td></tr>
+          <tr><td>Integration</td><td>Relational schema deployment, strict authentication protocols, and file storage APIs</td><td class="check">Complete</td></tr>
+        </tbody>
+      </table>
+      <span class="slide-num">13 / 15</span>
+    </section>
+
+    <!-- 14 -->
+    <section class="slide">
+      <p class="kicker">Outcomes</p>
+      <h2>Goals vs achievements</h2>
+      <table>
+        <thead><tr><th>Goal</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>One platform for operations</td><td>Deployed six dedicated workspaces within a single unified interface</td></tr>
+          <tr><td>Linked data ecosystems</td><td>Implemented strict unique identifiers to automate connections between customers, products, and deals</td></tr>
+          <tr><td>Import costing automation</td><td>Established database-persistent Trade &amp; Transit module</td></tr>
+          <tr><td>Stock vs demand visibility</td><td>Automated fulfillment risk flagging within reports</td></tr>
+          <tr><td>Leadership dashboards</td><td>Delivered on-demand exportable CRM and executive intelligence overviews</td></tr>
+          <tr><td>Team access governance</td><td>Successfully configured enterprise authentication, role management, and credential security</td></tr>
+        </tbody>
+      </table>
+      <p class="live-ready">Platform is live-ready.</p>
+      <span class="slide-num">14 / 15</span>
+    </section>
+
+    <!-- 15 -->
+    <section class="slide">
+      <p class="kicker">Roadmap</p>
+      <h2>Run, integrate, and drive decisions with data</h2>
+      <p style="margin-bottom:1rem;color:var(--muted);">
+        The build phase is complete. Focus shifts to adoption, meaningful reporting,
+        and team-wide data-driven strategy.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <p class="phase-label">Phase 1 — Launch &amp; train</p>
+          <strong>Put the platform in daily use</strong>
+          <ul style="margin-top:0.5rem;font-size:0.88rem;">
+            <li><strong>Finance:</strong> Implement Trade &amp; Transit workflows, costing strategies, and executive reporting</li>
+            <li><strong>Sales:</strong> Transition to platform-based CRM interactions, pipeline tracking, and quotation generation</li>
+            <li><strong>Product managers:</strong> Shift to centralized catalog management and dynamic pricing</li>
+          </ul>
+        </div>
+        <div class="card">
+          <p class="phase-label">Phase 2 — Data-driven operations</p>
+          <strong>Turn collected data into action</strong>
+          <ul style="margin-top:0.5rem;font-size:0.88rem;">
+            <li>Automate regular, meaningful reports replacing legacy spreadsheets</li>
+            <li>Establish review cadences utilizing live platform dashboards</li>
+            <li>Proactively identify gaps, risks, and opportunities using strictly structured data</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:1.25rem;font-size:0.95rem;">
+        <strong style="color:#fff;">Success measure:</strong>
+        Operations are exclusively executed within the Connect platform, and leadership
+        decisions are definitively backed by integrated, cross-departmental data.
+      </p>
+      <span class="slide-num">15 / 15</span>
+    </section>
+
+  </main>
+
+  <script>
+    document.addEventListener("keydown", (e) => {
+      const slides = [...document.querySelectorAll(".slide")];
+      const center = window.scrollY + window.innerHeight / 2;
+      let idx = slides.findIndex((s) => {
+        const r = s.getBoundingClientRect();
+        const top = r.top + window.scrollY;
+        return top <= center && top + r.height > center;
+      });
+      if (idx < 0) idx = 0;
+      if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") {
+        e.preventDefault();
+        slides[Math.min(idx + 1, slides.length - 1)]?.scrollIntoView({ behavior: "smooth" });
+      }
+      if (e.key === "ArrowUp" || e.key === "PageUp") {
+        e.preventDefault();
+        slides[Math.max(idx - 1, 0)]?.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  </script>
+</body>
+</html>

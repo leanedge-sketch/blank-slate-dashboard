@@ -171,6 +171,7 @@ export async function fetchCustomers(params?: {
   limit?: number;
   offset?: number;
   q?: string;
+  contact?: string;
   start_date?: string;
   end_date?: string;
 }): Promise<CustomerListResponse> {
@@ -179,6 +180,7 @@ export async function fetchCustomers(params?: {
       limit: params?.limit ?? 1000,
       offset: params?.offset ?? 0,
       ...(params?.q && { q: params.q }),
+      ...(params?.contact && { contact: params.contact }),
       ...(params?.start_date && { start_date: params.start_date }),
       ...(params?.end_date && { end_date: params.end_date }),
     },

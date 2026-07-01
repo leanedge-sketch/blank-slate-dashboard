@@ -18,6 +18,7 @@ export type PipelineSnapshotGroup = {
   key: string;
   requestRef: string;
   clientName: string;
+  contactPerson: string;
   customerId: string | null;
   rows: PipelineSnapshotRow[];
   totals: PipelineSnapshotGroupTotals;
@@ -101,6 +102,7 @@ export function groupPipelineSnapshots(
         key,
         requestRef: (first.request_ref ?? "").trim() || "—",
         clientName: (first.client_name ?? "").trim() || "Unnamed",
+        contactPerson: (first.contact_person ?? "").trim() || "—",
         customerId: first.customer_id?.trim() || null,
         rows: rows.sort((a, b) =>
           a.productLabel.localeCompare(b.productLabel, undefined, {

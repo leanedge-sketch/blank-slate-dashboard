@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Search, UserRound, Users } from "lucide-react";
+import { CompanyContactSearchPanel } from "../../crm/CompanyContactSearchPanel";
 import { fetchCustomers, type Customer } from "../../../services/api";
+import type { ImportShipmentRow } from "../../../services/importFinance";
 import {
   TRADE_CURRENCIES,
   TRADE_INCOTERMS,
@@ -63,6 +65,7 @@ export function TradeParametersForm({
   onLoadSample,
   onContinue,
 }: TradeParametersFormProps) {
+  const [activeTab, setActiveTab] = useState<"request" | "search">("request");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
 
@@ -143,6 +146,25 @@ export function TradeParametersForm({
     });
   }
 
+  function handleUseShipment(shipment: ImportShipmentRow) {
+    const ids = ensurePipelineRequestIds({
+      requestDate: shipment.request_date?.slice(0, 10) || parameters.requestDate,
+      requestRef: shipment.request_ref || parameters.requestRef,
+    });
+    onChange({
+      customerId: shipment.customer_id || "",
+      clientName: shipment.client_name?.trim() || parameters.clientName,
+      contactPerson: shipment.contact_person?.trim() || parameters.contactPerson,
+      ...ids,
+    });
+    setActiveTab("request");
+  }
+
+  function handleUseCrmFromSearch(customer: Customer) {
+    handleCustomerPick(customer.customer_id);
+    setActiveTab("request");
+  }
+
   function handleContinue() {
     if (!parameters.customerId && !parameters.clientName.trim()) {
       window.alert("Select a CRM customer for this import request.");
@@ -158,6 +180,41 @@ export function TradeParametersForm({
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#111827] p-5 sm:p-8 space-y-6 sm:space-y-8">
+      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab("request")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "request"
+              ? "bg-teal-600/20 text-teal-200 border border-teal-500/40"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
+          }`}
+        >
+          Customer request
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("search")}
+          className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "search"
+              ? "bg-cyan-600/20 text-cyan-200 border border-cyan-500/40"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
+          }`}
+        >
+          <Search className="h-4 w-4" />
+          Search existing
+        </button>
+      </div>
+
+      {activeTab === "search" ? (
+        <CompanyContactSearchPanel
+          variant="dark"
+          initialCompany={parameters.clientName}
+          initialContact={parameters.contactPerson}
+          onUseCrmCustomer={handleUseCrmFromSearch}
+          onUseShipment={handleUseShipment}
+        />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         <FieldGroup
           title="Customer request"
@@ -409,7 +466,9 @@ export function TradeParametersForm({
           </div>
         </FieldGroup>
       </div>
+      )}
 
+      {activeTab === "request" ? (
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2 border-t border-slate-800">
         <p className="text-xs text-slate-500 sm:mr-auto">
           Customer, contact, and terms sync to each product line when you continue.
@@ -423,6 +482,7 @@ export function TradeParametersForm({
           <ArrowRight className="h-4 w-4" />
         </button>
       </div>
+      ) : null}
     </div>
   );
 }
