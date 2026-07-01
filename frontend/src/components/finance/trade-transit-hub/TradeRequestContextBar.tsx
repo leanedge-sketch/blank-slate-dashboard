@@ -166,16 +166,34 @@ export function TradeRequestContextBar({
       )}
 
       {readOnly ? (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
-          {clientName ? <span>{clientName}</span> : null}
-          {contactPerson ? (
-            <span className="inline-flex items-center gap-1.5">
-              <UserRound className="h-4 w-4 text-slate-500" />
-              {contactPerson}
-            </span>
-          ) : null}
-          {requestDate ? <span>Date {requestDate}</span> : null}
-          {requestRef ? <span>Ref {requestRef}</span> : null}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+          <div className="rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Company
+            </p>
+            <p className="text-slate-100 font-medium">{clientName || "—"}</p>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Contact person
+            </p>
+            <p className="text-slate-100 font-medium inline-flex items-center gap-1.5">
+              <UserRound className="h-3.5 w-3.5 text-slate-500" />
+              {contactPerson || "—"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-500/80 mb-1">
+              Request ID
+            </p>
+            <p className="font-mono text-cyan-200 font-medium">{requestRef || "—"}</p>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Request date
+            </p>
+            <p className="text-slate-100 font-medium">{requestDate || "—"}</p>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">

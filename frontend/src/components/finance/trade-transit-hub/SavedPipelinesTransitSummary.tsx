@@ -14,6 +14,11 @@ import {
 } from "../../../lib/pipelineDomains";
 import { TransitSummaryTable } from "./summary/TransitSummaryTable";
 import {
+  TransitSummarySearchSection,
+  pipelineGroupMatchesSearch,
+  type TransitSummarySearchFilter,
+} from "./TransitSummarySearchSection";
+import {
   ListPager,
   paginateSlice,
   totalPagesFor,
@@ -27,6 +32,9 @@ type SavedPipelinesTransitSummaryProps = {
   constants: FinanceConstants;
   onReload?: () => void;
   pipelineDomain?: ImportFinancePipelineDomain;
+  searchCompany?: string;
+  searchContact?: string;
+  showSearch?: boolean;
 };
 
 export function SavedPipelinesTransitSummary({
@@ -35,8 +43,15 @@ export function SavedPipelinesTransitSummary({
   constants,
   onReload,
   pipelineDomain = PROCUREMENT_PIPELINE_DOMAIN,
+  searchCompany = "",
+  searchContact = "",
+  showSearch = false,
 }: SavedPipelinesTransitSummaryProps) {
   const [page, setPage] = useState(1);
+  const [searchFilter, setSearchFilter] = useState<TransitSummarySearchFilter>({
+    company: searchCompany,
+    contact: searchContact,
+  });
 
   useEffect(() => {
     const handler = () => {
@@ -47,10 +62,26 @@ export function SavedPipelinesTransitSummary({
     return () => window.removeEventListener(PIPELINE_SAVED_EVENT, handler);
   }, [onReload]);
 
-  const customerBuckets = useMemo(
-    () => groupSnapshotsByCustomer(shipments, products),
-    [shipments, products],
-  );
+  const customerBuckets = useMemo(() => {
+    const buckets = groupSnapshotsByCustomer(shipments, products);
+    const hasFilter =
+      searchFilter.company.trim() || searchFilter.contact.trim();
+    if (!hasFilter) return buckets;
+
+    return buckets
+      .map((bucket) => ({
+        ...bucket,
+        requestGroups: bucket.requestGroups.filter((group) =>
+          pipelineGroupMatchesSearch(
+            group.clientName,
+            group.contactPerson,
+            group.requestRef,
+            searchFilter,
+          ),
+        ),
+      }))
+      .filter((bucket) => bucket.requestGroups.length > 0);
+  }, [shipments, products, searchFilter]);
 
   const totalPages = totalPagesFor(customerBuckets.length, CUSTOMERS_PER_PAGE);
   const safePage = Math.min(page, totalPages);
@@ -66,16 +97,35 @@ export function SavedPipelinesTransitSummary({
   );
 
   if (customerBuckets.length === 0) {
+    const hasFilter =
+      searchFilter.company.trim() || searchFilter.contact.trim();
     return (
-      <p className="rounded-xl border border-white/10 bg-slate-900/60 px-4 py-8 text-center text-sm text-slate-500">
-        No saved {pipelineDomainLabel(pipelineDomain).toLowerCase()} requests yet. Save
-        product lines from costing to populate this view.
-      </p>
+      <div className="space-y-4">
+        {showSearch ? (
+          <TransitSummarySearchSection
+            initialCompany={searchCompany}
+            initialContact={searchContact}
+            onFilterChange={setSearchFilter}
+          />
+        ) : null}
+        <p className="rounded-xl border border-white/10 bg-slate-900/60 px-4 py-8 text-center text-sm text-slate-500">
+          {hasFilter
+            ? "No saved requests match your search. Try different company or contact terms."
+            : `No saved ${pipelineDomainLabel(pipelineDomain).toLowerCase()} requests yet. Save product lines from costing to populate this view.`}
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {showSearch ? (
+        <TransitSummarySearchSection
+          initialCompany={searchCompany}
+          initialContact={searchContact}
+          onFilterChange={setSearchFilter}
+        />
+      ) : null}
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-500/90">
@@ -114,15 +164,6 @@ export function SavedPipelinesTransitSummary({
 
             return (
               <div key={group.key} className="space-y-2">
-                <p className="text-[11px] text-slate-500">
-                  {group.rows.length} product line{group.rows.length === 1 ? "" : "s"}
-                  {group.contactPerson && group.contactPerson !== "—"
-                    ? ` · ${group.contactPerson}`
-                    : ""}
-                  {group.requestRef && group.requestRef !== "—"
-                    ? ` · ${group.requestRef}`
-                    : ""}
-                </p>
                 <TransitSummaryTable
                   clientName={group.clientName}
                   contactPerson={group.contactPerson}

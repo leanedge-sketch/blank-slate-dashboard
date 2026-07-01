@@ -859,12 +859,27 @@ export function ImportFinanceCalculatorWorkspace({
       )}
 
       {activeSection === "summary" && (
+        <TradeRequestContextBar
+          parameters={parameters}
+          request={request}
+          productCount={request.lines.length}
+          readOnly
+          showProcurementLineAction={false}
+          showCustomerFields
+          onSync={() => {}}
+        />
+      )}
+
+      {activeSection === "summary" && (
         <SavedPipelinesTransitSummary
           shipments={shipments}
           products={products}
           constants={constants}
           onReload={reload}
           pipelineDomain={pipelineDomain}
+          showSearch
+          searchCompany={parameters?.clientName ?? request.clientName}
+          searchContact={parameters?.contactPerson ?? request.contactPerson}
         />
       )}
 

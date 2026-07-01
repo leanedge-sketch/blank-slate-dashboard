@@ -15,7 +15,11 @@ export function TransitSummaryWorkspacePage() {
   return (
     <TradeTransitWorkspaceLayout
       title="Transit summary"
-      subtitle={`Procurement accounting for ${parameters.clientName.trim() || "unnamed client"} — separate from CRM sales deals.`}
+      subtitle={
+        parameters.clientName.trim()
+          ? `${parameters.clientName.trim()}${parameters.contactPerson.trim() ? ` · ${parameters.contactPerson.trim()}` : ""}${parameters.requestRef.trim() ? ` · ${parameters.requestRef.trim()}` : ""}`
+          : "Saved procurement requests with company, contact, and request ID."
+      }
       icon={<ClipboardList className="h-5 w-5 text-orange-400" />}
     >
       <ImportFinanceCalculatorWorkspace

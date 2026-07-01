@@ -22,6 +22,8 @@ type CompanyContactSearchPanelProps = {
   initialContact?: string;
   onUseCrmCustomer?: (customer: Customer) => void;
   onUseShipment?: (shipment: ImportShipmentRow) => void;
+  /** Called after a successful search (for filtering lists). */
+  onSearchComplete?: (company: string, contact: string) => void;
   className?: string;
 };
 
@@ -37,6 +39,7 @@ export function CompanyContactSearchPanel({
   initialContact = "",
   onUseCrmCustomer,
   onUseShipment,
+  onSearchComplete,
   className = "",
 }: CompanyContactSearchPanelProps) {
   const [company, setCompany] = useState(initialCompany);
@@ -74,6 +77,7 @@ export function CompanyContactSearchPanel({
       const data = await searchCompanyAndContact(company, contact);
       setResult(data);
       setSearched(true);
+      onSearchComplete?.(company, contact);
     } catch (err: unknown) {
       setError(
         String((err as { message?: string })?.message ?? "Search failed. Try again."),

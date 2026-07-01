@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Building2, Hash, Sparkles, UserRound } from "lucide-react";
 import type { TransitRequestFinancialTotals, TransitRequestItem } from "../../../../utils/transitRequestItem";
 import { TransitSummaryFooter } from "./TransitSummaryFooter";
 import { TransitSummaryTableRow } from "./TransitSummaryTableRow";
@@ -69,21 +69,38 @@ export function TransitSummaryTable({
         </p>
       </div>
 
-      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/70 mb-1">
-        Request summary — {label}
-      </p>
-      <p className="text-xs text-slate-400 mb-4 flex flex-wrap gap-x-4 gap-y-1">
-        <span>
-          <span className="text-slate-500">Contact:</span>{" "}
-          <span className="text-slate-200">{contactLabel || "—"}</span>
-        </span>
-        <span>
-          <span className="text-slate-500">Request ID:</span>{" "}
-          <span className="font-mono text-cyan-300/90">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+            <Building2 className="h-3.5 w-3.5" />
+            Company
+          </p>
+          <p className="text-sm font-semibold text-slate-100 truncate" title={label}>
+            {label}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+            <UserRound className="h-3.5 w-3.5" />
+            Contact person
+          </p>
+          <p className="text-sm font-semibold text-slate-100 truncate" title={contactLabel || "—"}>
+            {contactLabel || "—"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-500/80 mb-1">
+            <Hash className="h-3.5 w-3.5" />
+            Request ID
+          </p>
+          <p
+            className="text-sm font-mono font-semibold text-cyan-200 truncate"
+            title={refLabel && refLabel !== "—" ? refLabel : "—"}
+          >
             {refLabel && refLabel !== "—" ? refLabel : "—"}
-          </span>
-        </span>
-      </p>
+          </p>
+        </div>
+      </div>
 
       <div className="overflow-x-auto -mx-1 px-1">
         <table className="w-full min-w-[900px] text-left">
