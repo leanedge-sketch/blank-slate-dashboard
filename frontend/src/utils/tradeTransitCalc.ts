@@ -610,12 +610,23 @@ export function legacyShipmentToTradeTransit(row: {
   snapshot_base_customs_reference_usd?: number | null;
   target_selling_price_etb_per_kg?: number | null;
   local_clearance_per_kg_etb?: number | null;
+  capital_outlay_etb?: number | null;
+  total_customs_paid_etb?: number | null;
+  net_landed_cost_etb?: number | null;
+  final_landed_unit_cost_etb_per_kg?: number | null;
+  gross_margin_pct?: number | null;
 }): TradeTransitInputs {
   const savedPrice = Number(row.target_selling_price_etb_per_kg ?? 0);
+  const readPositive = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const capitalOutlay = readPositive(row.capital_outlay_etb);
   return {
     quantityKg: Number(row.quantity_kg),
     targetSellingPriceEtbPerKg: savedPrice,
-    targetMarginPct: DEFAULT_TARGET_MARGIN_PCT,
+    targetMarginPct: Number(row.gross_margin_pct ?? DEFAULT_TARGET_MARGIN_PCT),
     sellingPriceMode: savedPrice > 0 ? "manual" : "margin",
     supplierBasePriceUsd: Number(row.supplier_base_price_usd),
     supplierMarginPct: Number(row.supplier_margin_pct),
@@ -635,6 +646,41 @@ export function legacyShipmentToTradeTransit(row: {
     insuranceEtb: DEFAULT_TRANSIT_INSURANCE_ETB,
     betchemClearanceEtb: DEFAULT_BETCHEM_CLEARANCE_ETB,
     profitTaxPctOnPreLanded: DEFAULT_PROFIT_TAX_PCT_ON_PRE_LANDED,
+    fixedCapitalOutlayEtb: capitalOutlay,
+    workbookTotalCustomsFeeEtb: readPositive(row.total_customs_paid_etb),
+    workbookNetLandedCostEtb: readPositive(row.net_landed_cost_etb),
+    workbookUnitCostEtbPerKg: readPositive(row.final_landed_unit_cost_etb_per_kg),
+  };
+}
+
+/** Rebuild workbook reference totals from a saved shipment snapshot. */
+export function workbookExpectedFromShipmentRow(
+  row: ImportShipmentRow,
+): import("./expectedCostCsv").ExpectedCostScenario["expected"] | null {
+  const readPositive = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  const totalCustomsFeeEtb = readPositive(row.total_customs_paid_etb);
+  const totalLandedCostEtb = readPositive(row.net_landed_cost_etb);
+  const unitCostEtbPerKg = readPositive(row.final_landed_unit_cost_etb_per_kg);
+  if (!totalCustomsFeeEtb && !totalLandedCostEtb && !unitCostEtbPerKg) {
+    return null;
+  }
+
+  const sellingPriceEtbPerKg =
+    readPositive(row.target_selling_price_etb_per_kg) ?? 0;
+  const capitalOutlayEtb = readPositive(row.capital_outlay_etb);
+
+  return {
+    capitalOutlayEtb: capitalOutlayEtb ?? 0,
+    totalCustomsFeeEtb: totalCustomsFeeEtb ?? 0,
+    totalLandedCostEtb: totalLandedCostEtb ?? 0,
+    unitCostEtbPerKg: unitCostEtbPerKg ?? 0,
+    sellingPriceEtbPerKg,
+    targetMarginPct: Number(row.gross_margin_pct ?? 0),
   };
 }
 

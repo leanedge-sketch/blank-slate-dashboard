@@ -24,13 +24,14 @@ import { formatNumber } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import { consumeStashedWorkbookUpload } from "../../utils/workbookUploadSession";
-import { applyWorkbookExpectedAnchors } from "../../utils/workbookImportAlign";
+import { applyWorkbookExpectedAnchors, tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
 import {
   calculateTradeTransit,
   customsRatesFromConstants,
   legacyShipmentToTradeTransit,
   importFinanceResultFromTradeTransit,
   tradeTransitToLegacyInputs,
+  workbookExpectedFromShipmentRow,
   type TradeTransitInputs,
 } from "../../utils/tradeTransitCalc";
 import {
@@ -413,13 +414,17 @@ export function ImportFinanceCalculatorWorkspace({
           ? {
               ...line,
               productName: scenario.name,
-              inputs: {
-                ...line.inputs,
-                ...scenario.inputs,
-                ...customsRatesFromConstants(constants),
-                bankChargePctOnCapital: scenario.inputs.bankChargePctOnCapital,
-                profitTaxPctOnPreLanded: scenario.inputs.profitTaxPctOnPreLanded,
-              },
+              workbookExpected: scenario.expected,
+              inputs: applyWorkbookExpectedAnchors(
+                {
+                  ...line.inputs,
+                  ...scenario.inputs,
+                  ...customsRatesFromConstants(constants),
+                  bankChargePctOnCapital: scenario.inputs.bankChargePctOnCapital,
+                  profitTaxPctOnPreLanded: scenario.inputs.profitTaxPctOnPreLanded,
+                },
+                scenario.expected,
+              ),
             }
           : line,
       ),
@@ -528,6 +533,7 @@ export function ImportFinanceCalculatorWorkspace({
           quantityKg: line.quantityKg,
           chemicalTypeId: line.chemicalTypeId,
           productId: null,
+          workbookExpected: line.expected,
         }),
         shared,
       ),
@@ -580,10 +586,12 @@ export function ImportFinanceCalculatorWorkspace({
 
   function shipmentToLine(row: ImportShipmentRow) {
     const product = products.find((p) => p.id === row.product_id);
+    const workbookExpected = workbookExpectedFromShipmentRow(row);
     return createTradeTransitLine(product?.product_name ?? "Loaded product", {
       ...legacyShipmentToTradeTransit(row),
       productId: row.product_id,
       chemicalTypeId: row.chemical_type_id ?? null,
+      workbookExpected,
     });
   }
 
@@ -716,10 +724,14 @@ export function ImportFinanceCalculatorWorkspace({
           }
         }
 
-        const ttResult = calculateTradeTransit(line.inputs, constants);
-        const legacyInputs = tradeTransitToLegacyInputs(line.inputs, ttResult);
-        const financeResult = importFinanceResultFromTradeTransit(
+        const calcInputs = tradeTransitInputsForCalculation(
           line.inputs,
+          line.workbookExpected,
+        );
+        const ttResult = calculateTradeTransit(calcInputs, constants);
+        const legacyInputs = tradeTransitToLegacyInputs(calcInputs, ttResult);
+        const financeResult = importFinanceResultFromTradeTransit(
+          calcInputs,
           ttResult,
         );
         await saveDraft(productId, legacyInputs, constants, {
@@ -1045,8 +1057,13 @@ export function ImportFinanceCalculatorWorkspace({
           <p className="mt-1 tabular-nums text-slate-500">
             Calculator — landed{" "}
             {formatNumber(
-              calculateTradeTransit(activeLine.inputs, constants).stage3
-                .finalLandedUnitCostEtbPerKg,
+              calculateTradeTransit(
+                tradeTransitInputsForCalculation(
+                  activeLine.inputs,
+                  activeLine.workbookExpected,
+                ),
+                constants,
+              ).stage3.finalLandedUnitCostEtbPerKg,
               2,
             )}{" "}
             ETB/kg
@@ -1065,6 +1082,7 @@ export function ImportFinanceCalculatorWorkspace({
       <ImportFinanceCalculatorPanel
         key={activeLine.id}
         inputs={activeLine.inputs}
+        workbookExpected={activeLine.workbookExpected}
         onChange={updateActiveLine}
         constants={constants as FinanceConstants}
         expandAllInputs={expandCalculatorInputs}

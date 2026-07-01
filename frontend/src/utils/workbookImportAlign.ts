@@ -13,6 +13,8 @@ export function applyWorkbookExpectedAnchors(
 ): TradeTransitInputs {
   return {
     ...inputs,
+    fixedCapitalOutlayEtb:
+      expected.capitalOutlayEtb > 0 ? expected.capitalOutlayEtb : inputs.fixedCapitalOutlayEtb,
     workbookTotalCustomsFeeEtb:
       expected.totalCustomsFeeEtb > 0 ? expected.totalCustomsFeeEtb : null,
     workbookNetLandedCostEtb:
@@ -20,6 +22,24 @@ export function applyWorkbookExpectedAnchors(
     workbookUnitCostEtbPerKg:
       expected.unitCostEtbPerKg > 0 ? expected.unitCostEtbPerKg : null,
   };
+}
+
+/** Merge workbook reference totals before running the waterfall (import or saved snapshot). */
+export function tradeTransitInputsForCalculation(
+  inputs: TradeTransitInputs,
+  expected?: ExpectedCostScenario["expected"] | null,
+): TradeTransitInputs {
+  if (!expected) return inputs;
+  const anchored = applyWorkbookExpectedAnchors(inputs, expected);
+  if (expected.sellingPriceEtbPerKg > 0) {
+    return {
+      ...anchored,
+      sellingPriceMode: "manual",
+      targetSellingPriceEtbPerKg: expected.sellingPriceEtbPerKg,
+      targetMarginPct: expected.targetMarginPct,
+    };
+  }
+  return anchored;
 }
 
 export type WorkbookSellingResolution = {
@@ -96,7 +116,7 @@ function relativeDelta(workbook: number, calculated: number): number {
   return base > 0 ? Math.abs(calculated - workbook) / base : 0;
 }
 
-/** Compare waterfall output to workbook reference totals (for advisory warnings only). */
+/** Compare waterfall output to workbook reference totals (all 4 stages). */
 export function findWorkbookDiscrepancies(
   scenario: ExpectedCostScenario,
   result: TradeTransitResult,
@@ -109,19 +129,29 @@ export function findWorkbookDiscrepancies(
     calculated: number;
   }> = [
     {
-      label: "Total customs fee",
+      label: "Stage 1 — capital outlay",
+      workbook: exp.capitalOutlayEtb,
+      calculated: result.stage1.capitalOutlayEtb,
+    },
+    {
+      label: "Stage 2 — total customs fee",
       workbook: exp.totalCustomsFeeEtb,
       calculated: result.stage2.totalCustomsPaidEtb,
     },
     {
-      label: "Total landed cost",
+      label: "Stage 3 — total landed cost",
       workbook: exp.totalLandedCostEtb,
       calculated: result.stage3.netLandedCostEtb,
     },
     {
-      label: "Unit cost / kg",
+      label: "Stage 3 — unit cost / kg",
       workbook: exp.unitCostEtbPerKg,
       calculated: result.stage3.finalLandedUnitCostEtbPerKg,
+    },
+    {
+      label: "Stage 4 — selling price / kg",
+      workbook: exp.sellingPriceEtbPerKg,
+      calculated: result.stage4.targetSellingPriceEtbPerKg,
     },
   ];
 
@@ -144,6 +174,10 @@ export function discrepanciesForScenario(
   scenario: ExpectedCostScenario,
   tolerancePct = 0.03,
 ): WorkbookDiscrepancy[] {
-  const result = calculateTradeTransit(scenario.inputs);
+  const inputs = tradeTransitInputsForCalculation(
+    scenario.inputs,
+    scenario.expected,
+  );
+  const result = calculateTradeTransit(inputs);
   return findWorkbookDiscrepancies(scenario, result, tolerancePct);
 }

@@ -1,4 +1,5 @@
 import type { FinanceConstants } from "./importFinanceCalc";
+import type { ExpectedCostScenario } from "./expectedCostCsv";
 import {
   aggregateTransitFinancialTotals,
   mapTransitRequestItem,
@@ -12,6 +13,7 @@ import {
   type TradeTransitInputs,
   type TradeTransitResult,
 } from "./tradeTransitCalc";
+import { tradeTransitInputsForCalculation } from "./workbookImportAlign";
 
 export interface TradeTransitRequestLine {
   id: string;
@@ -21,6 +23,8 @@ export interface TradeTransitRequestLine {
   /** Resolved import_finance_products.id for Supabase save. */
   productId: string | null;
   inputs: TradeTransitInputs;
+  /** Excel / saved snapshot totals — keeps waterfall aligned with workbook. */
+  workbookExpected?: ExpectedCostScenario["expected"] | null;
 }
 
 export interface TradeTransitRequest {
@@ -104,14 +108,21 @@ export function createBlankTradeTransitLine(
   partial?: Partial<TradeTransitInputs> & {
     productId?: string | null;
     chemicalTypeId?: string | null;
+    workbookExpected?: ExpectedCostScenario["expected"] | null;
   },
 ): TradeTransitRequestLine {
-  const { productId = null, chemicalTypeId = null, ...inputPatch } = partial ?? {};
+  const {
+    productId = null,
+    chemicalTypeId = null,
+    workbookExpected = null,
+    ...inputPatch
+  } = partial ?? {};
   return {
     id: createTradeTransitLineId(),
     productName,
     chemicalTypeId,
     productId,
+    workbookExpected,
     inputs: newPipelineLineInputs(inputPatch),
   };
 }
@@ -121,14 +132,21 @@ export function createTradeTransitLine(
   partial?: Partial<TradeTransitInputs> & {
     productId?: string | null;
     chemicalTypeId?: string | null;
+    workbookExpected?: ExpectedCostScenario["expected"] | null;
   },
 ): TradeTransitRequestLine {
-  const { productId = null, chemicalTypeId = null, ...inputPatch } = partial ?? {};
+  const {
+    productId = null,
+    chemicalTypeId = null,
+    workbookExpected = null,
+    ...inputPatch
+  } = partial ?? {};
   return {
     id: createTradeTransitLineId(),
     productName,
     chemicalTypeId,
     productId,
+    workbookExpected,
     inputs: {
       ...DEFAULT_TRADE_TRANSIT_INPUTS,
       ...inputPatch,
@@ -180,7 +198,10 @@ export function summarizeTradeTransitRequest(
   const lines = request.lines.map((line) => ({
     lineId: line.id,
     productName: line.productName,
-    result: calculateTradeTransit(line.inputs, constants),
+    result: calculateTradeTransit(
+      tradeTransitInputsForCalculation(line.inputs, line.workbookExpected),
+      constants,
+    ),
   }));
 
   const quoteAsOfDate = new Date().toISOString().slice(0, 10);

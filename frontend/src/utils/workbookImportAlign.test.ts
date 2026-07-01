@@ -8,6 +8,8 @@ import {
   discrepanciesForScenario,
   inferMarginPctFromWorkbook,
   resolveWorkbookSellingInputs,
+  applyWorkbookExpectedAnchors,
+  tradeTransitInputsForCalculation,
 } from "./workbookImportAlign";
 
 const fixtureCsv = readFileSync(
@@ -74,5 +76,115 @@ describe("workbookImportAlign", () => {
     for (const scenario of scenarios) {
       expect(discrepanciesForScenario(scenario)).toHaveLength(0);
     }
+  });
+
+  it("anchors Belchen / 2% WHT workbook layout (SBR-style)", () => {
+    const csv = [
+      "Discreption,SBR ForSt Gobain",
+      "QTY in KG,1380",
+      "Cost at SEZ,3.3",
+      "Transportation cost,0.1",
+      "CFCA Moyale cost,3.4",
+      "Rate USD vs ETB (Black),190",
+      "Rate USD vs ETB (official),154",
+      "Amount In Birr,891480",
+      "Bank Charges,55089.70",
+      "Insurance,1000",
+      "Customs rate,3.94",
+      "CUSTOM DUTY (5% CIF),46154.40",
+      "SCAN FEE (0.07% CIF),6545.62",
+      "Social Fee (3%),26052.64",
+      "WHT (2%),20052.64",
+      "VAT (15%),151454.25",
+      "Total customs fee,250259.55",
+      "Belchen Customs clearance,10500",
+      "Transport Addis and Unloading,20700",
+      "Total Landing cost after refundaels,1000000",
+      "Profit Tax,50000",
+      "Total Landed Cost + Tax Risk,1151343.97",
+      "Unit Cost/KG Before Vat,834.31",
+      "Selling price 0% Margin,834.31",
+    ].join("\n");
+
+    const [scenario] = parseExpectedCostCsv(csv);
+    expect(scenario).toBeDefined();
+    expect(scenario!.inputs.whtPct).toBeCloseTo(0.02, 4);
+    expect(scenario!.inputs.betchemClearanceEtb).toBe(10500);
+    expect(scenario!.expected.totalCustomsFeeEtb).toBeCloseTo(250259.55, 2);
+    expect(scenario!.expected.unitCostEtbPerKg).toBeCloseTo(834.31, 2);
+    expect(discrepanciesForScenario(scenario!)).toHaveLength(0);
+
+    const result = calculateTradeTransit(scenario!.inputs);
+    expect(result.stage1.capitalOutlayEtb).toBeCloseTo(891480, 0);
+    expect(result.stage2.totalCustomsPaidEtb).toBeCloseTo(250259.55, 0);
+    expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(834.31, 2);
+    expect(result.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(834.31, 2);
+  });
+
+  it("matches all 4 stages on 2026 fixture with typo-tolerant labels", () => {
+    const scenarios = parseExpectedCostCsv(fixtureCsv);
+    for (const scenario of scenarios) {
+      const inputs = tradeTransitInputsForCalculation(
+        scenario.inputs,
+        scenario.expected,
+      );
+      const result = calculateTradeTransit(inputs);
+      expect(result.stage1.capitalOutlayEtb).toBeCloseTo(
+        scenario.expected.capitalOutlayEtb,
+        0,
+      );
+      expect(result.stage2.totalCustomsPaidEtb).toBeCloseTo(
+        scenario.expected.totalCustomsFeeEtb,
+        0,
+      );
+      expect(result.stage3.netLandedCostEtb).toBeCloseTo(
+        scenario.expected.totalLandedCostEtb,
+        0,
+      );
+      expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(
+        scenario.expected.unitCostEtbPerKg,
+        1,
+      );
+      expect(result.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(
+        scenario.expected.sellingPriceEtbPerKg,
+        1,
+      );
+    }
+  });
+
+  it("parses sheets with common spelling variants", () => {
+    const csv = [
+      "Discrepion,Typo Product",
+      "QTY KG,500",
+      "Cost at SEZ,2.5",
+      "Transportation cost,0.08",
+      "CFCF Moyale cost,2.6",
+      "Rate USD vs ETB (Black),185",
+      "Rate USD vs ETB (official),153",
+      "Amout in Birr,240000",
+      "Bank Charges,18720",
+      "Insurance,500",
+      "Customs rate,2.5",
+      "CUSTOM DUTY (5% CIF),12000",
+      "SCAN FEE (0.07% CIF),1680",
+      "Social Fee (3%),7200",
+      "WHT (2%),4800",
+      "VAT (15%),36000",
+      "Total customs fee,61680",
+      "Belchen Customes clerance,10500",
+      "Transport Addis and Unloading,10000",
+      "Total Landing cost after refundabels,250000",
+      "Profit Tax,12000",
+      "Total Landed Cost + Tax Risk,262000",
+      "Unit Cost/KG Before Vat,524",
+      "Selling roice 15% Margin,600",
+    ].join("\n");
+
+    const [scenario] = parseExpectedCostCsv(csv);
+    expect(scenario).toBeDefined();
+    expect(scenario!.name).toBe("Typo Product");
+    expect(scenario!.inputs.betchemClearanceEtb).toBe(10500);
+    expect(scenario!.inputs.whtPct).toBeCloseTo(0.02, 4);
+    expect(discrepanciesForScenario(scenario!)).toHaveLength(0);
   });
 });

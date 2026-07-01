@@ -133,6 +133,7 @@ function isLineLinked(line: WorkbookImportLineDraft): boolean {
 }
 
 const EMPTY_WORKBOOK_EXPECTED: WorkbookImportLineDraft["expected"] = {
+  capitalOutlayEtb: 0,
   totalCustomsFeeEtb: 0,
   totalLandedCostEtb: 0,
   unitCostEtbPerKg: 0,

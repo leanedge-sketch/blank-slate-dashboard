@@ -25,6 +25,8 @@ import {
   type TradeTransitInputs,
   type TradeTransitResult,
 } from "../../utils/tradeTransitCalc";
+import type { ExpectedCostScenario } from "../../utils/expectedCostCsv";
+import { tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
 
 export { DEFAULT_TRADE_TRANSIT_INPUTS };
 export const DEFAULT_IMPORT_FINANCE_INPUTS = DEFAULT_TRADE_TRANSIT_INPUTS;
@@ -33,6 +35,7 @@ type StageId = 1 | 2 | 3 | 4;
 
 type ImportFinanceCalculatorPanelProps = {
   inputs: TradeTransitInputs;
+  workbookExpected?: ExpectedCostScenario["expected"] | null;
   onChange: (patch: Partial<TradeTransitInputs>) => void;
   constants?: FinanceConstants;
   compact?: boolean;
@@ -1059,6 +1062,7 @@ function InputConsole({
 
 export function ImportFinanceCalculatorPanel({
   inputs,
+  workbookExpected = null,
   onChange,
   constants = DEFAULT_FINANCE_CONSTANTS,
   compact = false,
@@ -1073,9 +1077,14 @@ export function ImportFinanceCalculatorPanel({
     }
   }, [focusStageSignal]);
 
+  const calcInputs = useMemo(
+    () => tradeTransitInputsForCalculation(inputs, workbookExpected),
+    [inputs, workbookExpected],
+  );
+
   const result = useMemo(
-    () => calculateTradeTransit(inputs, constants),
-    [inputs, constants],
+    () => calculateTradeTransit(calcInputs, constants),
+    [calcInputs, constants],
   );
 
   const qty = Math.max(inputs.quantityKg, 0);

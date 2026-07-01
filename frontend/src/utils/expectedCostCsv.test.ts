@@ -9,6 +9,7 @@ import {
   parseExpectedCostCsv,
   parseWorkbookMetadata,
 } from "./expectedCostCsv";
+import { tradeTransitInputsForCalculation } from "./workbookImportAlign";
 import { EXPECTED_COST_2026_SCENARIOS } from "../data/expectedCost2026Scenarios";
 
 const fixtureCsv = readFileSync(
@@ -37,7 +38,9 @@ describe("parseExpectedCostCsv", () => {
     expect(metacel).toBeDefined();
     expect(cellocel).toBeDefined();
 
-    const mResult = calculateTradeTransit(metacel!.inputs);
+    const mResult = calculateTradeTransit(
+      tradeTransitInputsForCalculation(metacel!.inputs, metacel!.expected),
+    );
     expect(mResult.stage2.totalCustomsPaidEtb).toBeCloseTo(
       metacel!.expected.totalCustomsFeeEtb,
       0,
@@ -55,7 +58,9 @@ describe("parseExpectedCostCsv", () => {
       1,
     );
 
-    const cResult = calculateTradeTransit(cellocel!.inputs);
+    const cResult = calculateTradeTransit(
+      tradeTransitInputsForCalculation(cellocel!.inputs, cellocel!.expected),
+    );
     expect(cResult.stage2.totalCustomsPaidEtb).toBeCloseTo(
       cellocel!.expected.totalCustomsFeeEtb,
       0,

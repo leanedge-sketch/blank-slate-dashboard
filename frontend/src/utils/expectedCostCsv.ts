@@ -14,6 +14,7 @@ export interface ExpectedCostScenario {
   inputs: TradeTransitInputs;
   /** Reference totals from the source spreadsheet (for display / validation). */
   expected: {
+    capitalOutlayEtb: number;
     totalCustomsFeeEtb: number;
     totalLandedCostEtb: number;
     unitCostEtbPerKg: number;
@@ -67,16 +68,20 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
   productHeader: {
     include: [
       "discreption",
+      "descripion",
+      "discrepion",
       "description",
       "product name",
       "mix chemical",
+      "mix chemicals",
       "chemical",
       "product",
     ],
+    exclude: ["final offered price", "offered price"],
   },
   quantityKg: {
-    include: ["qty in kg", "quantity kg", "quantity"],
-    exclude: ["unit cost", "selling"],
+    include: ["qty in kg", "qty kg", "quantity kg", "quantity"],
+    exclude: ["unit cost", "selling", "offered"],
   },
   supplierBasePriceUsd: {
     include: [
@@ -84,13 +89,26 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
       "purchasing price",
       "cost at sez /purchasing price",
       "cost at sez",
+      "cost at sez/purchasing price",
+      "sez cost",
     ],
   },
   transportToMoyaleUsdPerKg: {
-    include: ["transportation cost", "transport to moyale", "transport moyale"],
+    include: [
+      "transportation cost",
+      "transport to moyale",
+      "transport moyale",
+      "transport to mojok",
+    ],
   },
   moyaleUsdPerKg: {
-    include: ["cfca moyale cost", "cfcf moyale cost", "moyale cost"],
+    include: [
+      "cfca moyale cost",
+      "cfcf moyale cost",
+      "moyale cost",
+      "mojok cost",
+      "cost at moyale",
+    ],
   },
   capitalParallelRate: {
     include: [
@@ -114,7 +132,12 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     exclude: ["black", "dashen", "parallel"],
   },
   amountInBirr: {
-    include: ["amount in birr", "capital outlay"],
+    include: [
+      "amount in birr",
+      "amout in birr",
+      "capital outlay",
+      "amount birr",
+    ],
   },
   bankChargesEtb: {
     include: ["bank charges", "bank charge"],
@@ -143,7 +166,14 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     exclude: ["reference", "rate"],
   },
   betchemClearanceEtb: {
-    include: ["betchem"],
+    include: [
+      "betchem",
+      "belchen",
+      "belchem",
+      "customes clerance",
+      "customs clearance",
+    ],
+    exclude: ["moyale", "custom clearing"],
   },
   transportAddisTotalEtb: {
     include: ["transport addis", "transport addis and unloading"],
@@ -151,7 +181,9 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
   preProfitLandedBaseEtb: {
     include: [
       "total landing cost after refundaels",
+      "total landing cost after refundabels",
       "total landing cost after refundables",
+      "total landed cost after refundables",
       "pre-landed base",
     ],
   },
@@ -164,11 +196,28 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     exclude: ["after refund", "unit cost"],
   },
   unitCostEtbPerKg: {
-    include: ["unit cost/kg", "unit cost /kg", "unit cost per kg"],
+    include: [
+      "unit cost/kg",
+      "unit cost /kg",
+      "unit cost per kg",
+      "unit cost/kg (before vat)",
+      "unit cost/kg before vat",
+    ],
   },
   sellingPriceEtbPerKg: {
-    include: ["selling roice", "selling price"],
-    exclude: ["target gross margin", "gross margin target", "target margin"],
+    include: [
+      "selling roice",
+      "selling price",
+      "sell price",
+      "final sell price",
+    ],
+    exclude: [
+      "target gross margin",
+      "gross margin target",
+      "target margin",
+      "final offered price",
+      "offered price",
+    ],
   },
   targetGrossMarginPct: {
     include: ["target gross margin", "target margin", "gross margin target"],
@@ -225,6 +274,31 @@ export function normalizeWorkbookLabel(cell: string | undefined): string {
   return (cell ?? "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+const WORKBOOK_LABEL_TYPOS: Array<[RegExp, string]> = [
+  [/discrep?tion/g, "description"],
+  [/refundaels/g, "refundables"],
+  [/refundabels/g, "refundables"],
+  [/customes/g, "customs"],
+  [/clerance/g, "clearance"],
+  [/roice/g, "price"],
+  [/fright/g, "freight"],
+  [/belchen/g, "betchem"],
+  [/belchem/g, "betchem"],
+  [/cfcf/g, "cfca"],
+  [/mojok/g, "moyale"],
+  [/amout/g, "amount"],
+  [/descripion/g, "description"],
+];
+
+/** Normalize common workbook typos so anchors match across sheets. */
+export function fuzzyWorkbookLabel(cell: string | undefined): string {
+  let label = normalizeWorkbookLabel(cell);
+  for (const [pattern, replacement] of WORKBOOK_LABEL_TYPOS) {
+    label = label.replace(pattern, replacement);
+  }
+  return label;
+}
+
 function num(value: string | undefined): number {
   if (!value) return 0;
   const cleaned = value.replace(/,/g, "").trim();
@@ -238,16 +312,21 @@ function num(value: string | undefined): number {
 }
 
 function rowLabel(row: string[]): string {
-  return normalizeWorkbookLabel(row[0]);
+  return fuzzyWorkbookLabel(row[0]);
 }
 
 function rowMatchesAnchor(label: string, rule: AnchorRule): boolean {
-  if (rule.exclude?.some((term) => label.includes(normalizeWorkbookLabel(term)))) {
+  const fuzzy = fuzzyWorkbookLabel(label);
+  if (
+    rule.exclude?.some((term) =>
+      fuzzy.includes(fuzzyWorkbookLabel(term)),
+    )
+  ) {
     return false;
   }
   return rule.include.some((anchor) => {
-    const needle = normalizeWorkbookLabel(anchor);
-    return label === needle || label.includes(needle);
+    const needle = fuzzyWorkbookLabel(anchor);
+    return fuzzy === needle || fuzzy.includes(needle);
   });
 }
 
@@ -307,6 +386,64 @@ function parseMarginFromLabel(label: string): number {
   if (!match) return 0;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Read duty / WHT / VAT % from labeled customs rows (e.g. "WHT (2%)"). */
+function inferWorkbookTaxRates(
+  rows: string[][],
+): Partial<
+  Pick<
+    TradeTransitInputs,
+    | "customsDutyPct"
+    | "scanFeePct"
+    | "socialFeePct"
+    | "whtPct"
+    | "vatPct"
+  >
+> {
+  const rates: Partial<
+    Pick<
+      TradeTransitInputs,
+      | "customsDutyPct"
+      | "scanFeePct"
+      | "socialFeePct"
+      | "whtPct"
+      | "vatPct"
+    >
+  > = {};
+
+  for (const row of rows) {
+    const label = rowLabel(row);
+    if (!label) continue;
+    if (label.includes("refund") || label.includes("refundable")) continue;
+    const pctLabel = parseMarginFromLabel(row[0] ?? label);
+    if (pctLabel <= 0) continue;
+
+    if (
+      (label.includes("custom duty") || label.includes("customs duty")) &&
+      rates.customsDutyPct == null
+    ) {
+      rates.customsDutyPct = pctLabel / 100;
+      continue;
+    }
+    if (label.includes("scan fee") && rates.scanFeePct == null) {
+      rates.scanFeePct = pctLabel < 1 ? pctLabel / 10 : pctLabel / 100;
+      continue;
+    }
+    if (label.includes("social fee") && rates.socialFeePct == null) {
+      rates.socialFeePct = pctLabel / 100;
+      continue;
+    }
+    if (label.includes("wht") && rates.whtPct == null) {
+      rates.whtPct = pctLabel / 100;
+      continue;
+    }
+    if (label.includes("vat") && rates.vatPct == null) {
+      rates.vatPct = pctLabel / 100;
+    }
+  }
+
+  return rates;
 }
 
 function resolveTargetMarginPct(
@@ -469,6 +606,7 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
   const headerRow = findProductHeaderRow(rows);
   if (!headerRow) return [];
 
+  const workbookTaxRates = inferWorkbookTaxRates(rows);
   const scenarios: ExpectedCostScenario[] = [];
 
   for (let col = 1; col < headerRow.length; col += 1) {
@@ -538,6 +676,7 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
       inputs: {
         ...DEFAULT_TRADE_TRANSIT_INPUTS,
         ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+        ...workbookTaxRates,
         quantityKg,
         supplierBasePriceUsd,
         supplierMarginPct: inferSupplierMarginPct(
@@ -571,6 +710,7 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
           unitCostEtbPerKg > 0 ? unitCostEtbPerKg : null,
       },
       expected: {
+        capitalOutlayEtb: amountInBirr,
         totalCustomsFeeEtb,
         totalLandedCostEtb,
         unitCostEtbPerKg,
