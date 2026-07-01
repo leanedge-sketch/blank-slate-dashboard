@@ -6,8 +6,8 @@ Slide presentation covering platform modules, integrations, deliverables, and ro
 
 | File | Purpose |
 |------|---------|
-| `LeanChem_Connect_Project_Deliverables.html` | 15-slide presentation (browser + print) |
-| `LeanChem_Connect_Project_Deliverables.pdf` | PDF export |
+| `LeanChem_Connect_Project_Deliverables.html` | 16-slide presentation (browser + print) |
+| `LeanChem_Connect_Project.pdf` | PDF export |
 | `../APP_DEVELOPMENT_BLUEPRINT.md` | Full written blueprint |
 
 ## View in browser

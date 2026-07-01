@@ -266,6 +266,139 @@
       margin-bottom: 0.35rem;
     }
 
+    /* Visual platform map */
+    .platform-map {
+      display: grid;
+      grid-template-columns: 1fr 1.35fr 1fr;
+      grid-template-rows: auto auto auto auto;
+      gap: 0.55rem 0.75rem;
+      margin-top: 0.85rem;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+
+    .map-node {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 0.65rem;
+      padding: 0.55rem 0.7rem;
+      text-align: center;
+      position: relative;
+    }
+
+    .map-node strong {
+      display: block;
+      color: #fff;
+      font-size: 0.82rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .map-node span {
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.3;
+    }
+
+    .map-node.highlight {
+      border-color: rgba(52, 211, 153, 0.45);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.12);
+    }
+
+    .map-center {
+      grid-column: 2;
+      grid-row: 2 / 4;
+      padding: 0.85rem 0.75rem;
+      background: linear-gradient(145deg, rgba(56, 189, 248, 0.12), rgba(52, 211, 153, 0.1));
+      border: 2px solid rgba(56, 189, 248, 0.35);
+      border-radius: 0.85rem;
+    }
+
+    .map-center strong {
+      font-size: 1rem;
+      color: #fff;
+      letter-spacing: 0.04em;
+    }
+
+    .map-center .spine {
+      margin-top: 0.5rem;
+      font-size: 0.74rem;
+      color: var(--cyan);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .map-reports {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .map-crm { grid-column: 1; grid-row: 2; }
+    .map-sales { grid-column: 3; grid-row: 2; }
+    .map-stock { grid-column: 1; grid-row: 3; }
+    .map-pms { grid-column: 3; grid-row: 3; }
+
+    .map-transit {
+      grid-column: 1 / 4;
+      grid-row: 4;
+      display: grid;
+      grid-template-columns: 1.1fr 2fr;
+      gap: 0.75rem;
+      text-align: left;
+      padding: 0.75rem 0.9rem;
+      border-color: rgba(34, 211, 238, 0.35);
+      background: linear-gradient(90deg, rgba(34, 211, 238, 0.08), rgba(30, 41, 59, 0.85));
+    }
+
+    .map-transit-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.4rem;
+    }
+
+    .map-transit-flow .mini-step {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 0.4rem;
+      padding: 0.28rem 0.5rem;
+      font-size: 0.68rem;
+      color: #e2e8f0;
+      white-space: nowrap;
+    }
+
+    .map-transit-flow .mini-arrow { color: var(--emerald); font-weight: 700; }
+
+    .map-legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .map-legend .chip {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 0.5rem;
+      padding: 0.4rem 0.55rem;
+      font-size: 0.7rem;
+      color: #cbd5e1;
+    }
+
+    .map-legend .chip em {
+      font-style: normal;
+      color: var(--emerald);
+      font-weight: 700;
+    }
+
+    .map-arrow-label {
+      text-align: center;
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
     @media print {
       body { background: #fff; }
       .deck-toolbar { display: none !important; }
@@ -316,7 +449,7 @@
         for LeanChem's chemical import and distribution operations.
       </p>
       <p class="meta">Version June 2026 &nbsp;|&nbsp; blank-slate-dashboard</p>
-      <span class="slide-num">1 / 15</span>
+      <span class="slide-num">1 / 16</span>
     </section>
 
     <!-- 2 -->
@@ -336,10 +469,104 @@
         Single source of truth from first customer contact through deal progression,
         stock fulfillment, import economics, and leadership reporting.
       </p>
-      <span class="slide-num">2 / 15</span>
+      <span class="slide-num">2 / 16</span>
     </section>
 
-    <!-- 3 -->
+    <!-- 3 — Visual map -->
+    <section class="slide">
+      <p class="kicker">Visual map</p>
+      <h2>What we built — platform &amp; data flow</h2>
+      <p style="font-size:0.9rem;color:var(--muted);margin-bottom:0.25rem;">
+        One connected hub: customer and product IDs link every module. Trade &amp; Transit
+        imports Excel workbooks and feeds CRM, transit summary, and executive reports.
+      </p>
+
+      <div class="platform-map">
+        <div class="map-node map-reports">
+          <span class="tag tag-reports">Reports</span>
+          <strong>Executive BI</strong>
+          <span>CRM · pipeline · stock risk · trade transit PDF export</span>
+        </div>
+
+        <div class="map-node map-crm">
+          <span class="tag tag-crm">CRM</span>
+          <strong>Customers</strong>
+          <span>Profiles · contacts · duplicate search · transit panel</span>
+        </div>
+
+        <div class="map-center">
+          <strong>LeanChem Connect</strong>
+          <div class="spine">PMS product spine</div>
+          <span style="display:block;margin-top:0.45rem;font-size:0.74rem;color:var(--muted);">
+            Shared IDs: customer_id · chemical catalog · request_ref (PROC-*)
+          </span>
+          <p class="map-arrow-label" style="margin-top:0.6rem;">↕ all modules read / write same data</p>
+        </div>
+
+        <div class="map-node map-sales">
+          <span class="tag tag-sales">Sales</span>
+          <strong>Pipeline</strong>
+          <span>Stages · quotations · deal costing link</span>
+        </div>
+
+        <div class="map-node map-stock">
+          <span class="tag tag-stock">Stock</span>
+          <strong>Inventory</strong>
+          <span>Multi-warehouse ledger · fulfillment vs deals</span>
+        </div>
+
+        <div class="map-node map-pms">
+          <span class="tag tag-pms">PMS</span>
+          <strong>Catalog</strong>
+          <span>Products · vendors · pricing · TDS extraction</span>
+        </div>
+
+        <div class="map-node map-transit highlight">
+          <div>
+            <span class="tag tag-finance">Trade &amp; Transit</span>
+            <strong>Import procurement — delivered June 2026</strong>
+            <span>Upload workbook · 4-stage Excel-faithful costing · save · summary · delete request</span>
+            <div class="map-transit-flow">
+              <span class="mini-step">Excel CSV</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Upload workbook</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Review &amp; link PMS</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Stage 1 Capital</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Stage 2 Customs</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Stage 3 Landed</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Stage 4 Sell price</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">Transit summary</span>
+              <span class="mini-arrow">→</span>
+              <span class="mini-step">CRM + Reports</span>
+            </div>
+          </div>
+          <div style="font-size:0.72rem;color:var(--muted);">
+            <strong style="color:#fff;display:block;margin-bottom:0.35rem;">Excel fidelity rules</strong>
+            <ul style="margin:0;padding-left:1rem;line-height:1.45;">
+              <li>Workbook totals anchor all 4 stages (not recalculated defaults)</li>
+              <li>Typo-tolerant labels: Belchen, Unit Cos, Total cu, Rate US</li>
+              <li>Contact person + request ID on every transit summary row</li>
+              <li>Company/contact duplicate check before new customers</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-legend">
+        <div class="chip"><em>Live</em> — React + FastAPI + Supabase on Vercel</div>
+        <div class="chip"><em>Linked</em> — CRM ↔ pipeline ↔ stock ↔ finance</div>
+        <div class="chip"><em>Auditable</em> — saved snapshots + delete-with-confirm</div>
+      </div>
+      <span class="slide-num">3 / 16</span>
+    </section>
+
+    <!-- 4 -->
     <section class="slide">
       <p class="kicker">Why we built it</p>
       <h2>Business problems solved</h2>
@@ -357,10 +584,10 @@
           <li>Decisions being made without consolidated operational data</li>
         </ul>
       </div>
-      <span class="slide-num">3 / 15</span>
+      <span class="slide-num">4 / 16</span>
     </section>
 
-    <!-- 4 -->
+    <!-- 5 -->
     <section class="slide">
       <p class="kicker">Architecture</p>
       <h2>How the platform is structured</h2>
@@ -380,10 +607,10 @@
         <strong>INTEGRATIONS</strong>
         <p>Google Gemini for AI (profiles, TDS extraction, summaries) · Supabase JWT and role-based access control (RBAC) for team access</p>
       </div>
-      <span class="slide-num">4 / 15</span>
+      <span class="slide-num">5 / 16</span>
     </section>
 
-    <!-- 5 -->
+    <!-- 6 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>CRM — Customer Relationship Management</h2>
@@ -408,10 +635,10 @@
           </ul>
         </div>
       </div>
-      <span class="slide-num">5 / 15</span>
+      <span class="slide-num">6 / 16</span>
     </section>
 
-    <!-- 6 -->
+    <!-- 7 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>PMS — Product Management System</h2>
@@ -437,10 +664,10 @@
           </ul>
         </div>
       </div>
-      <span class="slide-num">6 / 15</span>
+      <span class="slide-num">7 / 16</span>
     </section>
 
-    <!-- 7 -->
+    <!-- 8 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>Sales Pipeline</h2>
@@ -461,10 +688,10 @@
         <li>Searchable and paginated deal repository</li>
         <li>Deal-level financial costing linked directly to the import calculator</li>
       </ul>
-      <span class="slide-num">7 / 15</span>
+      <span class="slide-num">8 / 16</span>
     </section>
 
-    <!-- 8 -->
+    <!-- 9 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>Stock Management</h2>
@@ -477,10 +704,10 @@
         <li>Inter-company transfers enforce paired systemic movements to prevent discrepancies</li>
         <li>Integrated reporting engine automatically flags pipeline deals that exceed current availability</li>
       </ul>
-      <span class="slide-num">8 / 15</span>
+      <span class="slide-num">9 / 16</span>
     </section>
 
-    <!-- 9 -->
+    <!-- 10 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>Trade &amp; Transit — Import procurement</h2>
@@ -511,10 +738,10 @@
       <p style="margin-top:0.85rem;font-size:0.92rem;">
         Output integrates directly into executive snapshots, syncs with PMS pricing, and generates transit summaries.
       </p>
-      <span class="slide-num">9 / 15</span>
+      <span class="slide-num">10 / 16</span>
     </section>
 
-    <!-- 10 -->
+    <!-- 11 -->
     <section class="slide">
       <p class="kicker">Data model</p>
       <h2>How datasets interconnect</h2>
@@ -524,10 +751,10 @@
         <li>Sales pipelines act as the central nervous system, connecting pricing structures, interaction histories, and stock ledgers</li>
         <li>Stock inventories maintain strict relational integrity with the product master data and financial import records</li>
       </ul>
-      <span class="slide-num">10 / 15</span>
+      <span class="slide-num">11 / 16</span>
     </section>
 
-    <!-- 11 -->
+    <!-- 12 -->
     <section class="slide">
       <p class="kicker">End-to-end</p>
       <h2>Typical business workflows</h2>
@@ -553,10 +780,10 @@
           PDF-ready executive BI dashboards</span>
         </div>
       </div>
-      <span class="slide-num">11 / 15</span>
+      <span class="slide-num">12 / 16</span>
     </section>
 
-    <!-- 12 -->
+    <!-- 13 -->
     <section class="slide">
       <p class="kicker">Module deep-dive</p>
       <h2>Reports &amp; Analysis</h2>
@@ -574,10 +801,10 @@
           <li>Multi-deck executive reports analyzing product, customer, and foreign exchange impacts</li>
         </ul>
       </div>
-      <span class="slide-num">12 / 15</span>
+      <span class="slide-num">13 / 16</span>
     </section>
 
-    <!-- 13 -->
+    <!-- 14 -->
     <section class="slide">
       <p class="kicker">Delivery status</p>
       <h2>Key deliverables — achieved</h2>
@@ -596,10 +823,10 @@
           <tr><td>Integration</td><td>Relational schema deployment, strict authentication protocols, and file storage APIs</td><td class="check">Complete</td></tr>
         </tbody>
       </table>
-      <span class="slide-num">13 / 15</span>
+      <span class="slide-num">14 / 16</span>
     </section>
 
-    <!-- 14 -->
+    <!-- 15 -->
     <section class="slide">
       <p class="kicker">Outcomes</p>
       <h2>Goals vs achievements</h2>
@@ -615,10 +842,10 @@
         </tbody>
       </table>
       <p class="live-ready">Platform is live-ready.</p>
-      <span class="slide-num">14 / 15</span>
+      <span class="slide-num">15 / 16</span>
     </section>
 
-    <!-- 15 -->
+    <!-- 16 -->
     <section class="slide">
       <p class="kicker">Roadmap</p>
       <h2>Run, integrate, and drive decisions with data</h2>
@@ -651,7 +878,7 @@
         Operations are exclusively executed within the Connect platform, and leadership
         decisions are definitively backed by integrated, cross-departmental data.
       </p>
-      <span class="slide-num">15 / 15</span>
+      <span class="slide-num">16 / 16</span>
     </section>
 
   </main>
