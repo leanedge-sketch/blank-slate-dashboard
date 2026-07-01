@@ -23,10 +23,10 @@ import { DEFAULT_TRADE_PARAMETERS, validatePipelineRequestFields } from "../../t
 import { formatNumber } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
+import { WorkbookImportActions } from "./trade-transit-hub/WorkbookImportActions";
 import { consumeStashedWorkbookUpload } from "../../utils/workbookUploadSession";
-import { applyWorkbookExpectedAnchors, tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
+import { applyWorkbookExpectedAnchors, tradeTransitDisplayResult, tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
 import {
-  calculateTradeTransit,
   customsRatesFromConstants,
   legacyShipmentToTradeTransit,
   importFinanceResultFromTradeTransit,
@@ -176,7 +176,6 @@ export function ImportFinanceCalculatorWorkspace({
     request: TradeTransitRequest;
     csvScenarios: ExpectedCostScenario[];
   } | null>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
   const loadedEditPipelineKey = useRef<string | null>(null);
   const stashConsumed = useRef(false);
 
@@ -219,7 +218,7 @@ export function ImportFinanceCalculatorWorkspace({
     const parsed = parseWorkbookImport(stashed.text);
     if (parsed.scenarios.length === 0) {
       alert(
-        "Could not read product columns from this CSV. Use the Expected cost workbook format (product names in row 3).",
+        "Could not read product columns. Use Paste from Excel or upload a CSV file.",
       );
       return;
     }
@@ -489,12 +488,11 @@ export function ImportFinanceCalculatorWorkspace({
     };
   }
 
-  async function handleCsvUpload(file: File) {
-    const text = await file.text();
+  async function handleWorkbookText(text: string, fileName: string) {
     const parsed = parseWorkbookImport(text);
     if (parsed.scenarios.length === 0) {
       alert(
-        "Could not read product columns from this CSV. Use the Expected cost workbook format (product names in row 3).",
+        "Could not read product columns. Use Paste from Excel (Ctrl+A, Ctrl+C in Excel) or upload a CSV export. Each product column becomes a separate line.",
       );
       return;
     }
@@ -505,11 +503,16 @@ export function ImportFinanceCalculatorWorkspace({
     };
 
     setPendingWorkbook({
-      fileName: file.name,
+      fileName,
       scenarios: parsed.scenarios,
       metadata: parsed.metadata,
-      initialDraft: buildWorkbookDraft(parsed.metadata, file.name),
+      initialDraft: buildWorkbookDraft(parsed.metadata, fileName),
     });
+  }
+
+  async function handleCsvUpload(file: File) {
+    const text = await file.text();
+    await handleWorkbookText(text, file.name);
   }
 
   async function handleConfirmWorkbookImport(payload: WorkbookImportConfirmPayload) {
@@ -717,7 +720,11 @@ export function ImportFinanceCalculatorWorkspace({
           line.inputs,
           line.workbookExpected,
         );
-        const ttResult = calculateTradeTransit(calcInputs, constants);
+        const ttResult = tradeTransitDisplayResult(
+          line.inputs,
+          line.workbookExpected,
+          constants,
+        );
         const legacyInputs = tradeTransitToLegacyInputs(calcInputs, ttResult);
         const financeResult = importFinanceResultFromTradeTransit(
           calcInputs,
@@ -959,28 +966,11 @@ export function ImportFinanceCalculatorWorkspace({
             disabled={loading}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-slate-400">Import CSV</span>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleCsvUpload(file);
-              e.target.value = "";
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => csvInputRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-300 hover:border-emerald-500/30 hover:text-emerald-300 transition"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Upload workbook
-          </button>
-        </div>
+        <WorkbookImportActions
+          showLabel
+          onPaste={(text) => handleWorkbookText(text, "Excel paste")}
+          onCsvFile={handleCsvUpload}
+        />
         <div className="flex gap-2">
           <button
             type="button"
@@ -1046,11 +1036,9 @@ export function ImportFinanceCalculatorWorkspace({
           <p className="mt-1 tabular-nums text-slate-500">
             Calculator — landed{" "}
             {formatNumber(
-              calculateTradeTransit(
-                tradeTransitInputsForCalculation(
-                  activeLine.inputs,
-                  activeLine.workbookExpected,
-                ),
+              tradeTransitDisplayResult(
+                activeLine.inputs,
+                activeLine.workbookExpected,
                 constants,
               ).stage3.finalLandedUnitCostEtbPerKg,
               2,

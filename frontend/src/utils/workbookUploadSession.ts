@@ -8,8 +8,13 @@ export type StashedWorkbookUpload = {
 
 export async function stashWorkbookForUpload(file: File): Promise<void> {
   const text = await file.text();
+  stashWorkbookText(file.name, text);
+}
+
+/** Stash raw workbook text (Excel paste or CSV file contents). */
+export function stashWorkbookText(fileName: string, text: string): void {
   const payload: StashedWorkbookUpload = {
-    fileName: file.name,
+    fileName,
     text,
     stashedAt: Date.now(),
   };

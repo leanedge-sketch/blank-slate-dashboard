@@ -19,7 +19,6 @@ import {
   DEFAULT_FINANCE_CONSTANTS,
 } from "../../utils/importFinanceCalc";
 import {
-  calculateTradeTransit,
   createMiscBorderCostLine,
   DEFAULT_TRADE_TRANSIT_INPUTS,
   type MiscBorderCostLine,
@@ -27,7 +26,7 @@ import {
   type TradeTransitResult,
 } from "../../utils/tradeTransitCalc";
 import type { ExpectedCostScenario } from "../../utils/expectedCostCsv";
-import { tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
+import { tradeTransitDisplayResult, tradeTransitInputsForCalculation } from "../../utils/workbookImportAlign";
 
 export { DEFAULT_TRADE_TRANSIT_INPUTS };
 export const DEFAULT_IMPORT_FINANCE_INPUTS = DEFAULT_TRADE_TRANSIT_INPUTS;
@@ -88,14 +87,14 @@ function WorkbookExcelMatchBanner({
   return (
     <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
-        Excel workbook match
+        Excel workbook — values copied from your sheet
       </p>
       <p className="mt-1 text-sm text-slate-200">
         <strong className="text-white">{label}</strong>
         <span className="text-slate-400">
           {" "}
-          — compare this tab to the same product column in your sheet (not the
-          column beside it).
+          — stage totals below match Excel exactly (paste or CSV import). Pick the
+          product tab that matches the same column in your sheet.
         </span>
       </p>
       <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
@@ -1139,8 +1138,8 @@ export function ImportFinanceCalculatorPanel({
   );
 
   const result = useMemo(
-    () => calculateTradeTransit(calcInputs, constants),
-    [calcInputs, constants],
+    () => tradeTransitDisplayResult(calcInputs, workbookExpected, constants),
+    [calcInputs, workbookExpected, constants],
   );
 
   const qty = Math.max(inputs.quantityKg, 0);

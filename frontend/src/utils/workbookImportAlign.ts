@@ -1,6 +1,11 @@
 import type { ExpectedCostScenario } from "./expectedCostCsv";
 import {
+  DEFAULT_FINANCE_CONSTANTS,
+  type FinanceConstants,
+} from "./importFinanceCalc";
+import {
   calculateMarginFromSellingPrice,
+  calculateSellingPriceFromTargetMargin,
   calculateTradeTransit,
   type SellingPriceMode,
   type TradeTransitInputs,
@@ -174,10 +179,103 @@ export function discrepanciesForScenario(
   scenario: ExpectedCostScenario,
   tolerancePct = 0.03,
 ): WorkbookDiscrepancy[] {
-  const inputs = tradeTransitInputsForCalculation(
+  const result = tradeTransitDisplayResult(
     scenario.inputs,
     scenario.expected,
   );
-  const result = calculateTradeTransit(inputs);
   return findWorkbookDiscrepancies(scenario, result, tolerancePct);
+}
+
+/**
+ * When workbook reference totals exist, show those Excel values in the UI
+ * instead of recomputing stage KPIs from edited inputs.
+ */
+export function tradeTransitDisplayResult(
+  inputs: TradeTransitInputs,
+  expected?: ExpectedCostScenario["expected"] | null,
+  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+): TradeTransitResult {
+  const calcInputs = tradeTransitInputsForCalculation(inputs, expected);
+  const result = calculateTradeTransit(calcInputs, constants);
+  if (!expected) return result;
+  return overlayWorkbookExpectedOnResult(result, expected, inputs);
+}
+
+function overlayWorkbookExpectedOnResult(
+  result: TradeTransitResult,
+  expected: ExpectedCostScenario["expected"],
+  inputs: TradeTransitInputs,
+): TradeTransitResult {
+  const qty = Math.max(inputs.quantityKg, 0);
+
+  const stage1 =
+    expected.capitalOutlayEtb > 0
+      ? {
+          ...result.stage1,
+          capitalOutlayEtb: expected.capitalOutlayEtb,
+        }
+      : result.stage1;
+
+  const stage2 =
+    expected.totalCustomsFeeEtb > 0
+      ? {
+          ...result.stage2,
+          totalCustomsPaidEtb: expected.totalCustomsFeeEtb,
+        }
+      : result.stage2;
+
+  const unitCost =
+    expected.unitCostEtbPerKg > 0
+      ? expected.unitCostEtbPerKg
+      : result.stage3.finalLandedUnitCostEtbPerKg;
+
+  const stage3 =
+    expected.totalLandedCostEtb > 0 || expected.unitCostEtbPerKg > 0
+      ? {
+          ...result.stage3,
+          ...(expected.totalLandedCostEtb > 0
+            ? { netLandedCostEtb: expected.totalLandedCostEtb }
+            : {}),
+          ...(expected.unitCostEtbPerKg > 0
+            ? { finalLandedUnitCostEtbPerKg: expected.unitCostEtbPerKg }
+            : {}),
+        }
+      : result.stage3;
+
+  let stage4 = {
+    ...result.stage4,
+    unitCostEtbPerKg: unitCost,
+  };
+
+  if (expected.sellingPriceEtbPerKg > 0) {
+    const manual = calculateMarginFromSellingPrice(
+      unitCost,
+      expected.sellingPriceEtbPerKg,
+      4,
+    );
+    stage4 = {
+      ...stage4,
+      targetSellingPriceEtbPerKg: expected.sellingPriceEtbPerKg,
+      profitPerKgEtb: manual.marginValue,
+      grossMarginPct: expected.targetMarginPct || manual.grossMarginPct,
+      totalExpectedRevenueEtb: expected.sellingPriceEtbPerKg * qty,
+      sellingPriceMode: "manual",
+      targetMarginPct: expected.targetMarginPct || manual.grossMarginPct,
+    };
+  } else if (expected.unitCostEtbPerKg > 0 && expected.targetMarginPct !== 0) {
+    const priced = calculateSellingPriceFromTargetMargin(
+      unitCost,
+      expected.targetMarginPct / 100,
+      4,
+    );
+    stage4 = {
+      ...stage4,
+      targetSellingPriceEtbPerKg: priced.sellingPrice,
+      profitPerKgEtb: priced.marginValue,
+      grossMarginPct: expected.targetMarginPct,
+      totalExpectedRevenueEtb: priced.sellingPrice * qty,
+    };
+  }
+
+  return { stage1, stage2, stage3, stage4 };
 }

@@ -12,6 +12,8 @@ type WorkbookUploadButtonProps = {
   className?: string;
   /** Where to open the costing workspace after file pick (default: new procurement pipeline). */
   navigateTo?: string;
+  /** When set, CSV is handled in-place instead of navigating away. */
+  onCsvFile?: (file: File) => void | Promise<void>;
 };
 
 const variantClass: Record<NonNullable<WorkbookUploadButtonProps["variant"]>, string> = {
@@ -34,6 +36,7 @@ export function WorkbookUploadButton({
   layout = "compact",
   className = "",
   navigateTo = `${TRADE_TRANSIT_ROUTES.newPipeline}?fresh=1`,
+  onCsvFile,
 }: WorkbookUploadButtonProps) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +45,10 @@ export function WorkbookUploadButton({
   async function handleFile(file: File) {
     setLoading(true);
     try {
+      if (onCsvFile) {
+        await onCsvFile(file);
+        return;
+      }
       await stashWorkbookForUpload(file);
       navigate(navigateTo);
     } catch (err: unknown) {
@@ -78,7 +85,7 @@ export function WorkbookUploadButton({
             className={`shrink-0 ${variant === "hero" ? "w-5 h-5 mr-2" : "h-4 w-4"}`}
           />
         )}
-        Upload workbook
+        Upload CSV
       </button>
     </>
   );

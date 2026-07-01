@@ -9,6 +9,7 @@ import {
   inferMarginPctFromWorkbook,
   resolveWorkbookSellingInputs,
   applyWorkbookExpectedAnchors,
+  tradeTransitDisplayResult,
   tradeTransitInputsForCalculation,
 } from "./workbookImportAlign";
 
@@ -18,6 +19,29 @@ const fixtureCsv = readFileSync(
 );
 
 describe("workbookImportAlign", () => {
+  it("keeps Excel stage KPIs when inputs are edited after paste", () => {
+    const scenarios = parseExpectedCostCsv(fixtureCsv);
+    const scenario = scenarios[0]!;
+    const editedInputs = {
+      ...scenario.inputs,
+      supplierBasePriceUsd: 99,
+      quantityKg: 1,
+    };
+    const result = tradeTransitDisplayResult(editedInputs, scenario.expected);
+    expect(result.stage1.capitalOutlayEtb).toBeCloseTo(
+      scenario.expected.capitalOutlayEtb,
+      0,
+    );
+    expect(result.stage2.totalCustomsPaidEtb).toBeCloseTo(
+      scenario.expected.totalCustomsFeeEtb,
+      0,
+    );
+    expect(result.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(
+      scenario.expected.unitCostEtbPerKg,
+      1,
+    );
+  });
+
   it("uses manual sell price from workbook and backtracks margin", () => {
     const resolution = resolveWorkbookSellingInputs(370, 314, 18);
     expect(resolution.sellingPriceMode).toBe("manual");

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { calculateTradeTransit } from "./tradeTransitCalc";
 import {
+  detectWorkbookDelimiter,
   extractAnchoredValue,
   findAnchoredRow,
   parseExpectedCostCsv,
@@ -72,6 +73,28 @@ describe("parseExpectedCostCsv", () => {
     expect(cResult.stage3.finalLandedUnitCostEtbPerKg).toBeCloseTo(
       cellocel!.expected.unitCostEtbPerKg,
       1,
+    );
+  });
+
+  it("parses Excel clipboard paste (tab-separated) the same as CSV", () => {
+    const csv = fixtureCsv;
+    const tsv = csv
+      .split("\n")
+      .map((line) => line.split(",").join("\t"))
+      .join("\n");
+
+    expect(detectWorkbookDelimiter(tsv)).toBe("\t");
+    expect(detectWorkbookDelimiter(csv)).toBe(",");
+
+    const fromCsv = parseExpectedCostCsv(csv);
+    const fromPaste = parseExpectedCostCsv(tsv);
+    expect(fromPaste).toHaveLength(fromCsv.length);
+    expect(fromPaste[0]!.name).toBe(fromCsv[0]!.name);
+    expect(fromPaste[0]!.expected.capitalOutlayEtb).toBe(
+      fromCsv[0]!.expected.capitalOutlayEtb,
+    );
+    expect(fromPaste[0]!.expected.unitCostEtbPerKg).toBe(
+      fromCsv[0]!.expected.unitCostEtbPerKg,
     );
   });
 

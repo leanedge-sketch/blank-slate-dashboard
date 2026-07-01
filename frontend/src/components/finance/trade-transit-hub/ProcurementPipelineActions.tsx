@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Plus } from "lucide-react";
 import { buildNewPipelinePath } from "../../../utils/pipelineEditPaths";
-import { WorkbookUploadButton } from "./WorkbookUploadButton";
+import { WorkbookImportActions } from "./WorkbookImportActions";
 
 type ProcurementPipelineActionsProps = {
   /** hero = hub CTA row; compact = workspace header; launcher = product costing row */
@@ -29,11 +29,11 @@ export function ProcurementPipelineActions({
   const addLabel = layout === "launcher" ? "Add procurement request" : "Add procurement pipeline";
 
   const workbook = (
-    <WorkbookUploadButton
+    <WorkbookImportActions
       variant={layout === "hero" ? "hero" : "secondary"}
       layout={layout === "launcher" ? "launcher" : layout === "hero" ? "hero" : "compact"}
       navigateTo={workbookNavigateTo}
-      className="shrink-0 whitespace-nowrap"
+      className="shrink-0"
     />
   );
 

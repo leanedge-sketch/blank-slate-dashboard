@@ -252,7 +252,23 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
   },
 };
 
-function parseCsvRows(text: string): string[][] {
+/** Detect Excel clipboard (tab-separated) vs saved CSV (comma-separated). */
+export function detectWorkbookDelimiter(text: string): "\t" | "," {
+  const sample = text.slice(0, 4000);
+  const tabCount = (sample.match(/\t/g) ?? []).length;
+  const commaCount = (sample.match(/,/g) ?? []).length;
+  return tabCount > commaCount && tabCount > 0 ? "\t" : ",";
+}
+
+function parseTabDelimitedRows(text: string): string[][] {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized
+    .split("\n")
+    .map((line) => line.split("\t").map((cell) => cell.trim()))
+    .filter((row) => row.some((cell) => cell.length > 0));
+}
+
+function parseCommaDelimitedRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -296,6 +312,17 @@ function parseCsvRows(text: string): string[][] {
   }
 
   return rows;
+}
+
+/** Parse workbook text from CSV export or Excel copy-paste (TSV). */
+export function parseWorkbookRows(text: string): string[][] {
+  return detectWorkbookDelimiter(text) === "\t"
+    ? parseTabDelimitedRows(text)
+    : parseCommaDelimitedRows(text);
+}
+
+function parseCsvRows(text: string): string[][] {
+  return parseWorkbookRows(text);
 }
 
 export function normalizeWorkbookLabel(cell: string | undefined): string {
