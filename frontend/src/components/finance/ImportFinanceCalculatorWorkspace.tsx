@@ -21,7 +21,6 @@ import { catalogProductValue } from "../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
 import { DEFAULT_TRADE_PARAMETERS, validatePipelineRequestFields } from "../../types/tradeParameters";
 import { formatNumber } from "../../utils/importFinanceCalc";
-import { pullLatestPricingForLines } from "../../services/pullLatestTransitPricing";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import { consumeStashedWorkbookUpload } from "../../utils/workbookUploadSession";
@@ -519,33 +518,12 @@ export function ImportFinanceCalculatorWorkspace({
       shared,
     );
 
-    try {
-      const pricingParams = {
-        ...DEFAULT_TRADE_PARAMETERS,
-        clientName: draft.clientName,
-        customerId: draft.customerId,
-        contactPerson: draft.contactPerson,
-        requestDate: draft.requestDate,
-        requestRef: draft.requestRef,
-        exchangeRate:
-          lines[0]?.inputs.capitalParallelRate ??
-          DEFAULT_TRADE_PARAMETERS.exchangeRate,
-      };
-      const withPricing = await pullLatestPricingForLines({
-        lines: synced.lines,
-        parameters: pricingParams,
-      });
-      synced = { ...synced, lines: withPricing };
-    } catch (pricingErr) {
-      console.warn("Could not pull latest PMS pricing for workbook lines:", pricingErr);
-    }
-
     setRequest(synced);
     setActiveLineId(synced.lines[0]?.id ?? "");
     setSelectedScenarioId("");
     setLoadedShipmentId(null);
     setImportNotice(
-      `Loaded ${synced.lines.length} product line${synced.lines.length === 1 ? "" : "s"} from workbook — use the product tabs above. Latest PMS pricing applied where available.`,
+      `Loaded ${synced.lines.length} product line${synced.lines.length === 1 ? "" : "s"} from workbook — Excel costs and sell prices preserved. Review any discrepancy warnings on saved lines.`,
     );
 
     setCsvScenarios(

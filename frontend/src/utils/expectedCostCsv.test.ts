@@ -50,6 +50,10 @@ describe("parseExpectedCostCsv", () => {
       metacel!.expected.unitCostEtbPerKg,
       1,
     );
+    expect(mResult.stage4.targetSellingPriceEtbPerKg).toBeCloseTo(
+      metacel!.expected.sellingPriceEtbPerKg,
+      1,
+    );
 
     const cResult = calculateTradeTransit(cellocel!.inputs);
     expect(cResult.stage2.totalCustomsPaidEtb).toBeCloseTo(
@@ -125,14 +129,18 @@ describe("parseExpectedCostCsv", () => {
     expect(scenarios[0]!.inputs.baseCustomsReferenceUsd).toBe(0.792);
     expect(scenarios[0]!.inputs.capitalParallelRate).toBe(180);
     expect(scenarios[0]!.inputs.customsOfficialRate).toBe(155);
-    expect(scenarios[0]!.inputs.targetMarginPct).toBe(20);
+    expect(scenarios[0]!.inputs.targetMarginPct).toBeCloseTo(15.14, 1);
+    expect(scenarios[0]!.inputs.sellingPriceMode).toBe("manual");
+    expect(scenarios[0]!.inputs.targetSellingPriceEtbPerKg).toBe(370);
     expect(scenarios[1]!.inputs.capitalParallelRate).toBe(190);
-    expect(scenarios[1]!.inputs.targetMarginPct).toBe(20);
+    expect(scenarios[1]!.inputs.sellingPriceMode).toBe("manual");
+    expect(scenarios[1]!.inputs.targetSellingPriceEtbPerKg).toBe(308);
 
     const result = calculateTradeTransit(scenarios[0]!.inputs);
     expect(result.stage1.capitalParallelRate).toBe(180);
     expect(result.stage2.customsOfficialRate).toBe(155);
     expect(result.stage1.capitalParallelRate).not.toBe(result.stage2.customsOfficialRate);
+    expect(result.stage4.targetSellingPriceEtbPerKg).toBe(370);
   });
 
   it("keeps capital parallel and customs official rates on separate anchor rows", () => {

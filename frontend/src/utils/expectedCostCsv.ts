@@ -6,6 +6,7 @@ import {
   type TradeTransitInputs,
 } from "./tradeTransitCalc";
 import { DEFAULT_FINANCE_CONSTANTS } from "./importFinanceCalc";
+import { resolveWorkbookSellingInputs } from "./workbookImportAlign";
 
 export interface ExpectedCostScenario {
   id: string;
@@ -166,8 +167,8 @@ export const WORKBOOK_FIELD_ANCHORS: Record<WorkbookValueField, AnchorRule> = {
     include: ["unit cost/kg", "unit cost /kg", "unit cost per kg"],
   },
   sellingPriceEtbPerKg: {
-    include: ["selling roice", "selling price", "final offered price"],
-    exclude: ["margin"],
+    include: ["selling roice", "selling price"],
+    exclude: ["target gross margin", "gross margin target", "target margin"],
   },
   targetGrossMarginPct: {
     include: ["target gross margin", "target margin", "gross margin target"],
@@ -283,8 +284,10 @@ export function findAnchoredRow(
     if (!label) continue;
     const score = anchorMatchScore(label, rule);
     if (score < 0) continue;
-    if (!best || score > best.score) {
-      best = { row, score };
+    const hasData = row.slice(1).some((cell) => num(cell) !== 0 || cell.trim().length > 0);
+    const adjustedScore = hasData ? score : score - 500;
+    if (!best || adjustedScore > best.score) {
+      best = { row, score: adjustedScore };
     }
   }
 
@@ -322,6 +325,12 @@ function resolveTargetMarginPct(
     if (shared != null && shared > 0) return shared;
   }
 
+  const sellingRow = findAnchoredRow(rows, "sellingPriceEtbPerKg");
+  if (sellingRow) {
+    const fromSellingLabel = parseMarginFromLabel(sellingRow[0] ?? "");
+    if (fromSellingLabel > 0) return fromSellingLabel;
+  }
+
   for (const row of rows) {
     const label = rowLabel(row);
     if (!label.includes("margin") || !label.includes("selling")) continue;
@@ -331,7 +340,7 @@ function resolveTargetMarginPct(
     if (fromSellingCell > 0 && fromSellingCell <= 100) return fromSellingCell;
   }
 
-  return 15;
+  return 0;
 }
 
 function inferSupplierMarginPct(
@@ -497,7 +506,9 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
     if (quantityKg <= 0) continue;
 
     const inlandClearancePerKgEtb =
-      transportAddisTotalEtb > 0 ? transportAddisTotalEtb / quantityKg : 20;
+      transportAddisTotalEtb > 0 && quantityKg > 0
+        ? transportAddisTotalEtb / quantityKg
+        : DEFAULT_TRADE_TRANSIT_INPUTS.inlandClearancePerKgEtb;
 
     const bankChargePctOnCapital =
       amountInBirr > 0 && bankChargesEtb > 0
@@ -509,7 +520,12 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
         ? profitTaxEtb / preProfitLandedBaseEtb
         : DEFAULT_TRADE_TRANSIT_INPUTS.profitTaxPctOnPreLanded;
 
-    const targetMarginPct = resolveTargetMarginPct(rows, col);
+    const explicitMarginPct = resolveTargetMarginPct(rows, col);
+    const selling = resolveWorkbookSellingInputs(
+      sellingPriceEtbPerKg,
+      unitCostEtbPerKg,
+      explicitMarginPct,
+    );
 
     const id = name
       .toLowerCase()
@@ -535,12 +551,16 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
         baseCustomsReferenceUsd,
         inlandClearancePerKgEtb,
         bankChargePctOnCapital,
-        insuranceEtb: insuranceEtb || DEFAULT_TRANSIT_INSURANCE_ETB,
-        betchemClearanceEtb: betchemClearanceEtb || DEFAULT_BETCHEM_CLEARANCE_ETB,
+        insuranceEtb:
+          insuranceEtb > 0 ? insuranceEtb : DEFAULT_TRANSIT_INSURANCE_ETB,
+        betchemClearanceEtb:
+          betchemClearanceEtb > 0
+            ? betchemClearanceEtb
+            : DEFAULT_BETCHEM_CLEARANCE_ETB,
         profitTaxPctOnPreLanded,
-        targetMarginPct,
-        sellingPriceMode: "margin",
-        targetSellingPriceEtbPerKg: 0,
+        targetMarginPct: selling.targetMarginPct,
+        sellingPriceMode: selling.sellingPriceMode,
+        targetSellingPriceEtbPerKg: selling.targetSellingPriceEtbPerKg,
         miscBorderCosts: [],
         fixedCapitalOutlayEtb: amountInBirr > 0 ? amountInBirr : null,
       },
@@ -549,7 +569,7 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
         totalLandedCostEtb,
         unitCostEtbPerKg,
         sellingPriceEtbPerKg,
-        targetMarginPct,
+        targetMarginPct: selling.targetMarginPct,
       },
     });
   }

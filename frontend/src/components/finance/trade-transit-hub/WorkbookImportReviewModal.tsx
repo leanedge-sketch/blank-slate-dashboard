@@ -44,6 +44,11 @@ import {
   bestCatalogMatch,
   suggestCatalogProducts,
 } from "../../../utils/workbookProductMatch";
+import {
+  discrepanciesForScenario,
+  type WorkbookDiscrepancy,
+} from "../../../utils/workbookImportAlign";
+import { calculateTradeTransit } from "../../../utils/tradeTransitCalc";
 
 const inputClass =
   "w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40";
@@ -95,12 +100,15 @@ function linePatchFromChemical(
   chemical: ChemicalFullData,
 ): Partial<WorkbookImportLineDraft> {
   const productName = chemicalSearchPrimaryLabel(chemical);
+  const workbookSupplierUsd = line.inputs.supplierBasePriceUsd;
   const costUsd =
-    typeof chemical.current_cost === "number" && chemical.current_cost > 0
-      ? chemical.current_cost
-      : typeof chemical.price === "number" && chemical.price > 0
-        ? chemical.price
-        : null;
+    workbookSupplierUsd > 0
+      ? null
+      : typeof chemical.current_cost === "number" && chemical.current_cost > 0
+        ? chemical.current_cost
+        : typeof chemical.price === "number" && chemical.price > 0
+          ? chemical.price
+          : null;
 
   return {
     chemicalTypeId: catalogProductValue(chemical),
@@ -253,6 +261,30 @@ export function WorkbookImportReviewModal({
       })
       .slice(0, 30);
   }, [chemicals, pmsSearch]);
+
+  const lineDiscrepancies = useMemo(() => {
+    const map = new Map<string, WorkbookDiscrepancy[]>();
+    for (const line of lineDrafts) {
+      const scenario: ExpectedCostScenario = {
+        id: line.id,
+        name: line.workbookName,
+        inputs: line.inputs,
+        expected: line.expected,
+      };
+      map.set(line.id, discrepanciesForScenario(scenario));
+    }
+    return map;
+  }, [lineDrafts]);
+
+  const activeDiscrepancies =
+    activeLine && activeTab !== "request"
+      ? (lineDiscrepancies.get(activeLine.id) ?? [])
+      : [];
+
+  const anyDiscrepancies = useMemo(
+    () => [...lineDiscrepancies.values()].some((rows) => rows.length > 0),
+    [lineDiscrepancies],
+  );
 
   const linkedChemical = useMemo(() => {
     if (!activeLine?.chemicalTypeId) return null;
@@ -441,6 +473,17 @@ export function WorkbookImportReviewModal({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 space-y-4">
+          {anyDiscrepancies && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                Some workbook totals differ from the in-app waterfall by more than
+                3%. Selling prices and costs from the Excel file are kept as-is;
+                review discrepancies per product tab.
+              </span>
+            </p>
+          )}
+
           {(missingFromCsv.clientName ||
             missingFromCsv.contactPerson ||
             missingFromCsv.requestDate ||
@@ -830,12 +873,55 @@ export function WorkbookImportReviewModal({
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-500">Sell ref (workbook)</p>
+                  <p className="text-slate-500">Sell price (workbook)</p>
                   <p className="mt-1 font-semibold text-slate-200 tabular-nums">
                     {formatNumber(activeLine.expected.sellingPriceEtbPerKg, 2)} ETB/kg
                   </p>
+                  {activeLine.inputs.sellingPriceMode === "manual" ? (
+                    <p className="mt-0.5 text-[10px] text-emerald-400">
+                      Using Excel sell price
+                      {activeLine.inputs.targetMarginPct !== 0
+                        ? ` · implied margin ${formatNumber(activeLine.inputs.targetMarginPct, 1)}%`
+                        : ""}
+                    </p>
+                  ) : null}
                 </div>
               </div>
+
+              {activeDiscrepancies.length > 0 ? (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs space-y-2">
+                  <p className="font-semibold text-amber-200">
+                    Waterfall vs workbook (advisory)
+                  </p>
+                  <ul className="space-y-1.5 text-amber-100/90">
+                    {activeDiscrepancies.map((row) => (
+                      <li key={row.label}>
+                        <span className="text-amber-200">{row.label}:</span>{" "}
+                        workbook {formatNumber(row.workbookValue, 2)} vs calculated{" "}
+                        {formatNumber(row.calculatedValue, 2)} (
+                        {row.delta >= 0 ? "+" : ""}
+                        {formatNumber(row.delta, 2)}, {formatNumber(row.deltaPct, 1)}
+                        %)
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-slate-500">
+                    Calculated waterfall: unit cost{" "}
+                    {formatNumber(
+                      calculateTradeTransit(activeLine.inputs).stage3
+                        .finalLandedUnitCostEtbPerKg,
+                      2,
+                    )}{" "}
+                    ETB/kg · sell{" "}
+                    {formatNumber(
+                      calculateTradeTransit(activeLine.inputs).stage4
+                        .targetSellingPriceEtbPerKg,
+                      2,
+                    )}{" "}
+                    ETB/kg (from workbook when set).
+                  </p>
+                </div>
+              ) : null}
             </section>
           ) : null}
 
