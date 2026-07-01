@@ -474,17 +474,9 @@ function PipelineStack({
         title="Market Strategy"
         accent="purple"
         icon={<TrendingUp className="h-4 w-4" />}
-        kpiLabel={
-          s4.sellingPriceMode === "margin"
-            ? `Selling @ ${s4.targetMarginPct}% margin`
-            : "Gross margin"
-        }
-        kpiValue={
-          s4.sellingPriceMode === "margin"
-            ? `${formatNumber(s4.targetSellingPriceEtbPerKg, 2)} ETB/kg`
-            : `${formatNumber(s4.grossMarginPct, 1)}%`
-        }
-        kpiSub={`${positive ? "+" : ""}${formatNumber(s4.profitPerKgEtb, 2)} ETB/kg profit`}
+        kpiLabel="Revenue / kg"
+        kpiValue={`${formatNumber(s4.targetSellingPriceEtbPerKg, 2)} ETB/kg`}
+        kpiSub={`${formatEtb(s4.totalExpectedRevenueEtb, 0)} total${qty > 0 ? ` · ${qty.toLocaleString()} kg` : ""}`}
         open={openStage === 4}
         active={activeStage === 4}
         onSelect={() => selectStage(4)}
