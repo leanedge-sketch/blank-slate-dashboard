@@ -24,6 +24,7 @@ import { formatNumber } from "../../utils/importFinanceCalc";
 import { pullLatestPricingForLines } from "../../services/pullLatestTransitPricing";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
+import { consumeStashedWorkbookUpload } from "../../utils/workbookUploadSession";
 import {
   calculateTradeTransit,
   customsRatesFromConstants,
@@ -175,6 +176,7 @@ export function ImportFinanceCalculatorWorkspace({
   } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const loadedEditPipelineKey = useRef<string | null>(null);
+  const stashConsumed = useRef(false);
 
   const scenarioOptions = [
     ...EXPECTED_COST_2026_SCENARIOS,
@@ -205,6 +207,34 @@ export function ImportFinanceCalculatorWorkspace({
       })),
     }));
   }, [constants]);
+
+  useEffect(() => {
+    if (stashConsumed.current) return;
+    const stashed = consumeStashedWorkbookUpload();
+    if (!stashed) return;
+    stashConsumed.current = true;
+
+    const parsed = parseWorkbookImport(stashed.text);
+    if (parsed.scenarios.length === 0) {
+      alert(
+        "Could not read product columns from this CSV. Use the Expected cost workbook format (product names in row 3).",
+      );
+      return;
+    }
+
+    preWorkbookSnapshot.current = {
+      request: structuredClone(request),
+      csvScenarios: [...csvScenarios],
+    };
+    setPendingWorkbook({
+      fileName: stashed.fileName,
+      scenarios: parsed.scenarios,
+      metadata: parsed.metadata,
+      initialDraft: buildWorkbookDraft(parsed.metadata, stashed.fileName),
+    });
+    // Consume hub / header upload once when this workspace mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!activeLine && request.lines[0]) {
@@ -765,12 +795,13 @@ export function ImportFinanceCalculatorWorkspace({
   const showSummary =
     activeSection === "all" || activeSection === "summary";
 
-  if (!activeLine && !showSummary) {
+  const procurementLauncherOnly =
+    showProcurementLineAction && !showCustomerFields && !historyOnly;
+
+  if (!activeLine && !showSummary && !procurementLauncherOnly) {
     return null;
   }
 
-  const procurementLauncherOnly =
-    showProcurementLineAction && !showCustomerFields && !historyOnly;
   const showWorkspace = showProducts && !procurementLauncherOnly;
   const showTooling = showWorkspace && !historyOnly;
   const showCalculator = showWorkspace && !historyOnly;
@@ -798,7 +829,7 @@ export function ImportFinanceCalculatorWorkspace({
         </div>
       )}
 
-      {pendingWorkbook && showTooling ? (
+      {pendingWorkbook ? (
         <WorkbookImportReviewModal
           fileName={pendingWorkbook.fileName}
           scenarios={pendingWorkbook.scenarios}

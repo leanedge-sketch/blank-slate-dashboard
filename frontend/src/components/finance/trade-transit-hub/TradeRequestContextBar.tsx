@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Plus, UserRound } from "lucide-react";
+import { Building2, UserRound } from "lucide-react";
 import { fetchCustomers, type Customer } from "../../../services/api";
 import {
   ensurePipelineRequestIds,
@@ -8,7 +8,7 @@ import {
 } from "../../../types/tradeParameters";
 import type { TradeParameters } from "../../../types/tradeParameters";
 import type { TradeTransitRequest } from "../../../utils/tradeTransitRequest";
-import { buildNewPipelinePath } from "../../../utils/pipelineEditPaths";
+import { ProcurementPipelineActions } from "./ProcurementPipelineActions";
 
 const inputClass =
   "w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40";
@@ -128,14 +128,8 @@ export function TradeRequestContextBar({
 
   if (!showCustomerFields && showProcurementLineAction && !readOnly) {
     return (
-      <section className="flex justify-end">
-        <Link
-          to={buildNewPipelinePath()}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg hover:shadow-cyan-500/20 transition"
-        >
-          <Plus className="h-4 w-4" />
-          Add procurement request
-        </Link>
+      <section className="flex flex-wrap justify-end">
+        <ProcurementPipelineActions layout="launcher" />
       </section>
     );
   }

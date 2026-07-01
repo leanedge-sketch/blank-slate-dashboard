@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Container, History, Plus } from "lucide-react";
+import { Container, History } from "lucide-react";
+import { ProcurementPipelineActions } from "./ProcurementPipelineActions";
 
 type TradeTransitHubHeroProps = {
   newRequestHref: string;
@@ -36,15 +37,8 @@ export function TradeTransitHubHero({
             transit summaries—all in one streamlined workspace.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 pt-2">
-            <Link
-              to={newRequestHref}
-              className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/30 hover:-translate-y-0.5 active:translate-y-0 group"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Add pipeline
-              <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-            </Link>
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-4 pt-2">
+            <ProcurementPipelineActions layout="hero" workbookNavigateTo={newRequestHref} />
             <Link
               to={historyHref}
               className="inline-flex items-center justify-center px-8 py-4 rounded-xl border-2 border-slate-700 text-white font-bold text-base sm:text-lg transition-all duration-300 hover:border-slate-500 hover:bg-slate-800/40 backdrop-blur-sm group"

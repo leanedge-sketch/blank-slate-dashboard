@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { TradeParametersForm } from "../../components/finance/trade-transit-hub/TradeParametersForm";
+import { ProcurementPipelineActions } from "../../components/finance/trade-transit-hub/ProcurementPipelineActions";
 import { TradeTransitWorkspaceLayout } from "../../components/finance/trade-transit-hub/TradeTransitWorkspaceLayout";
 import {
   TRADE_TRANSIT_ROUTES,
@@ -35,6 +36,7 @@ export function TradeParametersWorkspacePage() {
       title="Trade parameters workspace"
       subtitle="Capture client identity, commercial terms, forex, and routing before product costing and transit summary."
       icon={<Sparkles className="h-5 w-5 text-cyan-400" />}
+      actions={<ProcurementPipelineActions />}
     >
       <TradeParametersForm
         parameters={parameters}
