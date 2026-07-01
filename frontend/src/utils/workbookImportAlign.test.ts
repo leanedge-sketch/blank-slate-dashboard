@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseExpectedCostCsv } from "./expectedCostCsv";
 import { calculateTradeTransit } from "./tradeTransitCalc";
 import {
+  discrepanciesForScenario,
   inferMarginPctFromWorkbook,
   resolveWorkbookSellingInputs,
 } from "./workbookImportAlign";
+
+const fixtureCsv = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../data/expected-cost-2026.csv"),
+  "utf8",
+);
 
 describe("workbookImportAlign", () => {
   it("uses manual sell price from workbook and backtracks margin", () => {
@@ -56,5 +65,14 @@ describe("workbookImportAlign", () => {
     const result = calculateTradeTransit(scenario.inputs);
     expect(result.stage4.targetSellingPriceEtbPerKg).toBe(250);
     expect(result.stage4.grossMarginPct).toBeLessThan(0);
+    expect(discrepanciesForScenario(scenario)).toHaveLength(0);
+  });
+
+  it("anchors 2026 fixture totals from Excel with no waterfall drift", () => {
+    const scenarios = parseExpectedCostCsv(fixtureCsv);
+    expect(scenarios.length).toBeGreaterThan(0);
+    for (const scenario of scenarios) {
+      expect(discrepanciesForScenario(scenario)).toHaveLength(0);
+    }
   });
 });

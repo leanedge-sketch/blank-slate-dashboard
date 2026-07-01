@@ -3,8 +3,24 @@ import {
   calculateMarginFromSellingPrice,
   calculateTradeTransit,
   type SellingPriceMode,
+  type TradeTransitInputs,
   type TradeTransitResult,
 } from "./tradeTransitCalc";
+
+export function applyWorkbookExpectedAnchors(
+  inputs: TradeTransitInputs,
+  expected: ExpectedCostScenario["expected"],
+): TradeTransitInputs {
+  return {
+    ...inputs,
+    workbookTotalCustomsFeeEtb:
+      expected.totalCustomsFeeEtb > 0 ? expected.totalCustomsFeeEtb : null,
+    workbookNetLandedCostEtb:
+      expected.totalLandedCostEtb > 0 ? expected.totalLandedCostEtb : null,
+    workbookUnitCostEtbPerKg:
+      expected.unitCostEtbPerKg > 0 ? expected.unitCostEtbPerKg : null,
+  };
+}
 
 export type WorkbookSellingResolution = {
   sellingPriceMode: SellingPriceMode;

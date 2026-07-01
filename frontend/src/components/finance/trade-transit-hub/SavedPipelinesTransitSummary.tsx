@@ -6,13 +6,14 @@ import {
   aggregateTransitFinancialTotals,
   transitItemsFromShipments,
 } from "../../../utils/transitRequestItem";
-import { PIPELINE_SAVED_EVENT } from "../../../lib/importFinanceEvents";
+import { PIPELINE_DELETED_EVENT, PIPELINE_SAVED_EVENT } from "../../../lib/importFinanceEvents";
 import {
   type ImportFinancePipelineDomain,
   pipelineDomainLabel,
   PROCUREMENT_PIPELINE_DOMAIN,
 } from "../../../lib/pipelineDomains";
 import { TransitSummaryTable } from "./summary/TransitSummaryTable";
+import { DeletePipelineRequestButton } from "./DeletePipelineRequestButton";
 import {
   TransitSummarySearchSection,
   pipelineGroupMatchesSearch,
@@ -59,7 +60,11 @@ export function SavedPipelinesTransitSummary({
       setPage(1);
     };
     window.addEventListener(PIPELINE_SAVED_EVENT, handler);
-    return () => window.removeEventListener(PIPELINE_SAVED_EVENT, handler);
+    window.addEventListener(PIPELINE_DELETED_EVENT, handler);
+    return () => {
+      window.removeEventListener(PIPELINE_SAVED_EVENT, handler);
+      window.removeEventListener(PIPELINE_DELETED_EVENT, handler);
+    };
   }, [onReload]);
 
   const customerBuckets = useMemo(() => {
@@ -172,6 +177,14 @@ export function SavedPipelinesTransitSummary({
                   totals={totals}
                   customsPaidEtb={totals.customsPaidEtb}
                   fullPanel
+                  headerActions={
+                    <DeletePipelineRequestButton
+                      group={group}
+                      size="md"
+                      label="Delete entire request"
+                      onDeleted={() => onReload?.()}
+                    />
+                  }
                 />
               </div>
             );

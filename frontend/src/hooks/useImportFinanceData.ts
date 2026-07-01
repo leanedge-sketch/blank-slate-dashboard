@@ -12,6 +12,7 @@ import {
   DEFAULT_FINANCE_CONSTANTS,
   type FinanceConstants,
   type ImportFinanceInputs,
+  type ImportFinanceResult,
 } from "../utils/importFinanceCalc";
 import {
   type ImportFinancePipelineDomain,
@@ -82,6 +83,7 @@ export function useImportFinanceData(
         targetCurrency?: string | null;
         salesPipelineId?: string | null;
       },
+      resultOverride?: ImportFinanceResult,
     ) => {
       setSaving(true);
       setError(null);
@@ -94,6 +96,7 @@ export function useImportFinanceData(
             ...clientContext,
             pipelineDomain,
           },
+          resultOverride,
         );
         setShipments((prev) => [row, ...prev].slice(0, RECENT_SHIPMENTS_LIMIT));
         return row;

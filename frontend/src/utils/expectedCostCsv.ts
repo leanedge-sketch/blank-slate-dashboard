@@ -563,6 +563,12 @@ export function parseExpectedCostCsv(text: string): ExpectedCostScenario[] {
         targetSellingPriceEtbPerKg: selling.targetSellingPriceEtbPerKg,
         miscBorderCosts: [],
         fixedCapitalOutlayEtb: amountInBirr > 0 ? amountInBirr : null,
+        workbookTotalCustomsFeeEtb:
+          totalCustomsFeeEtb > 0 ? totalCustomsFeeEtb : null,
+        workbookNetLandedCostEtb:
+          totalLandedCostEtb > 0 ? totalLandedCostEtb : null,
+        workbookUnitCostEtbPerKg:
+          unitCostEtbPerKg > 0 ? unitCostEtbPerKg : null,
       },
       expected: {
         totalCustomsFeeEtb,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Building2, Hash, Sparkles, UserRound } from "lucide-react";
 import type { TransitRequestFinancialTotals, TransitRequestItem } from "../../../../utils/transitRequestItem";
 import { TransitSummaryFooter } from "./TransitSummaryFooter";
@@ -16,6 +16,7 @@ type TransitSummaryTableProps = {
   fullPanel?: boolean;
   onEditLine?: (lineId: string) => void;
   onRemoveLine?: (lineId: string) => void;
+  headerActions?: ReactNode;
 };
 
 const COLUMNS = [
@@ -41,6 +42,7 @@ export function TransitSummaryTable({
   fullPanel = false,
   onEditLine,
   onRemoveLine,
+  headerActions,
 }: TransitSummaryTableProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const label = clientName.trim() || "Unnamed client";
@@ -62,11 +64,16 @@ export function TransitSummaryTable({
         fullPanel ? "p-5 sm:p-6 min-h-[320px]" : "px-4 py-4 sm:px-5 sm:py-5"
       } ${className}`}
     >
-      <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="h-4 w-4 text-cyan-400 shrink-0" />
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/90">
-          Transit summary
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-cyan-400 shrink-0" />
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500/90">
+            Transit summary
+          </p>
+        </div>
+        {headerActions ? (
+          <div className="flex flex-wrap items-center gap-2">{headerActions}</div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">

@@ -5,6 +5,7 @@ import type { ImportFinanceProduct, ImportShipmentRow } from "../../../services/
 import { formatEtb, formatNumber } from "../../../utils/importFinanceCalc";
 import { groupPipelineSnapshots } from "../../../utils/pipelineSnapshotGroups";
 import { buildEditProductCostingPath } from "../../../utils/pipelineEditPaths";
+import { DeletePipelineRequestButton } from "./DeletePipelineRequestButton";
 import {
   ListPager,
   paginateSlice,
@@ -26,6 +27,7 @@ type PipelineSnapshotsTableProps = {
   loadedShipmentId: string | null;
   onLoadGroup: (rows: ImportShipmentRow[]) => void;
   onLoadRow: (row: ImportShipmentRow) => void;
+  onPipelineDeleted?: (deletedIds: string[]) => void;
   /** Saved request groups per page (newest first). */
   groupsPerPage?: number;
 };
@@ -36,6 +38,7 @@ export function PipelineSnapshotsTable({
   loadedShipmentId,
   onLoadGroup,
   onLoadRow,
+  onPipelineDeleted,
   groupsPerPage = GROUPS_PER_PAGE,
 }: PipelineSnapshotsTableProps) {
   const [page, setPage] = useState(1);
@@ -181,15 +184,23 @@ export function PipelineSnapshotsTable({
                   </td>
                   <td className="py-2.5 text-slate-500 text-xs">{row.status}</td>
                   <td className="py-2.5 text-right">
-                    {index === 0 && editHref ? (
-                      <Link
-                        to={editHref}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
-                      >
-                        <PenLine className="h-3 w-3" />
-                        Edit costing
-                      </Link>
+                    {index === 0 ? (
+                      <div className="flex flex-col items-end gap-1.5">
+                        {editHref ? (
+                          <Link
+                            to={editHref}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
+                          >
+                            <PenLine className="h-3 w-3" />
+                            Edit costing
+                          </Link>
+                        ) : null}
+                        <DeletePipelineRequestButton
+                          group={group}
+                          onDeleted={onPipelineDeleted}
+                        />
+                      </div>
                     ) : null}
                   </td>
                 </tr>
@@ -235,15 +246,21 @@ export function PipelineSnapshotsTable({
               </td>
               <td className="py-2.5" />
               <td className="py-2.5 text-right">
-                {editHref ? (
-                  <Link
-                    to={editHref}
-                    className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
-                  >
-                    <PenLine className="h-3 w-3" />
-                    Edit request
-                  </Link>
-                ) : null}
+                <div className="flex flex-col items-end gap-1.5">
+                  {editHref ? (
+                    <Link
+                      to={editHref}
+                      className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold text-teal-200 hover:bg-teal-500/20 transition"
+                    >
+                      <PenLine className="h-3 w-3" />
+                      Edit request
+                    </Link>
+                  ) : null}
+                  <DeletePipelineRequestButton
+                    group={group}
+                    onDeleted={onPipelineDeleted}
+                  />
+                </div>
               </td>
             </tr>
           </Fragment>

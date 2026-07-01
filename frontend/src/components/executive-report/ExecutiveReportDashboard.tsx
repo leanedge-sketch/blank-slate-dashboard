@@ -35,7 +35,7 @@ import {
 } from "./executiveReportFxData";
 import { buildCognitiveSummary } from "./executiveReportSummaries";
 import { exportExecutiveReportPdf } from "./executiveReportPdf";
-import { PIPELINE_SAVED_EVENT } from "../../lib/importFinanceEvents";
+import { PIPELINE_DELETED_EVENT, PIPELINE_SAVED_EVENT } from "../../lib/importFinanceEvents";
 import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 import {
   CostStructureChart,
@@ -118,11 +118,15 @@ export function ExecutiveReportDashboard() {
   }, [load]);
 
   useEffect(() => {
-    const onPipelineSaved = () => {
+    const onPipelineChanged = () => {
       void load();
     };
-    window.addEventListener(PIPELINE_SAVED_EVENT, onPipelineSaved);
-    return () => window.removeEventListener(PIPELINE_SAVED_EVENT, onPipelineSaved);
+    window.addEventListener(PIPELINE_SAVED_EVENT, onPipelineChanged);
+    window.addEventListener(PIPELINE_DELETED_EVENT, onPipelineChanged);
+    return () => {
+      window.removeEventListener(PIPELINE_SAVED_EVENT, onPipelineChanged);
+      window.removeEventListener(PIPELINE_DELETED_EVENT, onPipelineChanged);
+    };
   }, [load]);
 
   const allEnriched = useMemo(

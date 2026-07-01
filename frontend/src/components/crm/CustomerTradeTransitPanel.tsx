@@ -7,6 +7,7 @@ import {
   type ImportShipmentRow,
 } from "../../services/importFinance";
 import { TRADE_TRANSIT_ROUTES } from "../../contexts/TradeTransitRequestContext";
+import { PIPELINE_DELETED_EVENT } from "../../lib/importFinanceEvents";
 
 function formatKg(value: number): string {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`;
@@ -24,8 +25,9 @@ export function CustomerTradeTransitPanel({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    (async () => {
+
+    async function loadShipments() {
+      setLoading(true);
       try {
         let rows = await fetchImportShipmentsForCustomer(customerId, 10);
         if (rows.length === 0 && customerName.trim()) {
@@ -37,9 +39,18 @@ export function CustomerTradeTransitPanel({
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    void loadShipments();
+
+    const onDeleted = () => {
+      void loadShipments();
+    };
+    window.addEventListener(PIPELINE_DELETED_EVENT, onDeleted);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(PIPELINE_DELETED_EVENT, onDeleted);
     };
   }, [customerId, customerName]);
 

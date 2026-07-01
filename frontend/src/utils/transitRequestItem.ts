@@ -3,6 +3,7 @@ import type { FinanceConstants } from "./importFinanceCalc";
 import {
   calculateTradeTransit,
   legacyShipmentToTradeTransit,
+  shipmentRowToTradeTransitResult,
 } from "./tradeTransitCalc";
 import type { TradeTransitInputs, TradeTransitResult } from "./tradeTransitCalc";
 import { roundFinancial } from "./tradeTransitCalc";
@@ -139,7 +140,7 @@ export function transitItemsFromShipments(
 
   return rows.map((row) => {
     const inputs = legacyShipmentToTradeTransit(row);
-    const result = calculateTradeTransit(inputs, constants);
+    const result = shipmentRowToTradeTransitResult(row, inputs, constants);
     const productName =
       productById.get(row.product_id) ??
       row.chemical_type_id?.slice(0, 8) ??

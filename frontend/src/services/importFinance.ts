@@ -314,12 +314,13 @@ export async function saveImportShipmentDraft(
     pipelineDomain?: ImportFinancePipelineDomain;
     salesPipelineId?: string | null;
   },
+  resultOverride?: ImportFinanceResult,
 ): Promise<ImportShipmentRow> {
   const payload = buildShipmentPipelinePayload(
     productId,
     inputs,
     constants,
-    calculateImportFinance(inputs, constants),
+    resultOverride ?? calculateImportFinance(inputs, constants),
     clientContext,
   );
 
@@ -498,4 +499,20 @@ export async function fetchImportShipmentsByClientName(
 
   if (error) throw error;
   return (data ?? []) as ImportShipmentRow[];
+}
+
+/** Permanently delete saved pipeline shipment rows (whole request / all product lines). */
+export async function deleteImportPipelineShipments(
+  rows: ImportShipmentRow[],
+): Promise<number> {
+  const ids = [...new Set(rows.map((row) => row.id).filter(Boolean))];
+  if (ids.length === 0) return 0;
+
+  const { error } = await importFinanceDb()
+    .from(TABLES.shipments)
+    .delete()
+    .in("id", ids);
+
+  if (error) throw error;
+  return ids.length;
 }

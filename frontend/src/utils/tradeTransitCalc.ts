@@ -4,6 +4,7 @@ import {
   type FinanceConstants,
 } from "./importFinanceCalc";
 import { calculateCustomsDutyAssessment } from "./customsDutyCalc";
+import type { ImportShipmentRow } from "../services/importFinance";
 
 export type { CustomsDutyAssessmentInput, CustomsDutyAssessmentResult } from "./customsDutyCalc";
 export { calculateCustomsDutyAssessment };
@@ -67,6 +68,10 @@ export interface TradeTransitInputs {
    * Bank charges still use this ETB base when combined with bankChargePctOnCapital.
    */
   fixedCapitalOutlayEtb?: number | null;
+  /** Excel totals — when set, calculator uses workbook values instead of recomputed waterfall. */
+  workbookTotalCustomsFeeEtb?: number | null;
+  workbookNetLandedCostEtb?: number | null;
+  workbookUnitCostEtbPerKg?: number | null;
 }
 
 export function customsRatesFromConstants(
@@ -272,7 +277,16 @@ export function sanitizeTradeTransitInputs(
     ),
     fixedCapitalOutlayEtb:
       fixedCapital != null && fixedCapital > 0 ? fixedCapital : null,
+    workbookTotalCustomsFeeEtb: optionalPositive(inputs.workbookTotalCustomsFeeEtb),
+    workbookNetLandedCostEtb: optionalPositive(inputs.workbookNetLandedCostEtb),
+    workbookUnitCostEtbPerKg: optionalPositive(inputs.workbookUnitCostEtbPerKg),
   };
+}
+
+function optionalPositive(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = finiteNumber(value, 0);
+  return parsed > 0 ? parsed : null;
 }
 
 /**
@@ -474,9 +488,14 @@ export function calculateTradeTransit(
   const inlandTransportEtb = qty * safe.inlandClearancePerKgEtb;
   const refundableWhtVatEtb = customs.whtEtb + customs.vatEtb;
 
+  let totalCustomsPaidEtb = customs.totalCustomsFeeEtb;
+  if (safe.workbookTotalCustomsFeeEtb != null) {
+    totalCustomsPaidEtb = roundFinancial(safe.workbookTotalCustomsFeeEtb, 2);
+  }
+
   const landed = calculateLandedCost({
     capitalOutlayEtb,
-    totalCustomsFeeEtb: customs.totalCustomsFeeEtb,
+    totalCustomsFeeEtb: totalCustomsPaidEtb,
     refundableWhtVatEtb,
     quantityKg: qty,
     inlandClearancePerKgEtb: safe.inlandClearancePerKgEtb,
@@ -486,7 +505,22 @@ export function calculateTradeTransit(
     profitTaxPctOnPreLanded: safe.profitTaxPctOnPreLanded,
   });
 
-  const unitCostEtbPerKg = landed.finalLandedUnitCostEtbPerKg;
+  let netLandedCostEtb = landed.netLandedCostEtb;
+  let finalLandedUnitCostEtbPerKg = landed.finalLandedUnitCostEtbPerKg;
+
+  if (safe.workbookNetLandedCostEtb != null) {
+    netLandedCostEtb = roundFinancial(safe.workbookNetLandedCostEtb, 2);
+  }
+  if (safe.workbookUnitCostEtbPerKg != null) {
+    finalLandedUnitCostEtbPerKg = roundFinancial(
+      safe.workbookUnitCostEtbPerKg,
+      4,
+    );
+  } else if (safe.workbookNetLandedCostEtb != null && qty > 0) {
+    finalLandedUnitCostEtbPerKg = roundFinancial(netLandedCostEtb / qty, 4);
+  }
+
+  const unitCostEtbPerKg = finalLandedUnitCostEtbPerKg;
 
   const marginDecimal = safe.targetMarginPct / 100;
   let targetPrice: number;
@@ -539,7 +573,7 @@ export function calculateTradeTransit(
       vatEtb: customs.vatEtb,
       surtaxEtb: customs.surtaxEtb,
       exciseEtb: customs.exciseEtb,
-      totalCustomsPaidEtb: customs.totalCustomsFeeEtb,
+      totalCustomsPaidEtb: totalCustomsPaidEtb,
     },
     stage3: {
       bankChargesEtb: landed.bankChargesEtb,
@@ -551,8 +585,8 @@ export function calculateTradeTransit(
       refundableWhtVatEtb: landed.refundableWhtVatEtb,
       preProfitLandedBaseEtb: landed.preProfitLandedBaseEtb,
       profitTaxEtb: landed.profitTaxEtb,
-      netLandedCostEtb: landed.netLandedCostEtb,
-      finalLandedUnitCostEtbPerKg: landed.finalLandedUnitCostEtbPerKg,
+      netLandedCostEtb,
+      finalLandedUnitCostEtbPerKg,
     },
     stage4: {
       unitCostEtbPerKg,
@@ -618,5 +652,120 @@ export function tradeTransitToLegacyInputs(
     transportToBorderUsdPerKg: inputs.transportToMoyaleUsdPerKg,
     baseCustomsReferenceUsd: inputs.baseCustomsReferenceUsd,
     targetSellingPriceEtbPerKg: computed.stage4.targetSellingPriceEtbPerKg,
+  };
+}
+
+/** Map full trade-transit waterfall output to legacy import-finance result for DB save. */
+export function importFinanceResultFromTradeTransit(
+  inputs: TradeTransitInputs,
+  result: TradeTransitResult,
+): import("./importFinanceCalc").ImportFinanceResult {
+  const qty = Math.max(inputs.quantityKg, 0);
+  return {
+    capital: {
+      materialCostUsdPerKg: result.stage1.materialUsdPerKg,
+      borderValueUsdPerKg: result.stage1.borderUsdPerKg,
+      totalCapitalUsd: result.stage1.totalBorderUsd,
+      totalCapitalEtb: result.stage1.capitalOutlayEtb,
+    },
+    customs: {
+      fobValueEtb: result.stage2.fobValueEtb,
+      cifAssessedUsdPerKg: result.stage2.cifUsdPerKg,
+      totalCifAssessedUsd: result.stage2.totalCifUsd,
+      cifBaseEtb: result.stage2.cifBaseEtb,
+      vatBaseEtb: result.stage2.vatBaseEtb,
+      dutyEtb: result.stage2.dutyEtb,
+      scanFeeEtb: result.stage2.scanFeeEtb,
+      socialFeeEtb: result.stage2.socialFeeEtb,
+      whtEtb: result.stage2.whtEtb,
+      vatEtb: result.stage2.vatEtb,
+      totalCustomsPaidEtb: result.stage2.totalCustomsPaidEtb,
+    },
+    bottomLine: {
+      totalLocalClearanceEtb: result.stage3.transportAddisEtb,
+      grossInvestmentEtb: result.stage3.grossInvestmentEtb,
+      netLandedCostEtb: result.stage3.netLandedCostEtb,
+      finalUnitCostEtbPerKg: result.stage3.finalLandedUnitCostEtbPerKg,
+    },
+    sales: {
+      targetSellingPriceEtbPerKg: result.stage4.targetSellingPriceEtbPerKg,
+      profitPerKgEtb: result.stage4.profitPerKgEtb,
+      grossMarginPct: result.stage4.grossMarginPct,
+      totalExpectedRevenueEtb: result.stage4.totalExpectedRevenueEtb,
+    },
+  };
+}
+
+/** Prefer saved shipment snapshot totals over a fresh waterfall recompute. */
+export function shipmentRowToTradeTransitResult(
+  row: ImportShipmentRow,
+  inputs: TradeTransitInputs,
+  constants: FinanceConstants = DEFAULT_FINANCE_CONSTANTS,
+): TradeTransitResult {
+  const computed = calculateTradeTransit(inputs, constants);
+  const qty = Math.max(inputs.quantityKg, 0);
+
+  const read = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const savedCustoms = read(row.total_customs_paid_etb);
+  const savedNetLanded = read(row.net_landed_cost_etb);
+  const savedUnitCost = read(row.final_landed_unit_cost_etb_per_kg);
+  const savedSell = read(row.target_selling_price_etb_per_kg);
+  const savedProfit = read(row.profit_per_kg_etb);
+  const savedMargin = read(row.gross_margin_pct);
+  const savedRevenue = read(row.total_expected_revenue_etb);
+
+  const unitCost =
+    savedUnitCost != null && savedUnitCost > 0
+      ? savedUnitCost
+      : computed.stage3.finalLandedUnitCostEtbPerKg;
+  const netLanded =
+    savedNetLanded != null && savedNetLanded > 0
+      ? savedNetLanded
+      : computed.stage3.netLandedCostEtb;
+  const customsPaid =
+    savedCustoms != null && savedCustoms > 0
+      ? savedCustoms
+      : computed.stage2.totalCustomsPaidEtb;
+  const sell =
+    savedSell != null && savedSell > 0
+      ? savedSell
+      : computed.stage4.targetSellingPriceEtbPerKg;
+  const profit =
+    savedProfit != null ? savedProfit : roundFinancial(sell - unitCost, 4);
+  const margin =
+    savedMargin != null
+      ? savedMargin
+      : sell > 0
+        ? roundFinancial((profit / sell) * 100, 2)
+        : 0;
+  const revenue =
+    savedRevenue != null && savedRevenue > 0
+      ? savedRevenue
+      : roundFinancial(sell * qty, 2);
+
+  return {
+    ...computed,
+    stage2: {
+      ...computed.stage2,
+      totalCustomsPaidEtb: customsPaid,
+    },
+    stage3: {
+      ...computed.stage3,
+      netLandedCostEtb: netLanded,
+      finalLandedUnitCostEtbPerKg: unitCost,
+    },
+    stage4: {
+      ...computed.stage4,
+      unitCostEtbPerKg: unitCost,
+      targetSellingPriceEtbPerKg: sell,
+      profitPerKgEtb: profit,
+      grossMarginPct: margin,
+      totalExpectedRevenueEtb: revenue,
+    },
   };
 }

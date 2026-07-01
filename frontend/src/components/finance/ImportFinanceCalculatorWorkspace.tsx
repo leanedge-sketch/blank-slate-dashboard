@@ -24,10 +24,12 @@ import { formatNumber } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import { consumeStashedWorkbookUpload } from "../../utils/workbookUploadSession";
+import { applyWorkbookExpectedAnchors } from "../../utils/workbookImportAlign";
 import {
   calculateTradeTransit,
   customsRatesFromConstants,
   legacyShipmentToTradeTransit,
+  importFinanceResultFromTradeTransit,
   tradeTransitToLegacyInputs,
   type TradeTransitInputs,
 } from "../../utils/tradeTransitCalc";
@@ -340,6 +342,33 @@ export function ImportFinanceCalculatorWorkspace({
     });
   }
 
+  function handlePipelineDeleted(deletedIds: string[]) {
+    const deletedSet = new Set(deletedIds);
+    const deletedRows = shipments.filter((row) => deletedSet.has(row.id));
+    const deletedRefs = new Set(
+      deletedRows.map((row) => (row.request_ref ?? "").trim()).filter(Boolean),
+    );
+    const currentRef = request.requestRef.trim();
+
+    const touchedCurrentRequest =
+      (loadedShipmentId && deletedSet.has(loadedShipmentId)) ||
+      (currentRef && deletedRefs.has(currentRef));
+
+    if (touchedCurrentRequest) {
+      setLoadedShipmentId(null);
+      setSelectedScenarioId("");
+      setImportNotice(
+        "The saved procurement request was deleted and removed from Trade & Transit.",
+      );
+      if (editPipeline || historyOnly) {
+        setRequest(createTradeTransitRequest(""));
+        setActiveLineId("");
+      }
+    }
+
+    void reload();
+  }
+
   function handlePmsProductSelect(chemical: ChemicalFullData) {
     const catalogId = catalogProductValue(chemical);
     const productName = chemicalSearchPrimaryLabel(chemical);
@@ -495,7 +524,7 @@ export function ImportFinanceCalculatorWorkspace({
     const tradeLines = lines.map((line) =>
       applySharedRatesToLine(
         createTradeTransitLine(line.productName, {
-          ...line.inputs,
+          ...applyWorkbookExpectedAnchors(line.inputs, line.expected),
           quantityKg: line.quantityKg,
           chemicalTypeId: line.chemicalTypeId,
           productId: null,
@@ -687,9 +716,11 @@ export function ImportFinanceCalculatorWorkspace({
           }
         }
 
-        const legacyInputs = tradeTransitToLegacyInputs(
+        const ttResult = calculateTradeTransit(line.inputs, constants);
+        const legacyInputs = tradeTransitToLegacyInputs(line.inputs, ttResult);
+        const financeResult = importFinanceResultFromTradeTransit(
           line.inputs,
-          calculateTradeTransit(line.inputs, constants),
+          ttResult,
         );
         await saveDraft(productId, legacyInputs, constants, {
           clientName: clientLabel,
@@ -705,7 +736,7 @@ export function ImportFinanceCalculatorWorkspace({
             parameters?.targetCurrency?.trim() ||
             DEFAULT_TRADE_PARAMETERS.targetCurrency,
           salesPipelineId: salesPipelineId?.trim() || null,
-        });
+        }, financeResult);
       }
       alert(
         `Saved ${linkedLines.length} ${pipelineDomainLabel(pipelineDomain).toLowerCase()} line(s) for client "${clientLabel}".`,
@@ -1055,6 +1086,7 @@ export function ImportFinanceCalculatorWorkspace({
             loadedShipmentId={loadedShipmentId}
             onLoadGroup={handleLoadShipmentGroup}
             onLoadRow={handleLoadShipment}
+            onPipelineDeleted={handlePipelineDeleted}
           />
         </div>
       )}
