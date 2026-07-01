@@ -129,6 +129,8 @@ function WorkbookExcelMatchBanner({
     </div>
   );
 }
+
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5 text-xs">
       <span className="text-slate-500">{label}</span>
