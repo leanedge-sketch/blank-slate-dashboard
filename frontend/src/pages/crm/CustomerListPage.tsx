@@ -238,7 +238,7 @@ export function CustomerListPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 align-middle">
-                            {c.latest_profile_text ? (
+                            {c.latest_profile_updated_at ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                 Has ICP
@@ -262,7 +262,7 @@ export function CustomerListPage() {
                               to={`/crm/customers/${c.customer_id}/profile`}
                               className="inline-flex items-center rounded-full bg-purple-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-purple-500/40 hover:bg-purple-400 hover:shadow-purple-500/60 transition-colors"
                             >
-                              {c.latest_profile_text ? "View ICP" : "Create ICP"}
+                              {c.latest_profile_updated_at ? "View ICP" : "Create ICP"}
                             </Link>
                           </td>
                         </tr>
@@ -288,7 +288,7 @@ export function CustomerListPage() {
                           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 border border-slate-200 font-mono">
                             ID: {c.display_id ?? "—"}
                           </span>
-                          {c.latest_profile_text ? (
+                          {c.latest_profile_updated_at ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                               Has ICP
@@ -311,7 +311,7 @@ export function CustomerListPage() {
                         to={`/crm/customers/${c.customer_id}/profile`}
                         className="inline-flex items-center rounded-full bg-purple-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm shadow-purple-500/40 hover:bg-purple-400 hover:shadow-purple-500/60 transition-colors"
                       >
-                        {c.latest_profile_text ? "View ICP" : "Create ICP"}
+                        {c.latest_profile_updated_at ? "View ICP" : "Create ICP"}
                       </Link>
                     </div>
                   </div>

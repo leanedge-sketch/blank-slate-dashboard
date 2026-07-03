@@ -174,16 +174,20 @@ export async function fetchCustomers(params?: {
   contact?: string;
   start_date?: string;
   end_date?: string;
+  /** Full ICP text — only for detail views; list calls stay slim to avoid 504 timeouts. */
+  include_profile?: boolean;
 }): Promise<CustomerListResponse> {
   const res = await api.get<CustomerListResponse>("/crm/customers", {
     params: {
       limit: params?.limit ?? 1000,
       offset: params?.offset ?? 0,
+      include_profile: params?.include_profile ?? false,
       ...(params?.q && { q: params.q }),
       ...(params?.contact && { contact: params.contact }),
       ...(params?.start_date && { start_date: params.start_date }),
       ...(params?.end_date && { end_date: params.end_date }),
     },
+    timeout: 90_000,
   });
   return res.data;
 }

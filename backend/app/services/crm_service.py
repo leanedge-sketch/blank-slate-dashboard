@@ -72,12 +72,21 @@ from app.utils.profile_text import sanitize_profile_plain_text
 # CUSTOMER SERVICES
 # =============================
 
+# Omit latest_profile_text on list/search — profiles can be 50k+ chars each and cause 504s on Vercel.
+_CUSTOMER_LIST_COLUMNS = (
+    "customer_id,customer_name,display_id,website_url,linkedin_company_url,"
+    "primary_contact_name,primary_contact_email,primary_contact_phone,"
+    "created_at,updated_at,sales_stage,latest_profile_updated_at,"
+    "latest_profile_research_meta,external_last_fetched_at,latest_pricing_summary"
+)
+
 
 def get_all_customers(
     limit: int = 100,
     offset: int = 0,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    include_profile: bool = False,
 ) -> List[Customer]:
     """Get all customers from the database with pagination.
     
@@ -91,6 +100,7 @@ def get_all_customers(
         end_date: Optional ISO date string (YYYY-MM-DD) - filter customers with interactions up to this date
     """
     supabase: Client = get_supabase_client()
+    select_columns = "*" if include_profile else _CUSTOMER_LIST_COLUMNS
 
     # If date filters are provided, get customers that have interactions in that range
     if start_date or end_date:
@@ -111,7 +121,7 @@ def get_all_customers(
         # Then fetch those customers
         response = (
             supabase.table("customers")
-            .select("*")
+            .select(select_columns)
             .in_("customer_id", customer_ids)
             .order("created_at", desc=True)
             .limit(limit)
@@ -122,7 +132,7 @@ def get_all_customers(
         # Normal query without date filtering
         response = (
             supabase.table("customers")
-            .select("*")
+            .select(select_columns)
             .order("created_at", desc=True)
             .limit(limit)
             .offset(offset)
@@ -175,9 +185,27 @@ def get_customer_by_id(customer_id: str) -> Optional[Customer]:
     return Customer(**row)
 
 
-def get_customers_count() -> int:
-    """Get total number of customers in the database."""
+def get_customers_count(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> int:
+    """Get total number of customers (optionally filtered by interaction dates)."""
     supabase: Client = get_supabase_client()
+
+    if start_date or end_date:
+        interaction_query = supabase.table("interactions").select("customer_id")
+        if start_date:
+            interaction_query = interaction_query.gte("created_at", f"{start_date}T00:00:00")
+        if end_date:
+            interaction_query = interaction_query.lte("created_at", f"{end_date}T23:59:59")
+        interactions_res = interaction_query.execute()
+        return len(
+            {
+                row.get("customer_id")
+                for row in (interactions_res.data or [])
+                if row.get("customer_id")
+            }
+        )
 
     response = supabase.table("customers").select("customer_id", count="exact").execute()
 
@@ -197,6 +225,7 @@ def search_customers(
     name_query: Optional[str] = None,
     contact_query: Optional[str] = None,
     limit: int = 50,
+    include_profile: bool = False,
 ) -> List[Customer]:
     """Search customers by company name and/or primary contact (case-insensitive)."""
     name = (name_query or "").strip()
@@ -205,7 +234,8 @@ def search_customers(
         return []
 
     supabase: Client = get_supabase_client()
-    query = supabase.table("customers").select("*")
+    select_columns = "*" if include_profile else _CUSTOMER_LIST_COLUMNS
+    query = supabase.table("customers").select(select_columns)
 
     if name:
         query = query.ilike("customer_name", f"%{name}%")

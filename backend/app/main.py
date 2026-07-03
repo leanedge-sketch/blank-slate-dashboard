@@ -185,6 +185,16 @@ print("CORS: allow_origins=['*'], allow_credentials=True (reflecting wildcard mi
 # ============================================
 # HEALTH CHECK ENDPOINT
 # ============================================
+@app.get("/api/v1/health")
+async def api_health_check():
+    """Lightweight health check under the API prefix (for Vercel / monitoring)."""
+    return {
+        "status": "healthy",
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+    }
+
+
 @app.get("/health")
 async def health_check():
     """

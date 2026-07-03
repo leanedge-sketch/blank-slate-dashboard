@@ -78,6 +78,10 @@ async def list_customers(
     ),
     start_date: Optional[str] = Query(None, description="Filter customers with interactions from this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter customers with interactions up to this date (YYYY-MM-DD)"),
+    include_profile: bool = Query(
+        False,
+        description="Include full latest_profile_text (large; can cause timeouts on list views)",
+    ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
     """List customers with optional name search, date filtering, and pagination support.
@@ -92,17 +96,18 @@ async def list_customers(
                 name_query=q,
                 contact_query=contact,
                 limit=limit,
+                include_profile=include_profile,
             )
             total = len(customers)
         else:
-            customers = get_all_customers(limit=limit, offset=offset, start_date=start_date, end_date=end_date)
-            # If date filters are applied, we need to count filtered customers
-            if start_date or end_date:
-                # Get all filtered customers (without pagination) to count
-                all_filtered = get_all_customers(limit=10000, offset=0, start_date=start_date, end_date=end_date)
-                total = len(all_filtered)
-            else:
-                total = get_customers_count()  # crm-selam
+            customers = get_all_customers(
+                limit=limit,
+                offset=offset,
+                start_date=start_date,
+                end_date=end_date,
+                include_profile=include_profile,
+            )
+            total = get_customers_count(start_date=start_date, end_date=end_date)
 
         return CustomerListResponse(customers=customers, total=total)
     except Exception as e:
