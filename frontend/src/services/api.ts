@@ -648,7 +648,9 @@ export async function fetchSharedCatalog(params?: {
 }
 
 export async function createChemicalFullData(data: ChemicalFullDataCreate) {
-  const res = await api.post<ChemicalFullData>("/pms/chemical-full-data", data);
+  const res = await api.post<ChemicalFullData>("/pms/chemical-full-data", data, {
+    timeout: 90_000,
+  });
   const { notifyCatalogUpdated, notifyCatalogProductUpserted } = await import(
     "../lib/catalogEvents"
   );
@@ -1481,13 +1483,17 @@ export async function getPipelineInsights(params?: {
   customer_id?: string;
   tds_id?: string;
   days_back?: number;
+  /** Skip AI narrative — faster, avoids Vercel 504 (default true). */
+  quick?: boolean;
 }) {
   const res = await api.get<PipelineInsights>("/sales-pipeline/insights", {
     params: {
       customer_id: params?.customer_id,
       tds_id: params?.tds_id,
       days_back: params?.days_back ?? 90,
+      quick: params?.quick ?? true,
     },
+    timeout: 90_000,
   });
   return res.data;
 }
@@ -1565,10 +1571,24 @@ export interface IntegratedReportSnapshot {
 }
 
 export async function fetchIntegratedReport(params?: { days_back?: number }) {
-  const res = await api.get<IntegratedReportSnapshot>("/reports/integrated", {
-    params: { days_back: params?.days_back ?? 90 },
-  });
-  return res.data;
+  const request = () =>
+    api.get<IntegratedReportSnapshot>("/reports/integrated", {
+      params: { days_back: params?.days_back ?? 90 },
+      timeout: 120_000,
+    });
+
+  try {
+    const res = await request();
+    return res.data;
+  } catch (err: unknown) {
+    const ax = err as { response?: { status?: number } };
+    if (ax.response?.status === 504) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await request();
+      return res.data;
+    }
+    throw err;
+  }
 }
 
 // =============================

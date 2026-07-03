@@ -1466,7 +1466,13 @@ def build_tds_product_description(
     }
 
 
-def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: str) -> Dict[str, Any]:
+def process_tds_file_with_ai(
+    file_content: bytes,
+    filename: str,
+    content_type: str,
+    *,
+    use_web: bool = False,
+) -> Dict[str, Any]:
     """
     Process a TDS file with AI to extract information.
     
@@ -1529,7 +1535,7 @@ def process_tds_file_with_ai(file_content: bytes, filename: str, content_type: s
         chemical_type_name=normalized.get("generic_product_name"),
         tds_text=text_content,
         extracted_info=normalized,
-        use_web=True,
+        use_web=use_web,
     )
     if desc_result.get("product_description"):
         normalized["product_description"] = desc_result["product_description"]

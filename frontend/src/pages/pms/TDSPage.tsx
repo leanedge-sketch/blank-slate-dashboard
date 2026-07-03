@@ -299,6 +299,8 @@ export function TDSPage() {
       uploadForm.append("file", selectedFile);
       const res = await api.post("/pms/tds/extract-ai", uploadForm, {
         headers: { "Content-Type": "multipart/form-data" },
+        params: { use_web: false },
+        timeout: 120_000,
       });
       const data = res.data as Record<string, unknown>;
       setExtractedData(data);
@@ -338,10 +340,13 @@ export function TDSPage() {
         }
       }
     } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
       const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        "AI extraction failed";
+        status === 504
+          ? "AI extraction timed out (504). Try a smaller PDF or retry in a moment."
+          : (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            "AI extraction failed";
       alert(String(message));
     } finally {
       setExtracting(false);

@@ -1689,6 +1689,8 @@ def generate_pipeline_insights(
     customer_id: Optional[str] = None,
     tds_id: Optional[str] = None,
     days_back: int = 90,
+    *,
+    quick: bool = False,
 ) -> PipelineInsights:
     """
     Generate AI-powered insights and analytics for the sales pipeline.
@@ -1767,17 +1769,20 @@ def generate_pipeline_insights(
             product_key = str(p.chemical_type_id or p.tds_id or "unknown")
             quote_sent_by_product[product_key] = quote_sent_by_product.get(product_key, 0) + 1
     
-    # Use AI to generate insights summary
-    try:
-        insights_summary = _generate_ai_insights_summary(
-            total_pipeline_value=total_pipeline_value,
-            forecast_value=forecast_value,
-            stage_counts=stage_counts,
-            churn_risk_count=len(churn_risk_pipelines),
-            sample_effectiveness=sample_effectiveness,
-        )
-    except:
-        insights_summary = "Pipeline insights generated successfully."
+    # Use AI to generate insights summary (skip on quick mode — avoids Vercel 504)
+    if quick:
+        insights_summary = "Pipeline insights generated (quick mode — no AI narrative)."
+    else:
+        try:
+            insights_summary = _generate_ai_insights_summary(
+                total_pipeline_value=total_pipeline_value,
+                forecast_value=forecast_value,
+                stage_counts=stage_counts,
+                churn_risk_count=len(churn_risk_pipelines),
+                sample_effectiveness=sample_effectiveness,
+            )
+        except Exception:
+            insights_summary = "Pipeline insights generated successfully."
     
     return PipelineInsights(
         total_pipeline_value=total_pipeline_value,

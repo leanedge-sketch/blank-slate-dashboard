@@ -4,7 +4,8 @@ Integrated reporting across CRM, PMS catalog/pricing, stock, and sales pipeline.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from app.database.connection import get_supabase_client
 from app.models.integrated_report import (
@@ -16,22 +17,24 @@ from app.models.integrated_report import (
     TradeTransitReportSummary,
 )
 from app.models.sales_pipeline import PIPELINE_STAGES
+from app.models.stock import Product
 from app.services.chemical_master_data import count_chemical_master_data
-from app.services.crm_service import get_customer_by_id
 from app.services.pms_service import count_pricing_junction_records, list_pricing_locations
 from app.services.sales_pipeline_service import (
     _CLOSED_STAGES,
-    generate_pipeline_insights,
     list_sales_pipelines,
 )
 from app.services.stock_service import (
     _deal_quantity_to_kg,
-    get_stock_availability_by_catalog,
-    get_stock_availability_summary,
+    build_catalog_availability_index,
+    list_products,
 )
 
 _LOW_STOCK_KG = 500.0
 _OPEN_STAGES = [s for s in PIPELINE_STAGES if s not in _CLOSED_STAGES]
+_REPORT_PIPELINE_LIMIT = 400
+_REPORT_STOCK_PRODUCT_LIMIT = 500
+_QUOTE_STAGES = {"Proposal", "Confirmation", "Validation"}
 
 
 def _count_table_rows(table: str, *, column: str, not_null: bool = False) -> int:
@@ -52,17 +55,73 @@ def _count_pricing_by_status(status: Optional[str] = None) -> int:
     return response.count or 0
 
 
-def get_stock_report_summary() -> StockReportSummary:
-    summaries = get_stock_availability_summary(limit=1000, offset=0)
+def _batch_customer_names(customer_ids: set[str]) -> Dict[str, str]:
+    if not customer_ids:
+        return {}
+    supabase = get_supabase_client()
+    names: Dict[str, str] = {}
+    ids = list(customer_ids)
+    for start in range(0, len(ids), 80):
+        chunk = ids[start : start + 80]
+        response = (
+            supabase.table("customers")
+            .select("customer_id,customer_name")
+            .in_("customer_id", chunk)
+            .execute()
+        )
+        for row in response.data or []:
+            cid = str(row.get("customer_id") or "")
+            if cid:
+                names[cid] = row.get("customer_name") or ""
+    return names
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def product_demand_top(days_back: int = 90, top_n: int = 10) -> List[Dict[str, Any]]:
+    """Lightweight product demand counts — no AI (safe for Vercel timeouts)."""
+    pipelines = list_sales_pipelines(limit=_REPORT_PIPELINE_LIMIT)
+    cutoff = datetime.utcnow() - timedelta(days=days_back)
+    counts: Dict[str, int] = {}
+    for pipeline in pipelines:
+        created = _coerce_datetime(pipeline.created_at)
+        if created is not None and created < cutoff:
+            continue
+        if pipeline.stage in _QUOTE_STAGES:
+            product_key = str(pipeline.chemical_type_id or pipeline.tds_id or "unknown")
+            counts[product_key] = counts.get(product_key, 0) + 1
+    return sorted(
+        [{"product_key": k, "quote_count": v} for k, v in counts.items() if v > 0],
+        key=lambda row: row["quote_count"],
+        reverse=True,
+    )[:top_n]
+
+
+def get_stock_report_summary(
+    products: Optional[List[Product]] = None,
+) -> StockReportSummary:
+    if products is None:
+        products = list_products(
+            limit=_REPORT_STOCK_PRODUCT_LIMIT, offset=0, batch_stock=True
+        )
     addis = sez = nairobi = total = 0.0
     low = 0
     catalog_linked = 0
-    for row in summaries:
-        addis += row.addis_ababa_available
-        sez += row.sez_kenya_available
-        nairobi += row.nairobi_partner_available
-        total += row.total_available
-        if row.total_available < _LOW_STOCK_KG:
+    for row in products:
+        addis += row.available_stock_addis_ababa
+        sez += row.available_stock_sez_kenya
+        nairobi += row.available_stock_nairobi_partner
+        total += row.total_available_stock
+        if row.total_available_stock < _LOW_STOCK_KG:
             low += 1
 
     supabase = get_supabase_client()
@@ -92,7 +151,7 @@ def get_stock_report_summary() -> StockReportSummary:
         pass
 
     return StockReportSummary(
-        stock_product_count=len(summaries),
+        stock_product_count=len(products),
         total_available_kg=total,
         addis_available_kg=addis,
         sez_available_kg=sez,
@@ -141,9 +200,23 @@ def get_pms_report_summary() -> PmsReportSummary:
     )
 
 
-def get_pipeline_fulfillment_risks(limit: int = 15) -> tuple[List[PipelineFulfillmentRisk], IntegratedLinkStats]:
-    pipelines = list_sales_pipelines(limit=2000)
+def get_pipeline_fulfillment_risks(
+    limit: int = 15,
+    *,
+    catalog_index: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> tuple[List[PipelineFulfillmentRisk], IntegratedLinkStats]:
+    stock_by_catalog = catalog_index
+    if stock_by_catalog is None:
+        products = list_products(
+            limit=_REPORT_STOCK_PRODUCT_LIMIT, offset=0, batch_stock=True
+        )
+        stock_by_catalog = build_catalog_availability_index(products)
+
+    pipelines = list_sales_pipelines(limit=_REPORT_PIPELINE_LIMIT)
     open_deals = [p for p in pipelines if p.stage in _OPEN_STAGES]
+
+    customer_ids = {str(p.customer_id) for p in open_deals if p.customer_id}
+    customer_names = _batch_customer_names(customer_ids)
 
     risks: List[PipelineFulfillmentRisk] = []
     with_catalog = 0
@@ -155,37 +228,36 @@ def get_pipeline_fulfillment_risks(limit: int = 15) -> tuple[List[PipelineFulfil
         if catalog_id:
             with_catalog += 1
 
-        if not catalog_id and not pipeline.tds_id:
+        if not catalog_id:
             continue
 
-        availability = get_stock_availability_by_catalog(
-            catalog_id or "",
-            tds_id=str(pipeline.tds_id) if pipeline.tds_id else None,
-        )
         checked += 1
+        stock = stock_by_catalog.get(
+            catalog_id,
+            {
+                "addis_ababa_available": 0.0,
+                "total_available": 0.0,
+                "product_name": "Unknown",
+            },
+        )
 
         deal_kg = _deal_quantity_to_kg(pipeline.amount, pipeline.unit)
         exceeds = False
-        if deal_kg is not None and deal_kg > availability.addis_ababa_available:
+        if deal_kg is not None and deal_kg > float(stock["addis_ababa_available"]):
             exceeds = True
             exceeds_count += 1
-
-        customer_name: Optional[str] = None
-        cust = get_customer_by_id(str(pipeline.customer_id))
-        if cust and cust.customer_name:
-            customer_name = cust.customer_name
 
         risk = PipelineFulfillmentRisk(
             pipeline_id=pipeline.id,
             customer_id=pipeline.customer_id,
-            customer_name=customer_name,
+            customer_name=customer_names.get(str(pipeline.customer_id)),
             catalog_uuid_id=catalog_id,
-            product_name=availability.product_name,
+            product_name=stock.get("product_name"),
             stage=pipeline.stage,
             deal_quantity=pipeline.amount,
             deal_unit=pipeline.unit,
-            addis_available_kg=availability.addis_ababa_available,
-            total_available_kg=availability.total_available,
+            addis_available_kg=float(stock["addis_ababa_available"]),
+            total_available_kg=float(stock["total_available"]),
             exceeds_addis_stock=exceeds,
         )
 
@@ -283,24 +355,18 @@ def get_trade_transit_report_summary(limit: int = 10) -> TradeTransitReportSumma
 
 
 def get_integrated_report_snapshot(days_back: int = 90) -> IntegratedReportSnapshot:
-    insights = generate_pipeline_insights(days_back=days_back)
-    product_demand_top = sorted(
-        [
-            {"product_key": k, "quote_count": v}
-            for k, v in (insights.product_demand or {}).items()
-            if v > 0
-        ],
-        key=lambda x: x["quote_count"],
-        reverse=True,
-    )[:10]
-
-    fulfillment_risks, links = get_pipeline_fulfillment_risks(limit=15)
+    products = list_products(limit=_REPORT_STOCK_PRODUCT_LIMIT, offset=0, batch_stock=True)
+    catalog_index = build_catalog_availability_index(products)
+    fulfillment_risks, links = get_pipeline_fulfillment_risks(
+        limit=15,
+        catalog_index=catalog_index,
+    )
 
     return IntegratedReportSnapshot(
-        stock=get_stock_report_summary(),
+        stock=get_stock_report_summary(products),
         pms=get_pms_report_summary(),
         trade_transit=get_trade_transit_report_summary(limit=10),
         links=links,
         fulfillment_risks=fulfillment_risks,
-        product_demand_top=product_demand_top,
+        product_demand_top=product_demand_top(days_back=days_back, top_n=10),
     )

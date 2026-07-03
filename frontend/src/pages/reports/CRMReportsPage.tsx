@@ -105,10 +105,13 @@ export function CRMReportsPage() {
       setIntegrated(integratedRes);
       setLastLoadedAt(new Date().toLocaleString());
     } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
       const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        "Failed to load reports";
+        status === 504
+          ? "Reports timed out (504). Wait a few seconds and click Refresh — the server may be waking up."
+          : (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            "Failed to load reports";
       setError(String(detail));
     } finally {
       setLoading(false);

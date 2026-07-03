@@ -395,6 +395,10 @@ async def generate_tds_description_endpoint(
 @router.post("/tds/extract-ai")
 async def extract_tds_with_ai_endpoint(
     file: UploadFile = File(...),
+    use_web: bool = Query(
+        False,
+        description="Include web research when generating description (slower; may timeout on Vercel)",
+    ),
     # user: dict = Depends(get_current_user),
 ):
     """
@@ -411,7 +415,8 @@ async def extract_tds_with_ai_endpoint(
         extracted_data = process_tds_file_with_ai(
             file_content,
             file.filename or "unknown",
-            file.content_type or "application/octet-stream"
+            file.content_type or "application/octet-stream",
+            use_web=use_web,
         )
         
         # Ensure product-documents bucket exists

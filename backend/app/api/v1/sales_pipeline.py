@@ -121,6 +121,10 @@ async def get_insights(
     customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
     tds_id: Optional[str] = Query(None, description="Filter by product/TDS ID"),
     days_back: int = Query(90, ge=1, le=365, description="Number of days to analyze"),
+    quick: bool = Query(
+        True,
+        description="Skip AI narrative summary for faster loads (recommended on Vercel)",
+    ),
     # user: dict = Depends(get_current_user)
 ):
     """Generate AI-powered insights and analytics for the sales pipeline."""
@@ -129,6 +133,7 @@ async def get_insights(
             customer_id=customer_id,
             tds_id=tds_id,
             days_back=days_back,
+            quick=quick,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating insights: {str(e)}")

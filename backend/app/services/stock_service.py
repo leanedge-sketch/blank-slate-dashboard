@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timezone
 from uuid import UUID
 import json
+from collections import defaultdict
 
 from supabase import Client
 
@@ -45,6 +46,8 @@ def list_products(
     chemical: Optional[str] = None,
     brand: Optional[str] = None,
     use_case: Optional[str] = None,
+    *,
+    batch_stock: bool = False,
 ) -> List[Product]:
     """
     List products with optional filters.
@@ -80,15 +83,18 @@ def list_products(
     if response.data is None:
         return []
     
-    # Convert to Product models and compute stock
-    products = []
-    for row in response.data:
-        product = Product(**row)
-        # Compute stock from movements
-        product = _compute_product_stock(product)
-        products.append(product)
-    
-    return products
+    products = [Product(**row) for row in response.data]
+    if not products:
+        return []
+
+    if batch_stock:
+        movement_map = _batch_load_movements_for_products([str(p.id) for p in products])
+        return [
+            _apply_movements_to_product(p, movement_map.get(str(p.id), []))
+            for p in products
+        ]
+
+    return [_compute_product_stock(product) for product in products]
 
 
 def count_products(
@@ -233,6 +239,97 @@ def delete_product(product_id: str) -> bool:
     return True
 
 
+def _batch_load_movements_for_products(
+    product_ids: List[str],
+) -> Dict[str, List[StockMovement]]:
+    """Load stock movements for many products in few queries (report snapshots)."""
+    if not product_ids:
+        return {}
+
+    supabase: Client = get_supabase_client()
+    grouped: Dict[str, List[StockMovement]] = defaultdict(list)
+    chunk_size = 80
+
+    for start in range(0, len(product_ids), chunk_size):
+        chunk = product_ids[start : start + chunk_size]
+        response = (
+            supabase.table("stock_movements")
+            .select("*")
+            .in_("product_id", chunk)
+            .limit(25000)
+            .execute()
+        )
+        for row in response.data or []:
+            movement = StockMovement(**row)
+            grouped[str(movement.product_id)].append(movement)
+
+    return grouped
+
+
+def _apply_movements_to_product(
+    product: Product,
+    movements: List[StockMovement],
+) -> Product:
+    """Apply pre-loaded movements to a product (same rules as _compute_product_stock)."""
+    total_addis_ababa = 0.0
+    total_sez_kenya = 0.0
+    total_nairobi_partner = 0.0
+    reserved_addis_ababa = 0.0
+    reserved_sez_kenya = 0.0
+    reserved_nairobi_partner = 0.0
+    nairobi_stock_availability: List[StockMovement] = []
+
+    for movement in movements:
+        location = movement.location.lower()
+
+        if movement.transaction_type == "Stock Availability" and location == "nairobi_partner":
+            nairobi_stock_availability.append(movement)
+        elif (
+            movement.transaction_type == "Inter-company transfer"
+            and location == "sez_kenya"
+            and movement.inter_company_transfer_kg > 0
+        ):
+            total_sez_kenya -= movement.inter_company_transfer_kg
+            if movement.transfer_to_location:
+                transfer_to = movement.transfer_to_location.lower()
+                if transfer_to == "addis_ababa":
+                    total_addis_ababa += movement.inter_company_transfer_kg
+                elif transfer_to == "sez_kenya":
+                    total_sez_kenya += movement.inter_company_transfer_kg
+                elif transfer_to == "nairobi_partner":
+                    total_nairobi_partner += movement.inter_company_transfer_kg
+        else:
+            net_change = (
+                movement.purchase_kg
+                + movement.purchase_direct_shipment_kg
+                - movement.sold_kg
+                - movement.sold_direct_shipment_kg
+                - movement.sample_or_damage_kg
+            )
+            if location == "addis_ababa":
+                total_addis_ababa += net_change
+            elif location == "sez_kenya":
+                total_sez_kenya += net_change
+            elif location == "nairobi_partner":
+                total_nairobi_partner += net_change
+
+    if nairobi_stock_availability:
+        min_datetime = datetime.min.replace(tzinfo=timezone.utc)
+        latest_stock_avail = max(
+            nairobi_stock_availability,
+            key=lambda m: (m.date, m.created_at if m.created_at else min_datetime),
+        )
+        total_nairobi_partner = latest_stock_avail.balance_kg
+
+    product.total_stock_addis_ababa = max(0.0, total_addis_ababa)
+    product.total_stock_sez_kenya = max(0.0, total_sez_kenya)
+    product.total_stock_nairobi_partner = max(0.0, total_nairobi_partner)
+    product.reserved_stock_addis_ababa = reserved_addis_ababa
+    product.reserved_stock_sez_kenya = reserved_sez_kenya
+    product.reserved_stock_nairobi_partner = reserved_nairobi_partner
+    return product
+
+
 def _compute_product_stock(product: Product) -> Product:
     """
     Compute stock values for a product from stock movements for three locations.
@@ -247,80 +344,7 @@ def _compute_product_stock(product: Product) -> Product:
         product_id=str(product.id),
         limit=10000,  # Get all movements
     )
-    
-    # Initialize stock counters for three locations
-    total_addis_ababa = 0.0
-    total_sez_kenya = 0.0
-    total_nairobi_partner = 0.0
-    reserved_addis_ababa = 0.0
-    reserved_sez_kenya = 0.0
-    reserved_nairobi_partner = 0.0
-    
-    # Calculate from movements
-    # For Nairobi Partner, track the latest Stock Availability entry
-    nairobi_stock_availability = []
-    
-    for movement in movements:
-        location = movement.location.lower()
-        
-        # For Stock Availability transaction type at Nairobi Partner, track it separately
-        if movement.transaction_type == "Stock Availability" and location == "nairobi_partner":
-            # Stock Availability represents the available stock at that point in time
-            nairobi_stock_availability.append(movement)
-        # Handle inter-company transfers from SEZ Kenya (special handling)
-        elif movement.transaction_type == "Inter-company transfer" and location == "sez_kenya" and movement.inter_company_transfer_kg > 0:
-            # Subtract from SEZ Kenya
-            total_sez_kenya -= movement.inter_company_transfer_kg
-            # Add to destination location
-            if movement.transfer_to_location:
-                transfer_to = movement.transfer_to_location.lower()
-                if transfer_to == "addis_ababa":
-                    total_addis_ababa += movement.inter_company_transfer_kg
-                elif transfer_to == "sez_kenya":
-                    total_sez_kenya += movement.inter_company_transfer_kg
-                elif transfer_to == "nairobi_partner":
-                    total_nairobi_partner += movement.inter_company_transfer_kg
-        else:
-            # Regular transaction handling
-            # Note: inter_company_transfer_kg is only used for inter-company transfers from SEZ Kenya,
-            # which are handled above, so we exclude it from net_change here
-            net_change = (
-                movement.purchase_kg +
-                movement.purchase_direct_shipment_kg -
-                movement.sold_kg -
-                movement.sold_direct_shipment_kg -
-                movement.sample_or_damage_kg
-            )
-            
-            # Apply net change to the appropriate location
-            if location == "addis_ababa":
-                total_addis_ababa += net_change
-            elif location == "sez_kenya":
-                total_sez_kenya += net_change
-            elif location == "nairobi_partner":
-                # Only add to Nairobi Partner if it's not Stock Availability
-                total_nairobi_partner += net_change
-    
-    # For Nairobi Partner, use the latest Stock Availability balance if available
-    if nairobi_stock_availability:
-        # Get the most recent Stock Availability entry by date
-        # Use a timezone-aware min datetime for comparison
-        min_datetime = datetime.min.replace(tzinfo=timezone.utc)
-        latest_stock_avail = max(
-            nairobi_stock_availability,
-            key=lambda m: (m.date, m.created_at if m.created_at else min_datetime)
-        )
-        total_nairobi_partner = latest_stock_avail.balance_kg
-    
-    # Update product stock values
-    product.total_stock_addis_ababa = max(0.0, total_addis_ababa)
-    product.total_stock_sez_kenya = max(0.0, total_sez_kenya)
-    product.total_stock_nairobi_partner = max(0.0, total_nairobi_partner)
-    product.reserved_stock_addis_ababa = reserved_addis_ababa
-    product.reserved_stock_sez_kenya = reserved_sez_kenya
-    product.reserved_stock_nairobi_partner = reserved_nairobi_partner
-    
-    return product
+    return _apply_movements_to_product(product, movements)
 
 
 # =============================
@@ -817,11 +841,35 @@ def _recalculate_balances(product_id: str, location: str):
 # =============================
 
 
+def build_catalog_availability_index(
+    products: List[Product],
+) -> Dict[str, Dict[str, Any]]:
+    """Aggregate available kg by PMS catalog uuid_id (for report fulfillment checks)."""
+    index: Dict[str, Dict[str, Any]] = {}
+    for product in products:
+        if not product.catalog_uuid_id:
+            continue
+        catalog_id = str(product.catalog_uuid_id)
+        entry = index.setdefault(
+            catalog_id,
+            {
+                "addis_ababa_available": 0.0,
+                "total_available": 0.0,
+                "product_name": f"{product.chemical} - {product.brand}",
+            },
+        )
+        entry["addis_ababa_available"] += product.available_stock_addis_ababa
+        entry["total_available"] += product.total_available_stock
+    return index
+
+
 def get_stock_availability_summary(
     limit: int = 100,
     offset: int = 0,
     chemical: Optional[str] = None,
     brand: Optional[str] = None,
+    *,
+    batch_stock: bool = False,
 ) -> List[StockAvailabilitySummary]:
     """
     Get stock availability summary for all products, grouped by three locations.
@@ -840,6 +888,7 @@ def get_stock_availability_summary(
         offset=offset,
         chemical=chemical,
         brand=brand,
+        batch_stock=batch_stock,
     )
     
     summaries = []
