@@ -33,7 +33,6 @@ import {
   FileText,
   Hash,
 } from "lucide-react";
-import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
   CHEMICAL_MASTER_COLUMNS,
   chemicalCellValue,
@@ -86,7 +85,6 @@ function dedupeChemicalsById(rows: ChemicalFullData[]): ChemicalFullData[] {
 }
 
 export function ChemicalsPage() {
-  const { refreshCatalog } = useProductCatalog();
   const [chemicals, setChemicals] = useState<ChemicalFullData[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -387,7 +385,6 @@ export function ChemicalsPage() {
         partner_id: partnerId,
       });
       const created = await createChemicalFullData(createData);
-      await refreshCatalog();
       setShowCreateForm(false);
       setFormData({ ...EMPTY_CHEMICAL_FORM });
       await loadChemicals({ offset: 0, search: created.product_name || created.generic_name || "" });
@@ -460,7 +457,6 @@ export function ChemicalsPage() {
     try {
       setUpdating(true);
       await updateChemicalFullData(id, patch);
-      await refreshCatalog();
       const full = await fetchChemicalFullDataById(id);
       setChemicals((prev) => mergeChemicalIntoList(prev, full));
       if (selectedChemical?.id === id) {
@@ -483,7 +479,6 @@ export function ChemicalsPage() {
     try {
       setDeletingId(id);
       await deleteChemicalFullData(id);
-      await refreshCatalog();
       if (selectedChemical?.id === id) {
         setSelectedChemical(null);
       }

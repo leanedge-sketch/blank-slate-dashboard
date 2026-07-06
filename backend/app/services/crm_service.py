@@ -73,12 +73,48 @@ from app.utils.profile_text import sanitize_profile_plain_text
 # =============================
 
 # Omit latest_profile_text on list/search — profiles can be 50k+ chars each and cause 504s on Vercel.
-_CUSTOMER_LIST_COLUMNS = (
+_CUSTOMER_LIST_BASE_COLUMNS = (
     "customer_id,customer_name,display_id,website_url,linkedin_company_url,"
     "primary_contact_name,primary_contact_email,primary_contact_phone,"
-    "created_at,updated_at,sales_stage,latest_profile_updated_at,"
-    "latest_profile_research_meta,external_last_fetched_at,latest_pricing_summary"
+    "created_at,updated_at,sales_stage,latest_profile_updated_at"
 )
+_CUSTOMER_LIST_OPTIONAL_COLUMNS = (
+    "latest_profile_research_meta",
+    "external_last_fetched_at",
+    "latest_pricing_summary",
+)
+_LIVE_CUSTOMER_LIST_OPTIONAL: Optional[frozenset[str]] = None
+
+
+def _probe_customer_list_optional_columns(supabase: Client) -> frozenset[str]:
+    """Detect optional customers columns (cached per process)."""
+    global _LIVE_CUSTOMER_LIST_OPTIONAL
+    if _LIVE_CUSTOMER_LIST_OPTIONAL is not None:
+        return _LIVE_CUSTOMER_LIST_OPTIONAL
+    present: set[str] = set()
+    for col in _CUSTOMER_LIST_OPTIONAL_COLUMNS:
+        try:
+            supabase.table("customers").select(col).limit(1).execute()
+            present.add(col)
+        except Exception:
+            continue
+    _LIVE_CUSTOMER_LIST_OPTIONAL = frozenset(present)
+    if not present:
+        logging.info(
+            "customers optional list columns not migrated — run docs/0002_profile_research_meta.sql "
+            "and docs/0010b_pricing_sync_columns.sql when needed"
+        )
+    return _LIVE_CUSTOMER_LIST_OPTIONAL
+
+
+def _customer_list_select_columns(include_profile: bool, supabase: Client) -> str:
+    if include_profile:
+        return "*"
+    optional = _probe_customer_list_optional_columns(supabase)
+    extra = [c for c in _CUSTOMER_LIST_OPTIONAL_COLUMNS if c in optional]
+    if not extra:
+        return _CUSTOMER_LIST_BASE_COLUMNS
+    return f"{_CUSTOMER_LIST_BASE_COLUMNS},{','.join(extra)}"
 
 
 def get_all_customers(
@@ -100,7 +136,7 @@ def get_all_customers(
         end_date: Optional ISO date string (YYYY-MM-DD) - filter customers with interactions up to this date
     """
     supabase: Client = get_supabase_client()
-    select_columns = "*" if include_profile else _CUSTOMER_LIST_COLUMNS
+    select_columns = _customer_list_select_columns(include_profile, supabase)
 
     # If date filters are provided, get customers that have interactions in that range
     if start_date or end_date:
@@ -234,7 +270,7 @@ def search_customers(
         return []
 
     supabase: Client = get_supabase_client()
-    select_columns = "*" if include_profile else _CUSTOMER_LIST_COLUMNS
+    select_columns = _customer_list_select_columns(include_profile, supabase)
     query = supabase.table("customers").select(select_columns)
 
     if name:

@@ -1806,6 +1806,8 @@ def list_chemical_full_data(
     product_category: Optional[str] = None,
     sub_category: Optional[str] = None,
     search: Optional[str] = None,
+    *,
+    enrich_tds: bool = True,
 ) -> List[ChemicalFullData]:
     """List Chemical_Master_Data (API shape: ChemicalFullData)."""
     from app.services.chemical_master_data import list_chemical_master_data
@@ -1822,6 +1824,8 @@ def list_chemical_full_data(
         search=search,
     )
     rows = ensure_catalog_list_has_uuid_ids(rows)
+    if not enrich_tds:
+        return rows
     from app.services.catalog_sync_service import enrich_chemicals_with_tds_document
 
     return enrich_chemicals_with_tds_document(rows)

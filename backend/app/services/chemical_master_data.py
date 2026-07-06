@@ -631,16 +631,17 @@ def create_chemical_master_data(body: ChemicalFullDataCreate) -> ChemicalFullDat
     created = row_to_api(response.data[0])
     if created.id is None:
         raise RuntimeError("Created chemical is missing a reference number (Row_No)")
-    if created.id is not None:
-        from app.services.catalog_sync_service import refresh_catalog_row
+    if not created.uuid_id:
+        from app.services.catalog_sync_service import ensure_catalog_uuid_id
 
         try:
-            refreshed = refresh_catalog_row(int(created.id))
+            ensure_catalog_uuid_id(int(created.id))
+            refreshed = get_chemical_master_data_by_id(int(created.id))
             if refreshed:
                 return refreshed
         except Exception as exc:
             logger.warning(
-                "Catalog sync after create failed for Row_No=%s: %s",
+                "uuid_id assignment after create failed for Row_No=%s: %s",
                 created.id,
                 exc,
             )

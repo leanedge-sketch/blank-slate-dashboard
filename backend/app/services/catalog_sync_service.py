@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
     """Assign uuid_id when missing so Sales/CRM can link pipelines."""
-    from app.services.pms_service import get_chemical_full_data_by_id
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
 
-    chem = get_chemical_full_data_by_id(chemical_id)
+    chem = get_chemical_master_data_by_id(chemical_id)
     if not chem:
         return None
     if chem.uuid_id:
@@ -46,8 +46,7 @@ def ensure_catalog_uuid_id(chemical_id: int) -> Optional[str]:
             )
             if response.data:
                 return new_uuid
-            # Row already has uuid_id (possibly set concurrently).
-            chem = get_chemical_full_data_by_id(chemical_id)
+            chem = get_chemical_master_data_by_id(chemical_id)
             if chem and chem.uuid_id:
                 return str(chem.uuid_id)
             return None
@@ -139,20 +138,20 @@ def backfill_all_catalog_uuid_ids(limit: int = 10000) -> Dict[str, Any]:
 
 
 def ensure_catalog_list_has_uuid_ids(chemicals: List[ChemicalFullData]) -> List[ChemicalFullData]:
-    """Backfill missing uuid_id values once per process when a list response needs them."""
+    """Assign uuid_id only for rows in this page — avoids scanning the full catalog."""
     if not chemicals or not any(c.id and not c.uuid_id for c in chemicals):
         return chemicals
 
-    result = backfill_all_catalog_uuid_ids()
-    if result.get("updated", 0) <= 0:
-        return chemicals
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
 
-    from app.services.pms_service import get_chemical_full_data_by_id
+    for chem in chemicals:
+        if chem.id and not chem.uuid_id:
+            ensure_catalog_uuid_id(int(chem.id))
 
     refreshed: List[ChemicalFullData] = []
     for chem in chemicals:
         if chem.id and not chem.uuid_id:
-            row = get_chemical_full_data_by_id(int(chem.id))
+            row = get_chemical_master_data_by_id(int(chem.id))
             refreshed.append(row if row else chem)
         else:
             refreshed.append(chem)
@@ -163,22 +162,25 @@ def _find_tds_for_catalog(chem: ChemicalFullData) -> Optional[Tds]:
     from app.services.pms_service import _tds_catalog_dedupe_key, list_tds
 
     product_name = (chem.product_name or "").strip()
+    if not product_name and chem.id is None and not chem.uuid_id:
+        return None
+
+    if chem.id is not None:
+        matches = list_tds(limit=5, chemical_type_id=str(chem.id))
+        if matches:
+            return matches[0]
+
+    if chem.uuid_id:
+        matches = list_tds(limit=5, chemical_type_id=str(chem.uuid_id))
+        if matches:
+            return matches[0]
+
     if not product_name:
         return None
 
     grade = (chem.sub_category or chem.packing or "").strip() or None
     dedupe = _tds_catalog_dedupe_key(product_name, grade)
-
-    existing = list_tds(limit=5000, offset=0)
-    for row in existing:
-        meta = row.metadata if isinstance(row.metadata, dict) else {}
-        catalog_id = meta.get("chemical_full_data_id")
-        if catalog_id is not None:
-            try:
-                if int(catalog_id) == chem.id:
-                    return row
-            except (TypeError, ValueError):
-                pass
+    for row in list_tds(limit=25, brand=product_name):
         if _tds_catalog_dedupe_key(row.brand, row.grade) == dedupe:
             return row
     return None
@@ -243,10 +245,10 @@ def sync_catalog_product_links(chemical_id: int) -> Dict[str, Any]:
     Run after catalog create/update so Sales, CRM, Stock, and Reports see the product.
     Returns link ids for logging and API responses.
     """
-    from app.services.pms_service import get_chemical_full_data_by_id
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
 
     ensure_catalog_uuid_id(chemical_id)
-    chem = get_chemical_full_data_by_id(chemical_id)
+    chem = get_chemical_master_data_by_id(chemical_id)
     if not chem:
         return {"catalog_id": chemical_id, "synced": False}
 
@@ -261,11 +263,11 @@ def sync_catalog_product_links(chemical_id: int) -> Dict[str, Any]:
 
 
 def refresh_catalog_row(chemical_id: int) -> Optional[ChemicalFullData]:
-    """Re-fetch catalog row after sync."""
-    from app.services.pms_service import get_chemical_full_data_by_id
+    """Re-fetch catalog row after sync (no TDS table scan)."""
+    from app.services.chemical_master_data import get_chemical_master_data_by_id
 
     sync_catalog_product_links(chemical_id)
-    return get_chemical_full_data_by_id(chemical_id)
+    return get_chemical_master_data_by_id(chemical_id)
 
 
 def _build_catalog_tds_document_lookup() -> tuple[
@@ -274,12 +276,20 @@ def _build_catalog_tds_document_lookup() -> tuple[
 ]:
     """Map catalog Row_No and uuid_id -> linked TDS document URL."""
     from app.services.file_service import resolve_tds_document_url
-    from app.services.pms_service import list_tds
+
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("tds_data")
+        .select("chemical_id,metadata")
+        .order("created_at", desc=True)
+        .limit(2000)
+        .execute()
+    )
 
     by_row_no: Dict[int, str] = {}
     by_uuid: Dict[str, str] = {}
-    for row in list_tds(limit=10000, offset=0):
-        meta = row.metadata if isinstance(row.metadata, dict) else {}
+    for row in response.data or []:
+        meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
         url = resolve_tds_document_url(meta)
         if not url:
             continue
@@ -291,8 +301,9 @@ def _build_catalog_tds_document_lookup() -> tuple[
                     by_row_no[cid] = url
             except (TypeError, ValueError):
                 pass
-        if row.chemical_id:
-            uid = str(row.chemical_id)
+        chemical_id = row.get("chemical_id")
+        if chemical_id:
+            uid = str(chemical_id)
             if uid not in by_uuid:
                 by_uuid[uid] = url
     return by_row_no, by_uuid
