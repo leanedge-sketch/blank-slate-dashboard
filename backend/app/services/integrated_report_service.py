@@ -22,6 +22,7 @@ from app.services.chemical_master_data import count_chemical_master_data
 from app.services.pms_service import count_pricing_junction_records, list_pricing_locations
 from app.services.sales_pipeline_service import (
     _CLOSED_STAGES,
+    _coerce_datetime,
     list_sales_pipelines,
 )
 from app.services.stock_service import (
@@ -74,17 +75,6 @@ def _batch_customer_names(customer_ids: set[str]) -> Dict[str, str]:
             if cid:
                 names[cid] = row.get("customer_name") or ""
     return names
-
-
-def _coerce_datetime(value: Any) -> Optional[datetime]:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
 
 
 def product_demand_top(days_back: int = 90, top_n: int = 10) -> List[Dict[str, Any]]:
