@@ -499,12 +499,31 @@ export interface PartnerChemicalCreate {
   vendor: string;
   country?: string | null;
   metadata?: Record<string, any> | null;
+  // Legacy flat fields (folded into metadata by backend)
+  product_category?: string | null;
+  sub_category?: string | null;
+  product_name?: string | null;
+  brand?: string | null;
+  packing?: string | null;
+  price?: number | null;
+  competitive_price?: number | null;
+  cost?: number | null;
+  tds_id?: string | null;
 }
 
 export interface PartnerChemicalUpdate {
   vendor?: string | null;
   country?: string | null;
   metadata?: Record<string, any> | null;
+  product_category?: string | null;
+  sub_category?: string | null;
+  product_name?: string | null;
+  brand?: string | null;
+  packing?: string | null;
+  price?: number | null;
+  competitive_price?: number | null;
+  cost?: number | null;
+  tds_id?: string | null;
 }
 
 export async function fetchPartnerChemicals(params?: {
@@ -912,6 +931,8 @@ export interface MasterDataProductSuggestion {
   packing?: string | null;
   hs_code?: string | null;
   country_of_origin?: string | null;
+  price?: number | null;
+  cost?: number | null;
   match_label?: string | null;
 }
 

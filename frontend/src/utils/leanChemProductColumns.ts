@@ -51,8 +51,37 @@ export type MasterDataSuggestion = {
   hs_code?: string | null;
   country_of_origin?: string | null;
   industry?: string | null;
+  price?: number | null;
+  cost?: number | null;
   match_label?: string | null;
 };
+
+/** Map a Chemical Master Data suggestion onto Partner Chemicals form fields. */
+export function suggestionToPartnerChemicalForm(
+  suggestion: MasterDataSuggestion,
+): {
+  vendor: string;
+  country: string;
+  product_category: string;
+  sub_category: string;
+  product_name: string;
+  brand: string;
+  packing: string;
+  price: number | null;
+  cost: number | null;
+} {
+  return {
+    vendor: suggestion.vendor || "",
+    country: suggestion.country_of_origin || "",
+    product_category: suggestion.product_category || "",
+    sub_category: suggestion.sub_category || "",
+    product_name: suggestion.product_name || "",
+    brand: suggestion.generic_name || "",
+    packing: suggestion.packing || "",
+    price: suggestion.price ?? null,
+    cost: suggestion.cost ?? null,
+  };
+}
 
 export function suggestionToForm(
   suggestion: MasterDataSuggestion,

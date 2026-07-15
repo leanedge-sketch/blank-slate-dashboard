@@ -279,6 +279,8 @@ def suggest_from_chemical_master_data(
                 "packing": chem.packing,
                 "hs_code": chem.hs_code,
                 "country_of_origin": chem.country_of_origin,
+                "price": chem.current_price if chem.current_price is not None else chem.price,
+                "cost": chem.current_cost,
                 "match_label": " · ".join(
                     x
                     for x in [

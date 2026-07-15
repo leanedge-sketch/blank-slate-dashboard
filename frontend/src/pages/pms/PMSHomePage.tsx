@@ -51,7 +51,7 @@ const modules = [
     icon: Boxes,
     title: "Partner Chemicals",
     subtitle: "partner_chemicals",
-    description: "Vendor chemical lines with product details stored in metadata",
+    description: "Vendor chemical lines — add manually with smart pulls from Chemical Master Data",
     href: "/pms/partner-chemicals",
     cta: "Manage vendor lines",
     accent: "from-violet-600 via-violet-500 to-indigo-500",

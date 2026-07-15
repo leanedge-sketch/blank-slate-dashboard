@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
-  api,
   fetchPartnerChemicals,
   createPartnerChemical,
   updatePartnerChemical,
@@ -10,11 +9,40 @@ import {
   fetchProductCategoriesFullData,
   fetchSubCategoriesFullData,
   fetchTDS,
+  fetchMasterDataProductSuggestions,
   PartnerChemical,
   PartnerChemicalCreate,
   PartnerChemicalUpdate,
+  MasterDataProductSuggestion,
 } from "../../services/api";
-import { Plus, Edit, Trash2, X, Save, Search, Filter, ChevronDown, ChevronRight, Building2 } from "lucide-react";
+import { suggestionToPartnerChemicalForm } from "../../utils/leanChemProductColumns";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  X,
+  Save,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Building2,
+  Sparkles,
+  Loader2,
+} from "lucide-react";
+
+const emptyForm: PartnerChemicalCreate = {
+  vendor: "",
+  country: "",
+  product_category: "",
+  sub_category: "",
+  product_name: "",
+  brand: "",
+  packing: "",
+  price: null,
+  competitive_price: null,
+  cost: null,
+  tds_id: null,
+};
 
 export function PartnerChemicalsPage() {
   const [partnerChemicals, setPartnerChemicals] = useState<PartnerChemical[]>([]);
@@ -28,18 +56,11 @@ export function PartnerChemicalsPage() {
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<PartnerChemicalCreate>({
-    vendor: "",
-    product_category: "",
-    sub_category: "",
-    product_name: "",
-    brand: "",
-    packing: "",
-    price: null,
-    competitive_price: null,
-    cost: null,
-    tds_id: null,
-  });
+  const [formData, setFormData] = useState<PartnerChemicalCreate>({ ...emptyForm });
+  const [suggestions, setSuggestions] = useState<MasterDataProductSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [masterPullQuery, setMasterPullQuery] = useState("");
   
   // Dropdown options
   const [vendors, setVendors] = useState<string[]>([]);
@@ -80,20 +101,76 @@ export function PartnerChemicalsPage() {
     }
   }
 
+  const loadSuggestions = useCallback(async (term: string) => {
+    const q = term.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      setLoadingSuggestions(true);
+      const res = await fetchMasterDataProductSuggestions(q, 8);
+      setSuggestions(res);
+      setShowSuggestions(res.length > 0);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showForm) return;
+    const term =
+      masterPullQuery.trim() ||
+      formData.product_name?.trim() ||
+      formData.brand?.trim() ||
+      "";
+    const timer = setTimeout(() => {
+      void loadSuggestions(term);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [showForm, masterPullQuery, formData.product_name, formData.brand, loadSuggestions]);
+
+  function applySuggestion(suggestion: MasterDataProductSuggestion) {
+    const mapped = suggestionToPartnerChemicalForm(suggestion);
+    setFormData((prev) => ({
+      ...prev,
+      ...mapped,
+      competitive_price: prev.competitive_price ?? null,
+      tds_id: prev.tds_id ?? null,
+      metadata: {
+        ...(prev.metadata || {}),
+        source_master_row_no: suggestion.master_row_no ?? null,
+        pulled_from_chemical_master: true,
+      },
+    }));
+    // Ensure dropdown lists include pulled values
+    if (mapped.vendor && !vendors.includes(mapped.vendor)) {
+      setVendors((prev) => [...prev, mapped.vendor].sort());
+    }
+    if (mapped.product_category && !productCategories.includes(mapped.product_category)) {
+      setProductCategories((prev) => [...prev, mapped.product_category].sort());
+    }
+    if (mapped.sub_category && !subCategories.includes(mapped.sub_category)) {
+      setSubCategories((prev) => [...prev, mapped.sub_category].sort());
+    }
+    setShowNewVendor(false);
+    setShowNewCategory(false);
+    setShowNewSubCategory(false);
+    setNewVendor("");
+    setNewCategory("");
+    setNewSubCategory("");
+    setMasterPullQuery("");
+    setShowSuggestions(false);
+  }
+
   function handleAddNew() {
     setEditingId(null);
-    setFormData({
-      vendor: "",
-      product_category: "",
-      sub_category: "",
-      product_name: "",
-      brand: "",
-      packing: "",
-      price: null,
-      competitive_price: null,
-      cost: null,
-      tds_id: null,
-    });
+    setFormData({ ...emptyForm });
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setMasterPullQuery("");
     setNewVendor("");
     setNewCategory("");
     setNewSubCategory("");
@@ -107,16 +184,21 @@ export function PartnerChemicalsPage() {
     setEditingId(chemical.id);
     setFormData({
       vendor: chemical.vendor,
-      product_category: chemical.product_category,
+      country: chemical.country || "",
+      product_category: chemical.product_category || "",
       sub_category: chemical.sub_category || "",
-      product_name: chemical.product_name,
+      product_name: chemical.product_name || "",
       brand: chemical.brand || "",
-      packing: chemical.packing,
+      packing: chemical.packing || "",
       price: chemical.price || null,
       competitive_price: chemical.competitive_price || null,
       cost: chemical.cost || null,
       tds_id: chemical.tds_id || null,
+      metadata: chemical.metadata || null,
     });
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setMasterPullQuery("");
     setNewVendor("");
     setNewCategory("");
     setNewSubCategory("");
@@ -335,7 +417,12 @@ export function PartnerChemicalsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-slate-900">Partner Chemicals</h1>
-              <p className="text-slate-600 mt-1">Manage partner chemical information</p>
+              <p className="text-slate-600 mt-1">
+                Manage vendor chemical lines — pull product details from{" "}
+                <Link to="/pms/chemicals" className="text-emerald-700 hover:underline">
+                  Chemical Master Data
+                </Link>
+              </p>
             </div>
             <div className="flex gap-3">
               <Link
@@ -614,6 +701,59 @@ export function PartnerChemicalsPage() {
             </div>
 
             <div className="p-6 space-y-4">
+              {/* Pull from Chemical Master Data */}
+              <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-emerald-700" />
+                  <span className="text-sm font-semibold text-emerald-900">
+                    Pull from Chemical Master Data
+                  </span>
+                  {loadingSuggestions && (
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                  )}
+                </div>
+                <p className="text-xs text-emerald-800 mb-3">
+                  Search master data by product name, generic name, or HS code. Click a match to
+                  fill vendor, category, packing, price, and cost.
+                </p>
+                <input
+                  type="text"
+                  value={masterPullQuery}
+                  onChange={(e) => setMasterPullQuery(e.target.value)}
+                  placeholder="Type to search Chemical Master Data…"
+                  className="w-full px-3 py-2 mb-3 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
+                />
+                {showSuggestions && suggestions.length > 0 ? (
+                  <ul className="space-y-2 max-h-48 overflow-y-auto">
+                    {suggestions.map((s, i) => (
+                      <li key={`${s.master_row_no}-${i}`}>
+                        <button
+                          type="button"
+                          onClick={() => applySuggestion(s)}
+                          className="w-full text-left px-3 py-2 rounded-lg border border-emerald-200 bg-white hover:bg-emerald-100/80 text-sm transition-colors"
+                        >
+                          <span className="font-medium text-slate-900">
+                            {s.match_label || s.product_name}
+                          </span>
+                          {s.master_row_no != null && (
+                            <span className="ml-2 text-xs text-slate-500">
+                              Master #{s.master_row_no}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-emerald-700/80">
+                    {(masterPullQuery.trim().length >= 2 ||
+                      (formData.product_name || "").trim().length >= 2)
+                      ? "No close matches in master data — you can still add manually."
+                      : "Start typing above (or in Product Name) to see suggestions…"}
+                  </p>
+                )}
+              </div>
+
               {/* Vendor */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -786,9 +926,11 @@ export function PartnerChemicalsPage() {
                   value={formData.brand || ""}
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  placeholder="Enter brand name"
+                  placeholder="Brand or generic name"
                 />
-                <p className="text-xs text-slate-500 mt-1">Required for TDS auto-linking (must match both brand and product name)</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Filled from Chemical Master generic name when pulled; also used for TDS auto-link
+                </p>
               </div>
 
               {/* Packing */}
@@ -815,10 +957,10 @@ export function PartnerChemicalsPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, price: e.target.value ? parseFloat(e.target.value) : null })
                   }
-                  placeholder="From PMS pricing"
+                  placeholder="From Chemical Master Data / pricing"
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
-                <p className="text-xs text-slate-500 mt-1">Will be taken from PMS pricing (to be implemented)</p>
+                <p className="text-xs text-slate-500 mt-1">Auto-filled when you pull from Chemical Master Data</p>
               </div>
 
               {/* Competitive Price */}
@@ -848,10 +990,10 @@ export function PartnerChemicalsPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, cost: e.target.value ? parseFloat(e.target.value) : null })
                   }
-                  placeholder="From pricing"
+                  placeholder="From Chemical Master Data / pricing"
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
-                <p className="text-xs text-slate-500 mt-1">Will be taken from pricing (to be implemented)</p>
+                <p className="text-xs text-slate-500 mt-1">Auto-filled when you pull from Chemical Master Data</p>
               </div>
 
               {/* TDS Link */}
