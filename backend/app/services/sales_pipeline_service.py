@@ -289,9 +289,10 @@ def deduplicate_sales_pipelines(
     pipelines: List[SalesPipeline],
 ) -> List[SalesPipeline]:
     """
-    One row per customer + product for display.
-    First collapse each version chain to its current head, then merge duplicate chains
-    that refer to the same customer + product (e.g. catalog UUID vs metadata name only).
+    One row per version chain for display (current/latest head of each deal).
+
+    Independent deals for the same customer + product (created via New pipeline)
+    remain separate. Only rows linked by parent_pipeline_id collapse together.
     """
     chain_heads: dict[str, SalesPipeline] = {}
     for pipeline in pipelines:
@@ -301,15 +302,8 @@ def deduplicate_sales_pipelines(
             _pick_better_pipeline(prev, pipeline) if prev else pipeline
         )
 
-    grouped: dict[str, SalesPipeline] = {}
-    for pipeline in chain_heads.values():
-        key = _pipeline_group_key(pipeline)
-        prev = grouped.get(key)
-        grouped[key] = (
-            _pick_better_pipeline(prev, pipeline) if prev else pipeline
-        )
     return sorted(
-        grouped.values(),
+        chain_heads.values(),
         key=_pipeline_sort_timestamp,
         reverse=True,
     )
@@ -339,7 +333,8 @@ def list_sales_pipelines(
         tds_id: Filter by TDS/product ID
         chemical_type_id: Filter by chemical type ID
         stage: Filter by pipeline stage
-        latest_per_deal: When True, return one current/latest row per customer+product
+        latest_per_deal: When True, return one current/latest row per version chain
+            (independent New pipeline deals for the same product stay separate)
     
     Returns:
         List of SalesPipeline records
@@ -644,35 +639,6 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     from app.services.business_model_service import validate_pipeline_business_model
 
     validate_pipeline_business_model(payload.get("business_model"))
-
-    customer_id = payload.get("customer_id")
-    meta = payload.get("metadata") or {}
-
-    if customer_id:
-        existing_deals = list_sales_pipelines(
-            limit=200,
-            offset=0,
-            customer_id=str(customer_id),
-            latest_per_deal=True,
-        )
-        from uuid import uuid4
-
-        new_stub = SalesPipeline(
-            id=uuid4(),
-            customer_id=str(customer_id),
-            chemical_type_id=_resolve_chemical_type_id(payload.get("chemical_type_id")),
-            tds_id=payload.get("tds_id"),
-            metadata=meta if isinstance(meta, dict) else {},
-            stage=payload.get("stage") or "Lead ID",
-        )
-        new_key = _pipeline_group_key(new_stub)
-        for deal in existing_deals:
-            if _pipeline_group_key(deal) == new_key:
-                raise ValueError(
-                    f"A pipeline already exists for this customer and product "
-                    f"({deal.stage}, id={deal.id}). Choose Old pipeline to continue "
-                    f"that deal instead of creating a duplicate."
-                )
 
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)

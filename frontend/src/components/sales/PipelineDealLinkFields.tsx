@@ -226,8 +226,9 @@ export function PipelineDealLinkFields({
 
       {link.mode === "new" && matchedPipeline && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          A pipeline already exists for this product. Choose{" "}
-          <strong>Old pipeline</strong> to advance stages instead of duplicating.
+          A pipeline already exists for this product. Prefer{" "}
+          <strong>Old pipeline</strong> to advance that deal — or keep{" "}
+          <strong>New pipeline</strong> to start a separate deal at Lead ID.
         </p>
       )}
 

@@ -208,6 +208,8 @@ export function SalesPipelinePage() {
     [""],
   );
   const [globalDealMode, setGlobalDealMode] = useState<DealLinkMode>("existing");
+  /** Once the user picks New/Old, don't auto-flip mode when products load. */
+  const [dealModeChosenByUser, setDealModeChosenByUser] = useState(false);
   const [globalExistingPipelineId, setGlobalExistingPipelineId] = useState<
     string | null
   >(null);
@@ -261,6 +263,7 @@ export function SalesPipelinePage() {
   }
 
   function applyGlobalDealMode(mode: DealLinkMode) {
+    setDealModeChosenByUser(true);
     setGlobalDealMode(mode);
     if (mode === "new") {
       setGlobalExistingPipelineId(null);
@@ -392,13 +395,23 @@ export function SalesPipelinePage() {
     setProductDealLinks((prev) => {
       const next = { ...prev };
       for (const id of selectedProductIds) {
-        if (!next[id]) next[id] = suggestProductDealLink(customerPipelines, id, chemicalFullData);
+        if (!next[id]) {
+          next[id] =
+            globalDealMode === "new"
+              ? { mode: "new", existingPipelineId: null }
+              : suggestProductDealLink(customerPipelines, id, chemicalFullData);
+        }
       }
       if (selectedProductIds.length === 0 && !next[DEAL_LINK_KEY_NONE]) {
-        next[DEAL_LINK_KEY_NONE] = suggestProductDealLink(customerPipelines, null, chemicalFullData);
+        next[DEAL_LINK_KEY_NONE] =
+          globalDealMode === "new"
+            ? { mode: "new", existingPipelineId: null }
+            : suggestProductDealLink(customerPipelines, null, chemicalFullData);
       }
       return next;
     });
+    // Only auto-suggest Old pipeline before the user explicitly picks a mode
+    if (dealModeChosenByUser) return;
     const hasMatch = customerHasMatchingPipelines(
       customerPipelines,
       selectedProductIds,
@@ -664,9 +677,9 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
-    setGlobalDealMode(
-      searchParams.get("deal_mode") === "new" ? "new" : "existing",
-    );
+    const preferNew = searchParams.get("deal_mode") === "new";
+    setGlobalDealMode(preferNew ? "new" : "existing");
+    setDealModeChosenByUser(preferNew);
     setGlobalExistingPipelineId(null);
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);
@@ -866,6 +879,7 @@ export function SalesPipelinePage() {
     setProductDealLinks({});
     setCustomerPipelines([]);
     setGlobalDealMode("existing");
+    setDealModeChosenByUser(false);
     setGlobalExistingPipelineId(null);
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);

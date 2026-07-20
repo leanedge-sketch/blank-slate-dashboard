@@ -154,7 +154,7 @@ async def list_pipelines(
     stage: Optional[str] = Query(None, description="Filter by pipeline stage"),
     latest_per_deal: bool = Query(
         True,
-        description="Return one current/latest pipeline per customer+product",
+        description="Return one current/latest pipeline per version chain (not merged across separate deals)",
     ),
     # user: dict = Depends(get_current_user)  # Uncomment when auth is ready
 ):
