@@ -292,11 +292,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const normalized = email.toLowerCase().trim();
 
-    if (
-      lastEmployeeEmail.current === normalized &&
-      verifiedEmployeeRef.current
-    ) {
-      return;
+    // Invite-only auth: a valid Supabase session is enough to enter the app.
+    // Enrich role/name from employees API without blocking login on timeouts.
+    if (authUser?.email && !options?.background && !verifiedEmployeeRef.current) {
+      applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
     }
 
     const outcome = await checkEmployeeStatus(normalized, generation);
@@ -337,19 +336,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (outcome.kind === "not_employee") {
+    // Invite-only Supabase Auth: keep (or grant) access from the signed-in session
+    // when the employees API is down or the row is missing / delayed.
+    if (outcome.kind === "not_employee" || outcome.kind === "failed") {
       if (authUser?.email) {
-        applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
+        if (!verifiedEmployeeRef.current) {
+          if (outcome.kind === "failed") {
+            console.warn(
+              "Employee check failed after retries; granting access from signed-in session for",
+              normalized,
+            );
+          }
+          applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
+        }
         return;
       }
       clearVerifiedEmployee();
-      return;
-    }
-
-    if (outcome.kind === "failed") {
-      console.warn(
-        "Employee check failed after retries — network or API may be unavailable",
-      );
     }
   };
 
@@ -390,14 +392,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const generation = ++employeeCheckGeneration.current;
       const useCacheWhileLoading =
         EMPLOYEE_CHECK_EVENTS.has(event) && hydrateEmployeeFromCache(normalized);
-      const blockUi = !useCacheWhileLoading && !alreadyVerified;
+
+      // Invite-only: unlock the app immediately from the signed-in session.
+      if (
+        !useCacheWhileLoading &&
+        !alreadyVerified &&
+        session?.user?.email &&
+        !verifiedEmployeeRef.current
+      ) {
+        applyVerifiedEmployee(employeeFromAuthenticatedUser(session.user));
+      }
+
+      const blockUi =
+        !useCacheWhileLoading &&
+        !alreadyVerified &&
+        !verifiedEmployeeRef.current;
 
       if (blockUi) {
         setEmployeeLoading(true);
       }
 
       void applyEmployeeFromSession(email, session?.user ?? null, event, generation, {
-        background: useCacheWhileLoading || alreadyVerified,
+        background: useCacheWhileLoading || alreadyVerified || !!verifiedEmployeeRef.current,
       })
         .catch((err) => {
           if (!isRequestAborted(err)) {
@@ -459,22 +475,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // First check if email is an employee
+      // Prefer employees-table check, but do not block on transient/stale failures —
+      // Supabase OTP only delivers to real auth users for existing accounts.
       const generation = ++employeeCheckGeneration.current;
-      const lookup = await lookupEmployee(email, generation);
-      if (lookup.status === "not_found" || lookup.status === "stale") {
+      let lookup = await lookupEmployee(email, generation);
+      if (lookup.status === "stale") {
+        const retryGen = ++employeeCheckGeneration.current;
+        lookup = await lookupEmployee(email, retryGen);
+      }
+      if (lookup.status === "not_found") {
         return {
           error: new Error(
             "Access denied. Your email is not registered as an employee."
           ),
         };
       }
-      if (lookup.status === "error") {
-        return {
-          error: new Error(
-            "Could not verify employee status. Check your connection and try again."
-          ),
-        };
+      if (lookup.status === "stale" || lookup.status === "error") {
+        console.warn(
+          "Employee pre-check unavailable for magic link; proceeding with Supabase OTP",
+          lookup.status,
+        );
       }
 
       // Send magic link for first-time users (password not set yet)
@@ -506,22 +526,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // First check if email is an employee
+      // Prefer employees-table check, but do not treat stale/API errors as "not an employee".
+      // Supabase only emails existing auth users, so a transient API failure should not block reset.
       const generation = ++employeeCheckGeneration.current;
-      const lookup = await lookupEmployee(email, generation);
-      if (lookup.status === "not_found" || lookup.status === "stale") {
+      let lookup = await lookupEmployee(email, generation);
+      if (lookup.status === "stale") {
+        const retryGen = ++employeeCheckGeneration.current;
+        lookup = await lookupEmployee(email, retryGen);
+      }
+      if (lookup.status === "not_found") {
         return {
           error: new Error(
             "Access denied. Your email is not registered as an employee."
           ),
         };
       }
-      if (lookup.status === "error") {
-        return {
-          error: new Error(
-            "Could not verify employee status. Check your connection and try again."
-          ),
-        };
+      if (lookup.status === "stale" || lookup.status === "error") {
+        console.warn(
+          "Employee pre-check unavailable for password reset; proceeding with Supabase reset",
+          lookup.status,
+        );
       }
 
       // Send password reset email
@@ -590,10 +614,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         applyVerifiedEmployee(lookup.employee);
         return;
       }
-      if (lookup.status === "not_found" && user) {
-        applyVerifiedEmployee(employeeFromAuthenticatedUser(user));
-        return;
-      }
       const cached = readEmployeeCache(normalized);
       if (cached) {
         applyVerifiedEmployee(employeeDataFromCache(cached));
@@ -604,6 +624,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verifiedEmployeeRef.current
       ) {
         return;
+      }
+      // not_found, error, or stale with an active session → grant from auth user
+      if (user) {
+        applyVerifiedEmployee(employeeFromAuthenticatedUser(user));
       }
     } finally {
       if (generation === employeeCheckGeneration.current) {

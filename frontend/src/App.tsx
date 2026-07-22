@@ -51,7 +51,7 @@ export default function App() {
           <Route
             path="/auth/set-password"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requireEmployee={false}>
                 <SetPasswordPage />
               </ProtectedRoute>
             }

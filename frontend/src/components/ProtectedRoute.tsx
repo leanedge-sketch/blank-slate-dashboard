@@ -4,9 +4,14 @@ import { useAuth } from "../contexts/AuthContext";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  /** When false, only a signed-in Supabase session is required (e.g. set-password). */
+  requireEmployee?: boolean;
 }
 
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  children,
+  requireEmployee = true,
+}: ProtectedRouteProps) {
   const { user, loading, employeeLoading, isEmployee, recheckEmployeeAccess } =
     useAuth();
   const [rechecking, setRechecking] = useState(false);
@@ -16,17 +21,26 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // marked as employee — retry once before showing the denial screen.
   useEffect(() => {
     if (
-      user &&
-      !isEmployee &&
-      !employeeLoading &&
-      !rechecking &&
-      !autoRetriedRef.current
+      !requireEmployee ||
+      !user ||
+      isEmployee ||
+      employeeLoading ||
+      rechecking ||
+      autoRetriedRef.current
     ) {
-      autoRetriedRef.current = true;
-      setRechecking(true);
-      void recheckEmployeeAccess().finally(() => setRechecking(false));
+      return;
     }
-  }, [user, isEmployee, employeeLoading, rechecking, recheckEmployeeAccess]);
+    autoRetriedRef.current = true;
+    setRechecking(true);
+    void recheckEmployeeAccess().finally(() => setRechecking(false));
+  }, [
+    requireEmployee,
+    user,
+    isEmployee,
+    employeeLoading,
+    rechecking,
+    recheckEmployeeAccess,
+  ]);
 
   useEffect(() => {
     if (!user) {
@@ -35,9 +49,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }, [user]);
 
   const accessStillPending =
-    employeeLoading ||
-    rechecking ||
-    (user && !isEmployee && !autoRetriedRef.current);
+    requireEmployee &&
+    (employeeLoading ||
+      rechecking ||
+      (user && !isEmployee && !autoRetriedRef.current));
 
   // Only block the app before we know the user is an employee (not on token refresh / re-check).
   if (loading || (user && accessStillPending && !isEmployee)) {
@@ -57,7 +72,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!isEmployee) {
+  if (requireEmployee && !isEmployee) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-slate-900/90 border border-amber-500/40 rounded-xl p-6 text-center space-y-3">
@@ -100,4 +115,3 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   return <>{children}</>;
 }
-
