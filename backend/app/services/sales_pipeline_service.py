@@ -610,7 +610,7 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
             first = next((str(c).strip() for c in contacts if str(c).strip()), None)
             if first:
                 payload["contact_per_lead"] = first
-    // Auto-extract lead_source and contact_per_lead from interactions if not provided
+    # Auto-extract lead_source and contact_per_lead from interactions if not provided
     if body.customer_id and (
         not payload.get("lead_source") or not payload.get("contact_per_lead")
     ):
