@@ -65,11 +65,24 @@ import {
   getPipelineProductLabel,
   stageChangeReasonRequired,
 } from "../../utils/pipelineProduct";
+import { formatApiErrorDetail } from "../../utils/apiErrors";
 
 const NEW_CUSTOMER_START_STAGES: PipelineStage[] = [
   "Lead ID",
   "Discovery",
   "Sample",
+];
+
+/** Stages available when continuing an existing deal (includes Lost). */
+const UPDATE_PIPELINE_STAGES: PipelineStage[] = [
+  "Lead ID",
+  "Discovery",
+  "Sample",
+  "Validation",
+  "Proposal",
+  "Confirmation",
+  "Closed",
+  "Lost",
 ];
 
 // Stage colors mapping
@@ -128,7 +141,7 @@ function fieldShowsRequired(
     return STAGES_REQUIRING_BUSINESS_DETAILS.includes(formStage);
   }
   if (kind === "close") {
-    return formStage === "Closed";
+    return formStage === "Closed" || formStage === "Lost";
   }
   if (kind === "customer" || kind === "product" || kind === "stage") {
     return true;
@@ -571,7 +584,7 @@ export function SalesPipelinePage() {
       setAllPipelines(sortedPipelines);
     } catch (err: any) {
       console.error(err);
-      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load pipelines");
+      setError(formatApiErrorDetail(err, "Failed to load pipelines"));
     } finally {
       setLoading(false);
     }
@@ -741,9 +754,9 @@ export function SalesPipelinePage() {
             openEditForm(pipeline);
             // Keep the URL as is - it already shows the correct pipeline ID
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error("Failed to load pipeline for editing:", err);
-          alert(err?.response?.data?.detail ?? err?.message ?? "Failed to load pipeline");
+          alert(formatApiErrorDetail(err, "Failed to load pipeline"));
           // Navigate back to pipeline list on error
           navigate("/sales/pipeline");
           // Reset the ref so we can try again
@@ -1006,6 +1019,19 @@ export function SalesPipelinePage() {
           return;
         }
 
+        if (
+          (formData.stage === "Lost" || formData.stage === "Closed") &&
+          !formData.close_reason?.trim() &&
+          !reasonForStageChange.trim()
+        ) {
+          alert(
+            formData.stage === "Lost"
+              ? "A lost reason is required when marking the deal as Lost."
+              : "A close reason is required when marking the deal as Closed.",
+          );
+          return;
+        }
+
         setCreating(true);
         setEditingPipeline(null);
 
@@ -1085,6 +1111,12 @@ export function SalesPipelinePage() {
             await updateSalesPipeline(targetPipelineId, {
               ...updateData,
               stage: createStage,
+              close_reason:
+                createStage === "Lost" || createStage === "Closed"
+                  ? formData.close_reason?.trim() ||
+                    reasonForStageChange.trim() ||
+                    null
+                  : updateData.close_reason,
               reason_for_stage_change: reasonForStageChange.trim(),
               reason_for_amount_change: reasonForAmountChange.trim() || null,
             });
@@ -1114,6 +1146,12 @@ export function SalesPipelinePage() {
             currency: spec.currency,
             forex: spec.forex,
             incoterm: spec.incoterm,
+            close_reason:
+              createStage === "Lost" || createStage === "Closed"
+                ? formData.close_reason?.trim() ||
+                  reasonForStageChange.trim() ||
+                  null
+                : formData.close_reason,
             lead_source: leadSources[0] || null,
             contact_per_lead: contacts[0] || null,
             metadata: metadata as Record<string, unknown>,
@@ -1125,10 +1163,13 @@ export function SalesPipelinePage() {
       }
       closeForm();
       await loadPipelines();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error saving pipeline:", err);
-      console.error("Error details:", err?.response?.data);
-      alert(err?.response?.data?.detail ?? err?.message ?? "Failed to save pipeline");
+      console.error(
+        "Error details:",
+        (err as { response?: { data?: unknown } })?.response?.data,
+      );
+      alert(formatApiErrorDetail(err, "Failed to save pipeline"));
     } finally {
       setCreating(false);
       setUpdating(false);
@@ -1144,9 +1185,9 @@ export function SalesPipelinePage() {
       setDeleting(id);
       await deleteSalesPipeline(id);
       await loadPipelines();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert(err?.response?.data?.detail ?? err?.message ?? "Failed to delete pipeline");
+      alert(formatApiErrorDetail(err, "Failed to delete pipeline"));
     } finally {
       setDeleting(null);
     }
@@ -1186,9 +1227,9 @@ export function SalesPipelinePage() {
         handleCloseQuotationForm();
         await loadPipelines();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error saving quotation:", err);
-      alert(err?.response?.data?.detail ?? err?.message ?? "Failed to save quotation");
+      alert(formatApiErrorDetail(err, "Failed to save quotation"));
     }
   }
 
@@ -1568,7 +1609,10 @@ export function SalesPipelinePage() {
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     {isCreateLeadPipelineForm(editingPipeline)
-                      ? NEW_CUSTOMER_START_STAGES.map((stage) => (
+                      ? (globalDealMode === "existing"
+                          ? UPDATE_PIPELINE_STAGES
+                          : NEW_CUSTOMER_START_STAGES
+                        ).map((stage) => (
                           <option key={stage} value={stage}>
                             {stage}
                           </option>
@@ -1579,10 +1623,18 @@ export function SalesPipelinePage() {
                           </option>
                         ))}
                   </select>
-                  {isCreateLeadPipelineForm(editingPipeline) && (
+                  {isCreateLeadPipelineForm(editingPipeline) &&
+                    globalDealMode === "new" && (
                     <p className="text-xs text-slate-500 mt-1">
                       Defaults to Lead ID. Change to Discovery or Sample only when the
                       customer is already past lead stage.
+                    </p>
+                  )}
+                  {isCreateLeadPipelineForm(editingPipeline) &&
+                    globalDealMode === "existing" && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Pick the stage to move this deal to, including{" "}
+                      <strong>Lost</strong> if the opportunity is gone.
                     </p>
                   )}
                   {isCreateLeadPipelineForm(editingPipeline) && (
@@ -1599,7 +1651,11 @@ export function SalesPipelinePage() {
                         required
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder="Why is this product deal being opened?"
+                        placeholder={
+                          formData.stage === "Lost"
+                            ? "Why was this deal lost?"
+                            : "Why is this product deal being opened or updated?"
+                        }
                       />
                     </div>
                   )}
@@ -1617,6 +1673,26 @@ export function SalesPipelinePage() {
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="Explain why the stage is changing..."
+                      />
+                    </div>
+                  )}
+                  {formData.stage === "Lost" && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Lost Reason <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={formData.close_reason || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            close_reason: e.target.value || null,
+                          })
+                        }
+                        required
+                        rows={2}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Why was this deal lost?"
                       />
                     </div>
                   )}
@@ -2127,7 +2203,7 @@ export function SalesPipelinePage() {
                   </p>
                 </div>
 
-                {formData.stage === "Closed" && (
+                {(formData.stage === "Closed") && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Close Reason

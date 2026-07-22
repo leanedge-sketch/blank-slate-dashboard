@@ -504,6 +504,16 @@ export function PipelineDetailPage() {
       return;
     }
 
+    if (
+      stageChanged &&
+      targetStage === "Lost" &&
+      !updateFormData.close_reason?.trim() &&
+      !updateFormData.reason_for_stage_change?.trim()
+    ) {
+      alert("A reason is required when marking the deal as Lost.");
+      return;
+    }
+
     if (!stageChanged && !effectiveAmountChanged) {
       const next = getNextPipelineStage(currentPipeline.stage);
       alert(
@@ -569,8 +579,10 @@ export function PipelineDetailPage() {
         ...productAmountPayload,
         ...commercialPayload,
         close_reason:
-          stageChanged && targetStage === "Closed"
-            ? updateFormData.close_reason?.trim() || null
+          stageChanged && (targetStage === "Closed" || targetStage === "Lost")
+            ? updateFormData.close_reason?.trim() ||
+              updateFormData.reason_for_stage_change?.trim() ||
+              null
             : undefined,
         reason_for_stage_change: needsStageReason
           ? updateFormData.reason_for_stage_change
@@ -1756,7 +1768,7 @@ export function PipelineDetailPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-3">
                   Pipeline stages
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2 mb-4">
                   {SEVEN_PIPELINE_STAGES.map((stage) => {
                     const currentIdx = STAGE_ORDER.indexOf(currentPipeline.stage);
                     const stageIdx = STAGE_ORDER.indexOf(stage);
@@ -1800,6 +1812,27 @@ export function PipelineDetailPage() {
                       </button>
                     );
                   })}
+                  {currentPipeline.stage !== "Lost" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUpdateFormData({
+                          ...updateFormData,
+                          stage: "Lost",
+                        })
+                      }
+                      className={`rounded-lg border-2 px-2 py-2 text-xs font-semibold text-center transition-all ${
+                        targetStageForForm === "Lost"
+                          ? "border-red-600 bg-red-50 text-red-900 ring-2 ring-red-400"
+                          : "border-red-200 bg-white text-red-700 hover:border-red-400 hover:bg-red-50/50"
+                      }`}
+                    >
+                      Lost
+                      <span className="block text-[10px] font-normal mt-0.5">
+                        Deal lost
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -1885,6 +1918,26 @@ export function PipelineDetailPage() {
                           rows={2}
                           className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           placeholder="e.g. Client paid in full and collected the product"
+                        />
+                      </div>
+                    )}
+                    {targetStageForForm === "Lost" && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Lost reason <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={updateFormData.close_reason || ""}
+                          onChange={(e) =>
+                            setUpdateFormData({
+                              ...updateFormData,
+                              close_reason: e.target.value,
+                            })
+                          }
+                          required
+                          rows={2}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="e.g. Chose competitor, budget cut, no response..."
                         />
                       </div>
                     )}

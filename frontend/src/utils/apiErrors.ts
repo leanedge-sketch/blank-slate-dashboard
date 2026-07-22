@@ -26,15 +26,30 @@ export function formatApiErrorDetail(
           }
           return msg ?? null;
         }
-        return null;
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return null;
+        }
       })
       .filter(Boolean);
     if (messages.length) return messages.join("; ");
   }
 
-  if (detail && typeof detail === "object" && "msg" in detail) {
-    const msg = (detail as { msg?: string }).msg;
-    if (msg) return msg;
+  if (detail && typeof detail === "object") {
+    if ("msg" in detail) {
+      const msg = (detail as { msg?: string }).msg;
+      if (msg) return msg;
+    }
+    if ("message" in detail) {
+      const msg = (detail as { message?: string }).message;
+      if (msg) return msg;
+    }
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through
+    }
   }
 
   const message = (err as { message?: string }).message;
