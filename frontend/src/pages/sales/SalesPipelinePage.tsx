@@ -59,10 +59,12 @@ import {
 import {
   amountChangeReasonRequired,
   dedupePipelinesForDisplay,
+  defaultUnitForUnknownQuantity,
   formatPipelineAmountInput,
   formatPipelineQuantity,
   getNextPipelineStage,
   getPipelineProductLabel,
+  pipelineStageRequiresProductAndAmount,
   stageChangeReasonRequired,
 } from "../../utils/pipelineProduct";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
@@ -408,18 +410,48 @@ export function SalesPipelinePage() {
     setProductDealLinks((prev) => {
       const next = { ...prev };
       for (const id of selectedProductIds) {
-        if (!next[id]) {
+        const existing = next[id];
+        if (
+          !existing ||
+          (existing.mode === "existing" && !existing.existingPipelineId)
+        ) {
           next[id] =
             globalDealMode === "new"
               ? { mode: "new", existingPipelineId: null }
               : suggestProductDealLink(customerPipelines, id, chemicalFullData);
+          if (
+            globalDealMode === "existing" &&
+            !next[id].existingPipelineId &&
+            globalExistingPipelineId
+          ) {
+            next[id] = {
+              mode: "existing",
+              existingPipelineId: globalExistingPipelineId,
+            };
+          }
         }
       }
-      if (selectedProductIds.length === 0 && !next[DEAL_LINK_KEY_NONE]) {
-        next[DEAL_LINK_KEY_NONE] =
-          globalDealMode === "new"
-            ? { mode: "new", existingPipelineId: null }
-            : suggestProductDealLink(customerPipelines, null, chemicalFullData);
+      if (selectedProductIds.length === 0) {
+        const existing = next[DEAL_LINK_KEY_NONE];
+        if (
+          !existing ||
+          (existing.mode === "existing" && !existing.existingPipelineId)
+        ) {
+          next[DEAL_LINK_KEY_NONE] =
+            globalDealMode === "new"
+              ? { mode: "new", existingPipelineId: null }
+              : suggestProductDealLink(customerPipelines, null, chemicalFullData);
+          if (
+            globalDealMode === "existing" &&
+            !next[DEAL_LINK_KEY_NONE].existingPipelineId &&
+            globalExistingPipelineId
+          ) {
+            next[DEAL_LINK_KEY_NONE] = {
+              mode: "existing",
+              existingPipelineId: globalExistingPipelineId,
+            };
+          }
+        }
       }
       return next;
     });
@@ -1005,18 +1037,6 @@ export function SalesPipelinePage() {
               return;
             }
           }
-        } else {
-          for (const productId of productIdsToCreate) {
-            const linkKey = dealLinkKey(productId);
-            const link =
-              productDealLinks[linkKey] ?? suggestDealLink(productId);
-            if (link.mode === "existing" && !link.existingPipelineId) {
-              alert(
-                "Select an existing pipeline or choose New pipeline for each product.",
-              );
-              return;
-            }
-          }
         }
 
         if (!reasonForStageChange.trim()) {
@@ -1039,13 +1059,71 @@ export function SalesPipelinePage() {
           return;
         }
 
+        const createStage: PipelineStage = formData.stage || "Lead ID";
+
+        // Client-side Discovery+ checks so save failures are clear before the API.
+        if (pipelineStageRequiresProductAndAmount(createStage)) {
+          for (const productId of productIdsToCreate) {
+            if (!productId) {
+              alert(
+                "Product is required from Discovery stage onward. Add a product or set stage to Lead ID.",
+              );
+              return;
+            }
+            const spec = specForCreate(productId);
+            if (
+              spec.amount === null ||
+              spec.amount === undefined ||
+              Number.isNaN(Number(spec.amount))
+            ) {
+              alert(
+                "Amount (quantity) is required from Discovery stage onward. Enter 0 if quantity is not yet determined.",
+              );
+              return;
+            }
+            const unit = defaultUnitForUnknownQuantity(
+              spec.unit,
+              spec.amount,
+              createStage,
+            );
+            if (!unit) {
+              alert(
+                "Unit is required from Discovery stage onward (e.g. kg). Or set quantity to 0 for TBD.",
+              );
+              return;
+            }
+            if (
+              createStage !== "Discovery" &&
+              createStage !== "Sample" &&
+              Number(spec.amount) <= 0
+            ) {
+              alert(
+                "Enter a quantity greater than 0 from Validation stage onward.",
+              );
+              return;
+            }
+          }
+        }
+
         setCreating(true);
         setEditingPipeline(null);
 
-        const createStage: PipelineStage = formData.stage || "Lead ID";
-
         for (const productId of productIdsToCreate) {
-          const spec = specForCreate(productId);
+          const rawSpec = specForCreate(productId);
+          const resolvedUnit = defaultUnitForUnknownQuantity(
+            rawSpec.unit,
+            rawSpec.amount,
+            createStage,
+          );
+          const spec: ProductDealSpec = {
+            ...rawSpec,
+            unit: resolvedUnit,
+            // Preserve explicit 0 (TBD); only null/undefined stay empty
+            amount:
+              rawSpec.amount === null || rawSpec.amount === undefined
+                ? null
+                : Number(rawSpec.amount),
+          };
           const leadSources = spec.leadSourceEntries
             .map((s) => s.trim())
             .filter(Boolean);

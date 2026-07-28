@@ -202,25 +202,35 @@ def validate_sales_pipeline_row(row: Mapping[str, Any]) -> Dict[str, str]:
     from app.models.enums import STAGES_REQUIRING_PRODUCT_AND_AMOUNT
 
     if stage in STAGES_REQUIRING_PRODUCT_AND_AMOUNT:
+        amount_val = row.get("amount")
+        amount_num = None
+        if amount_val is not None and amount_val != "":
+            try:
+                amount_num = float(amount_val)
+            except (TypeError, ValueError):
+                amount_num = None
+
         for required_field, label in (
             ("chemical_type_id", "Product"),
             ("unit", "Unit"),
             ("amount", "Amount"),
         ):
+            if (
+                required_field == "unit"
+                and amount_num == 0
+                and stage in ("Discovery", "Sample")
+            ):
+                continue
             if _is_blank(row.get(required_field)):
                 errors[required_field] = (
                     f"{label} is required from Discovery stage onward"
                 )
-        amount_val = row.get("amount")
         # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
-        if stage not in ("Discovery", "Sample") and amount_val is not None:
-            try:
-                if float(amount_val) <= 0:
-                    errors["amount"] = (
-                        "Amount must be greater than 0 from Validation stage onward"
-                    )
-            except (TypeError, ValueError):
-                pass
+        if stage not in ("Discovery", "Sample") and amount_num is not None:
+            if amount_num <= 0:
+                errors["amount"] = (
+                    "Amount must be greater than 0 from Validation stage onward"
+                )
 
     if stage in STAGES_REQUIRING_FULL_COMMERCIAL:
         for required_field, label in (

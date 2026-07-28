@@ -178,8 +178,6 @@ class SalesPipelineCreate(SalesPipelineBase):
             raise ValueError(
                 "chemical_type_id (product) is required from Discovery stage onward"
             )
-        if not self.unit or not self.unit.strip():
-            raise ValueError("unit is required from Discovery stage onward")
         if self.amount is None:
             raise ValueError("amount is required from Discovery stage onward")
         # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
@@ -187,6 +185,11 @@ class SalesPipelineCreate(SalesPipelineBase):
             raise ValueError(
                 "amount must be greater than 0 from Validation stage onward"
             )
+        # Allow missing unit when quantity is TBD (0); default to kg for storage
+        if (not self.unit or not self.unit.strip()) and self.amount == 0:
+            self.unit = "kg"
+        elif not self.unit or not self.unit.strip():
+            raise ValueError("unit is required from Discovery stage onward")
         return self
 
     @model_validator(mode="after")

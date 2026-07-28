@@ -262,7 +262,9 @@ export function PipelineDealLinkFields({
         </p>
       )}
 
-      {link.mode === "existing" && (
+      {/* When parent owns global Old/New tabs, skip the duplicate required
+          picker — an empty required <select> silently blocks form submit. */}
+      {link.mode === "existing" && !hideModeTabs && (
         <div className="space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="relative">
@@ -324,6 +326,13 @@ export function PipelineDealLinkFields({
             {customerPipelines.length === 1 ? "" : "s"} for this customer
           </p>
         </div>
+      )}
+
+      {link.mode === "existing" && hideModeTabs && !link.existingPipelineId && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Select a pipeline in the <strong>Continue this pipeline</strong> field
+          above, or switch to <strong>New pipeline</strong>.
+        </p>
       )}
     </div>
   );

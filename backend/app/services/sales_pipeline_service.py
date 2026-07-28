@@ -638,6 +638,16 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
         metadata=meta if isinstance(meta, dict) else None,
     )
 
+    # Persist TBD quantity with a default unit when the client omitted it
+    stage = payload.get("stage") or "Lead ID"
+    amount = payload.get("amount")
+    if (
+        amount == 0
+        and stage in ("Discovery", "Sample")
+        and (not payload.get("unit") or not str(payload.get("unit")).strip())
+    ):
+        payload["unit"] = "kg"
+
     from app.services.business_model_service import validate_pipeline_business_model
 
     validate_pipeline_business_model(payload.get("business_model"))
@@ -809,7 +819,9 @@ def validate_pipeline_stage_requirements(
                 "Product is required from Discovery stage onward."
             )
         if not unit or not str(unit).strip():
-            raise ValueError("Unit is required from Discovery stage onward.")
+            # Discovery/Sample + quantity 0 (TBD): unit may be filled later
+            if not (amount == 0 and stage in ("Discovery", "Sample")):
+                raise ValueError("Unit is required from Discovery stage onward.")
         if amount is None:
             raise ValueError("Amount is required from Discovery stage onward.")
         # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
@@ -1075,6 +1087,16 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         from app.services.business_model_service import validate_pipeline_business_model
 
         validate_pipeline_business_model(merged_business_model)
+
+        # Persist TBD quantity with a default unit when omitted
+        effective_amount = update_data.get("amount", base.amount)
+        effective_unit = update_data.get("unit", base.unit)
+        if (
+            effective_amount == 0
+            and merged_stage in ("Discovery", "Sample")
+            and (not effective_unit or not str(effective_unit).strip())
+        ):
+            update_data["unit"] = "kg"
 
     if not stage_changed and not amount_changed:
         merged = _merged_inplace_pipeline_state(base, update_data)

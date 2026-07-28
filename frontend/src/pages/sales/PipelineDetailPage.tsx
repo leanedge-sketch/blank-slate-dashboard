@@ -568,7 +568,10 @@ export function PipelineDetailPage() {
           : {};
       const productAmountPayload =
         showProductAmount
-          ? (buildPipelineProductAmountPayload(dealForm) as SalesPipelineUpdate)
+          ? (buildPipelineProductAmountPayload(
+              dealForm,
+              targetStage,
+            ) as SalesPipelineUpdate)
           : {};
 
       const updateData: SalesPipelineUpdate = {

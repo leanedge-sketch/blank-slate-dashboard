@@ -268,6 +268,25 @@ export function stageAllowsUnknownQuantity(stage: string): boolean {
   return stage === "Discovery" || stage === "Sample";
 }
 
+/** Default unit when quantity is TBD (0) so Discovery/Sample saves succeed. */
+export function defaultUnitForUnknownQuantity(
+  unit: string | null | undefined,
+  amount: number | null | undefined,
+  stage: string,
+): string | null {
+  const trimmed = typeof unit === "string" ? unit.trim() : "";
+  if (trimmed) return trimmed;
+  if (
+    stageAllowsUnknownQuantity(stage) &&
+    amount !== null &&
+    amount !== undefined &&
+    Number(amount) === 0
+  ) {
+    return "kg";
+  }
+  return trimmed || null;
+}
+
 /** Product, unit, and quantity required from Discovery onward. */
 export function validateDealFormForProductAndAmount(
   form: PipelineDealFormValues,
@@ -279,14 +298,19 @@ export function validateDealFormForProductAndAmount(
   if (!hasDealFormText(form.chemical_type_id)) {
     return "Product is required from Discovery stage onward.";
   }
-  if (!hasDealFormText(form.unit)) {
-    return "Unit is required from Discovery stage onward.";
-  }
   if (form.amount === "" || form.amount === null || form.amount === undefined) {
-    return "Amount (quantity) is required from Discovery stage onward.";
+    return "Amount (quantity) is required from Discovery stage onward. Enter 0 if not yet determined.";
   }
   if (!stageAllowsUnknownQuantity(targetStage) && Number(form.amount) <= 0) {
     return "Enter a quantity greater than 0 from Validation stage onward.";
+  }
+  const unit = defaultUnitForUnknownQuantity(
+    form.unit,
+    Number(form.amount),
+    targetStage,
+  );
+  if (!unit) {
+    return "Unit is required from Discovery stage onward.";
   }
   return null;
 }
@@ -546,14 +570,22 @@ export function buildInPlacePipelineUpdatePayload(
 
 export function buildPipelineProductAmountPayload(
   dealForm: PipelineDealFormValues,
+  targetStage?: string,
 ): Record<string, unknown> {
+  const amount =
+    dealForm.amount === "" || dealForm.amount === null
+      ? null
+      : Number(dealForm.amount);
+  const unit =
+    defaultUnitForUnknownQuantity(
+      dealForm.unit,
+      amount,
+      targetStage || "Discovery",
+    ) || null;
   return {
     chemical_type_id: dealFormText(dealForm.chemical_type_id) || null,
-    unit: dealFormText(dealForm.unit) || null,
-    amount:
-      dealForm.amount === "" || dealForm.amount === null
-        ? null
-        : Number(dealForm.amount),
+    unit,
+    amount,
   };
 }
 
