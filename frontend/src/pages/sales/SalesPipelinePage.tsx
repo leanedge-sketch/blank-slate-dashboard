@@ -432,8 +432,15 @@ export function SalesPipelinePage() {
     if (hasMatch) {
       setGlobalDealMode("existing");
       const productId = selectedProductIds[0] ?? null;
-      const match = findPipelineForProduct(customerPipelines, productId, chemicalFullData);
-      setGlobalExistingPipelineId(match?.id ?? customerPipelines[0]?.id ?? null);
+      const match = findPipelineForProduct(
+        customerPipelines,
+        productId,
+        chemicalFullData,
+      );
+      const pipelineId = match?.id ?? customerPipelines[0]?.id ?? null;
+      if (pipelineId) {
+        applyGlobalExistingPipeline(pipelineId);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerPipelines, selectedProductIds]);
@@ -1807,7 +1814,9 @@ export function SalesPipelinePage() {
                             <PipelineDealLinkFields
                               link={
                                 productDealLinks[productId] ??
-                                suggestDealLink(productId)
+                                (globalDealMode === "new"
+                                  ? { mode: "new", existingPipelineId: null }
+                                  : suggestDealLink(productId))
                               }
                               onChange={(link) => {
                                 setProductDealLinks((prev) => ({
@@ -1829,6 +1838,7 @@ export function SalesPipelinePage() {
                                   }
                                 }
                               }}
+                              onPreferMode={applyGlobalDealMode}
                               customerPipelines={customerPipelines}
                               productId={productId}
                               preferProductId={productId}
@@ -1859,7 +1869,9 @@ export function SalesPipelinePage() {
                       <PipelineDealLinkFields
                         link={
                           productDealLinks[DEAL_LINK_KEY_NONE] ??
-                          suggestDealLink(null)
+                          (globalDealMode === "new"
+                            ? { mode: "new", existingPipelineId: null }
+                            : suggestDealLink(null))
                         }
                         onChange={(link) => {
                           setProductDealLinks((prev) => ({
@@ -1881,6 +1893,7 @@ export function SalesPipelinePage() {
                             }
                           }
                         }}
+                        onPreferMode={applyGlobalDealMode}
                         customerPipelines={customerPipelines}
                         labelOptions={pipelineLabelOptions}
                         hideModeTabs
@@ -2091,21 +2104,44 @@ export function SalesPipelinePage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Amount (Quantity)
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formatPipelineAmountInput(formData.amount)}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setFormData({
-                        ...formData,
-                        amount: value === "" ? null : parseFloat(value),
-                      });
-                    }}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="0 if not yet determined (Sample)"
-                  />
+                  {(formData.stage === "Discovery" ||
+                    formData.stage === "Sample") && (
+                    <p className="text-xs text-slate-500 mb-2">
+                      Quantity may be unknown at {formData.stage} — enter{" "}
+                      <strong>0</strong> if the product is identified but volume
+                      is not yet determined.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formatPipelineAmountInput(formData.amount)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setFormData({
+                          ...formData,
+                          amount: value === "" ? null : parseFloat(value),
+                        });
+                      }}
+                      className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="0 if not yet determined"
+                    />
+                    {(formData.stage === "Discovery" ||
+                      formData.stage === "Sample") && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData({ ...formData, amount: 0 })
+                        }
+                        className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        title="Use when quantity is not yet determined"
+                      >
+                        0
+                      </button>
+                    )}
+                  </div>
                   {editingPipeline &&
                     editingPipeline.amount !== formData.amount &&
                     amountChangeReasonRequired(

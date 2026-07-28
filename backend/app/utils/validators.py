@@ -212,11 +212,12 @@ def validate_sales_pipeline_row(row: Mapping[str, Any]) -> Dict[str, str]:
                     f"{label} is required from Discovery stage onward"
                 )
         amount_val = row.get("amount")
-        if stage != "Sample" and amount_val is not None:
+        # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
+        if stage not in ("Discovery", "Sample") and amount_val is not None:
             try:
                 if float(amount_val) <= 0:
                     errors["amount"] = (
-                        "Amount must be greater than 0 from Discovery stage onward"
+                        "Amount must be greater than 0 from Validation stage onward"
                     )
             except (TypeError, ValueError):
                 pass

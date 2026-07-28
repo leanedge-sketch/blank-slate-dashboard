@@ -72,7 +72,8 @@ STAGES_REQUIRING_FULL_COMMERCIAL: List[str] = [
     PipelineStage.CLOSED.value,
 ]
 
-# Lead ID: product and amount optional. Discovery through Validation need product + quantity.
+# Lead ID: product and amount optional. Discovery+ need product + quantity
+# (quantity may be 0/TBD at Discovery and Sample only).
 STAGES_REQUIRING_PRODUCT_AND_AMOUNT: List[str] = [
     PipelineStage.DISCOVERY.value,
     PipelineStage.SAMPLE.value,

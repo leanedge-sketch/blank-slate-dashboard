@@ -259,20 +259,36 @@ export function PipelineDealFields({
             Amount (quantity)
             <RequiredMark show={reqProductAmount} />
           </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.amount === null ? "" : form.amount}
-            onChange={(e) =>
-              onChange({
-                ...form,
-                amount: e.target.value === "" ? "" : parseFloat(e.target.value),
-              })
-            }
-            className={inputClass}
-            required={reqProductAmount}
-          />
+          {reqProductAmount && (
+            <p className="text-xs text-slate-500 mb-1">
+              Use <strong>0</strong> at Discovery/Sample when quantity is TBD.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.amount === null ? "" : form.amount}
+              onChange={(e) =>
+                onChange({
+                  ...form,
+                  amount: e.target.value === "" ? "" : parseFloat(e.target.value),
+                })
+              }
+              className={`flex-1 ${inputClass}`}
+              required={reqProductAmount}
+              placeholder="0 if not yet determined"
+            />
+            <button
+              type="button"
+              onClick={() => onChange({ ...form, amount: 0 })}
+              className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              title="Use when quantity is not yet determined"
+            >
+              0
+            </button>
+          </div>
         </div>
       )}
 

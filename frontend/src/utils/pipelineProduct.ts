@@ -260,6 +260,14 @@ export function pipelineUpdateShowsCommercialForm(
   return validateDealFormForProposal(dealForm) !== null;
 }
 
+/**
+ * Discovery/Sample may use quantity 0 when the product is known but volume is TBD.
+ * Validation and later stages require a positive quantity.
+ */
+export function stageAllowsUnknownQuantity(stage: string): boolean {
+  return stage === "Discovery" || stage === "Sample";
+}
+
 /** Product, unit, and quantity required from Discovery onward. */
 export function validateDealFormForProductAndAmount(
   form: PipelineDealFormValues,
@@ -277,8 +285,8 @@ export function validateDealFormForProductAndAmount(
   if (form.amount === "" || form.amount === null || form.amount === undefined) {
     return "Amount (quantity) is required from Discovery stage onward.";
   }
-  if (targetStage !== "Sample" && Number(form.amount) <= 0) {
-    return "Enter a quantity greater than 0 from Discovery stage onward.";
+  if (!stageAllowsUnknownQuantity(targetStage) && Number(form.amount) <= 0) {
+    return "Enter a quantity greater than 0 from Validation stage onward.";
   }
   return null;
 }

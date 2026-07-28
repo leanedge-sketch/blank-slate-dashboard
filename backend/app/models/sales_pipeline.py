@@ -182,9 +182,10 @@ class SalesPipelineCreate(SalesPipelineBase):
             raise ValueError("unit is required from Discovery stage onward")
         if self.amount is None:
             raise ValueError("amount is required from Discovery stage onward")
-        if self.stage != "Sample" and self.amount <= 0:
+        # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
+        if self.stage not in ("Discovery", "Sample") and self.amount <= 0:
             raise ValueError(
-                "amount must be greater than 0 from Discovery stage onward"
+                "amount must be greater than 0 from Validation stage onward"
             )
         return self
 

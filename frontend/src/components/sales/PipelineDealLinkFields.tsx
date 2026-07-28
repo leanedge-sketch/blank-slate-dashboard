@@ -22,20 +22,25 @@ export function emptyProductDealLink(): ProductDealLink {
   return { mode: "new", existingPipelineId: null };
 }
 
-/** Match an open deal for this customer + catalog product (or company umbrella). */
+/** Match an open deal for this customer + catalog product (or company umbrella).
+ * Closed/Lost deals are ignored so finished opportunities don't block New pipeline.
+ */
 export function findPipelineForProduct(
   pipelines: SalesPipeline[],
   productId: string | null,
   chemicals: ChemicalFullData[] = [],
 ): SalesPipeline | undefined {
+  const open = pipelines.filter((p) => p.stage !== "Closed" && p.stage !== "Lost");
+  if (open.length === 0) return undefined;
+
   if (productId) {
-    const direct = pipelines.find((p) => p.chemical_type_id === productId);
+    const direct = open.find((p) => p.chemical_type_id === productId);
     if (direct) return direct;
 
     const catalogProduct = chemicals.find((c) => c.uuid_id === productId);
     const productName = catalogProduct?.product_name?.trim().toLowerCase();
     if (productName) {
-      return pipelines.find((p) => {
+      return open.find((p) => {
         const meta = (p.metadata || {}) as Record<string, unknown>;
         for (const field of ["product_name", "generic_name", "product"] as const) {
           const raw = meta[field];
@@ -48,7 +53,7 @@ export function findPipelineForProduct(
     }
     return undefined;
   }
-  return pipelines.find((p) => !p.chemical_type_id && !p.tds_id);
+  return open.find((p) => !p.chemical_type_id && !p.tds_id);
 }
 
 export function suggestProductDealLink(
@@ -138,6 +143,8 @@ interface PipelineDealLinkFieldsProps {
   preferProductId?: string | null;
   /** Hide tabs when parent renders global tabs */
   hideModeTabs?: boolean;
+  /** When tabs are hidden, allow switching Old/New from the amber guidance. */
+  onPreferMode?: (mode: DealLinkMode) => void;
 }
 
 export function PipelineDealLinkFields({
@@ -148,6 +155,7 @@ export function PipelineDealLinkFields({
   labelOptions,
   preferProductId,
   hideModeTabs = false,
+  onPreferMode,
 }: PipelineDealLinkFieldsProps) {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<PipelineStage | "">("");
@@ -202,6 +210,14 @@ export function PipelineDealLinkFields({
     });
   }
 
+  function preferMode(mode: DealLinkMode) {
+    if (onPreferMode) {
+      onPreferMode(mode);
+      return;
+    }
+    setMode(mode);
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-3">
       <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
@@ -226,9 +242,23 @@ export function PipelineDealLinkFields({
 
       {link.mode === "new" && matchedPipeline && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          A pipeline already exists for this product. Prefer{" "}
-          <strong>Old pipeline</strong> to advance that deal — or keep{" "}
-          <strong>New pipeline</strong> to start a separate deal at Lead ID.
+          An open pipeline already exists for this product. Prefer{" "}
+          <button
+            type="button"
+            onClick={() => preferMode("existing")}
+            className="font-semibold underline underline-offset-2 hover:text-amber-950"
+          >
+            Old pipeline
+          </button>{" "}
+          to advance that deal — or keep{" "}
+          <button
+            type="button"
+            onClick={() => preferMode("new")}
+            className="font-semibold underline underline-offset-2 hover:text-amber-950"
+          >
+            New pipeline
+          </button>{" "}
+          to start a separate deal at Lead ID.
         </p>
       )}
 

@@ -2019,10 +2019,14 @@ export function PipelineDetailPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   New Amount (Quantity)
                 </label>
-                {(movingToSample || currentPipeline.stage === "Sample") && (
+                {(movingToSample ||
+                  targetStageForForm === "Discovery" ||
+                  currentPipeline.stage === "Sample" ||
+                  currentPipeline.stage === "Discovery") && (
                   <p className="text-xs text-slate-500 mb-2">
-                    Quantity may be unknown at Sample — enter <strong>0</strong> if not
-                    yet determined.
+                    Quantity may be unknown at Discovery or Sample — enter{" "}
+                    <strong>0</strong> if the product is identified but volume
+                    is not yet determined.
                   </p>
                 )}
                 <div className="flex gap-2">

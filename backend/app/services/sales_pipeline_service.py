@@ -812,9 +812,10 @@ def validate_pipeline_stage_requirements(
             raise ValueError("Unit is required from Discovery stage onward.")
         if amount is None:
             raise ValueError("Amount is required from Discovery stage onward.")
-        if stage != "Sample" and amount <= 0:
+        # Discovery/Sample: 0 means quantity TBD (product identified, volume unknown)
+        if stage not in ("Discovery", "Sample") and amount <= 0:
             raise ValueError(
-                "Amount must be greater than 0 from Discovery stage onward."
+                "Amount must be greater than 0 from Validation stage onward."
             )
     if stage in STAGES_REQUIRING_FULL_COMMERCIAL:
         if not chemical_type_id:

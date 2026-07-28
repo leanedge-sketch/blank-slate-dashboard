@@ -214,20 +214,34 @@ export function ProductDealSpecFields({
 
       <div>
         <label className={labelClass}>Amount (quantity)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          value={spec.amount ?? ""}
-          onChange={(e) => {
-            const v = e.target.value;
-            onChange({
-              amount: v !== "" ? parseFloat(v) : null,
-            });
-          }}
-          className={inputClass}
-          placeholder="Quantity…"
-        />
+        <p className="text-xs text-slate-500 mb-1">
+          Use <strong>0</strong> at Discovery/Sample when the product is known
+          but quantity is not yet determined.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={spec.amount ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({
+                amount: v !== "" ? parseFloat(v) : null,
+              });
+            }}
+            className={`flex-1 ${inputClass}`}
+            placeholder="0 if not yet determined"
+          />
+          <button
+            type="button"
+            onClick={() => onChange({ amount: 0 })}
+            className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            title="Use when quantity is not yet determined"
+          >
+            0
+          </button>
+        </div>
       </div>
 
       <div>
