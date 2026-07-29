@@ -168,6 +168,22 @@ class SalesPipelineCreate(SalesPipelineBase):
         None,
         description="Required when creating a new pipeline deal",
     )
+    # UI-only: folded into metadata.vendor before DB write
+    vendor_name: Optional[str] = Field(
+        None,
+        description="Optional vendor label; stored in metadata.vendor",
+    )
+
+    @model_validator(mode="after")
+    def fold_vendor_name_into_metadata(self):
+        vendor = (self.vendor_name or "").strip()
+        if not vendor:
+            return self
+        meta = dict(self.metadata or {})
+        if not meta.get("vendor") and not meta.get("vendor_name"):
+            meta["vendor"] = vendor
+        self.metadata = meta
+        return self
 
     @model_validator(mode="after")
     def validate_product_and_amount_from_discovery(self):

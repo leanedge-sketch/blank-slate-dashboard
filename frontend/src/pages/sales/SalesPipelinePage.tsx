@@ -234,6 +234,7 @@ export function SalesPipelinePage() {
   const [globalExistingPipelineId, setGlobalExistingPipelineId] = useState<
     string | null
   >(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const pipelineLabelOptions = {
     chemicalFullData,
@@ -371,6 +372,7 @@ export function SalesPipelinePage() {
   function applyGlobalDealMode(mode: DealLinkMode) {
     setDealModeChosenByUser(true);
     setGlobalDealMode(mode);
+    setSaveError(null);
     if (mode === "new") {
       setGlobalExistingPipelineId(null);
     }
@@ -837,6 +839,7 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
+    setSaveError(null);
     const preferNew = searchParams.get("deal_mode") !== "existing";
     setGlobalDealMode(preferNew ? "new" : "existing");
     setDealModeChosenByUser(true);
@@ -1038,6 +1041,7 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
+    setSaveError(null);
     setGlobalDealMode("new");
     setDealModeChosenByUser(false);
     setGlobalExistingPipelineId(null);
@@ -1052,8 +1056,64 @@ export function SalesPipelinePage() {
     }
   }
 
+  function buildCleanCreatePayload(options: {
+    productId: string | null;
+    spec: ProductDealSpec;
+    leadSources: string[];
+    contacts: string[];
+    metadata: Record<string, unknown>;
+    customerId: string | undefined;
+    stage: PipelineStage;
+    reason: string;
+    closeReason: string | null;
+  }): SalesPipelineCreate {
+    const {
+      productId,
+      spec,
+      leadSources,
+      contacts,
+      metadata,
+      customerId,
+      stage,
+      reason,
+      closeReason,
+    } = options;
+
+    const payload: SalesPipelineCreate = {
+      stage,
+      reason_for_stage_change: reason,
+      metadata: metadata as Record<string, unknown>,
+    };
+
+    if (customerId?.trim()) payload.customer_id = customerId.trim();
+    if (productId) payload.chemical_type_id = productId;
+
+    if (spec.amount !== null && spec.amount !== undefined) {
+      payload.amount = Number(spec.amount);
+    }
+    if (spec.unit?.trim()) payload.unit = spec.unit.trim();
+    if (spec.unit_price !== null && spec.unit_price !== undefined) {
+      payload.unit_price = Number(spec.unit_price);
+    }
+    if (spec.expected_close_date?.trim()) {
+      payload.expected_close_date = spec.expected_close_date.trim();
+    }
+    if (spec.business_model?.trim()) {
+      payload.business_model = spec.business_model.trim();
+    }
+    if (spec.business_unit) payload.business_unit = spec.business_unit;
+    if (spec.currency) payload.currency = spec.currency;
+    if (spec.forex) payload.forex = spec.forex;
+    if (spec.incoterm) payload.incoterm = spec.incoterm;
+    if (leadSources[0]) payload.lead_source = leadSources[0];
+    if (contacts[0]) payload.contact_per_lead = contacts[0];
+    if (closeReason?.trim()) payload.close_reason = closeReason.trim();
+    return payload;
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    setSaveError(null);
 
     try {
       // CRITICAL: Only update if we're explicitly on an edit route with a valid pipeline ID
@@ -1148,9 +1208,17 @@ export function SalesPipelinePage() {
         }
 
         if (!reasonForStageChange.trim()) {
-          alert(
-            "A reason is required when opening or updating a pipeline deal.",
-          );
+          const msg =
+            "A reason is required when opening or updating a pipeline deal.";
+          setSaveError(msg);
+          alert(msg);
+          return;
+        }
+
+        if (!formData.customer_id?.trim()) {
+          const msg = "Select a customer before saving the pipeline.";
+          setSaveError(msg);
+          alert(msg);
           return;
         }
 
@@ -1178,7 +1246,10 @@ export function SalesPipelinePage() {
               );
               return;
             }
-            const existingId = resolveExistingPipelineId(productId);
+            const existingId =
+              globalDealMode === "existing"
+                ? resolveExistingPipelineId(productId)
+                : null;
             const existing = existingId
               ? customerPipelines.find((p) => p.id === existingId)
               : undefined;
@@ -1304,39 +1375,29 @@ export function SalesPipelinePage() {
           // Belt-and-suspenders: New mode must never update an old deal
           if (globalDealMode === "new" || !targetPipelineId) {
             if (globalDealMode === "existing" && !targetPipelineId) {
-              alert(
-                "Could not resolve an existing pipeline to update. Select one at the top or switch to New pipeline.",
-              );
+              const msg =
+                "Could not resolve an existing pipeline to update. Select one at the top or switch to New pipeline.";
+              setSaveError(msg);
+              alert(msg);
               return;
             }
 
-            const { customer_id: _cid, ...formRest } = formData;
-            const createData: SalesPipelineCreate = {
-              ...formRest,
-              ...(cid?.trim() ? { customer_id: cid } : {}),
-              chemical_type_id: productId,
-              stage: globalDealMode === "new" ? (formData.stage || "Lead ID") : createStage,
-              vendor_name: spec.vendor_name,
-              expected_close_date: spec.expected_close_date,
-              business_model: spec.business_model,
-              business_unit: spec.business_unit,
-              unit: spec.unit,
-              amount: spec.amount,
-              unit_price: spec.unit_price,
-              currency: spec.currency,
-              forex: spec.forex,
-              incoterm: spec.incoterm,
-              close_reason:
+            const createData = buildCleanCreatePayload({
+              productId,
+              spec,
+              leadSources,
+              contacts,
+              metadata,
+              customerId: cid,
+              stage: createStage,
+              reason: reasonForStageChange.trim(),
+              closeReason:
                 createStage === "Lost" || createStage === "Closed"
                   ? formData.close_reason?.trim() ||
                     reasonForStageChange.trim() ||
                     null
                   : formData.close_reason,
-              lead_source: leadSources[0] || null,
-              contact_per_lead: contacts[0] || null,
-              metadata: metadata as Record<string, unknown>,
-              reason_for_stage_change: reasonForStageChange.trim(),
-            };
+            });
             console.log("Creating NEW pipeline with payload:", createData);
             await createSalesPipeline(createData);
             continue;
@@ -1404,7 +1465,9 @@ export function SalesPipelinePage() {
         "Error details:",
         (err as { response?: { data?: unknown } })?.response?.data,
       );
-      alert(formatApiErrorDetail(err, "Failed to save pipeline"));
+      const msg = formatApiErrorDetail(err, "Failed to save pipeline");
+      setSaveError(msg);
+      alert(msg);
     } finally {
       setCreating(false);
       setUpdating(false);
@@ -1638,6 +1701,12 @@ export function SalesPipelinePage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              {saveError && (
+                <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  <strong className="font-semibold">Could not save: </strong>
+                  {saveError}
+                </div>
+              )}
               {isCreateLeadPipelineForm(editingPipeline) && (
                 <div className="rounded-xl border-2 border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -2041,12 +2110,11 @@ export function SalesPipelinePage() {
                                 Remove
                               </button>
                             </div>
+                            {globalDealMode === "existing" && (
                             <PipelineDealLinkFields
                               link={
                                 productDealLinks[productId] ??
-                                (globalDealMode === "new"
-                                  ? { mode: "new", existingPipelineId: null }
-                                  : suggestDealLink(productId))
+                                suggestDealLink(productId)
                               }
                               onChange={(link) => {
                                 setProductDealLinks((prev) => ({
@@ -2075,6 +2143,13 @@ export function SalesPipelinePage() {
                               labelOptions={pipelineLabelOptions}
                               hideModeTabs
                             />
+                            )}
+                            {globalDealMode === "new" && (
+                              <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">
+                                Saving as a <strong>new separate deal</strong> for
+                                this product (Lead ID by default).
+                              </p>
+                            )}
                             <ProductDealSpecFields
                               spec={spec}
                               onChange={(patch) =>
@@ -2094,7 +2169,8 @@ export function SalesPipelinePage() {
 
                 {isCreateLeadPipelineForm(editingPipeline) &&
                   formData.customer_id &&
-                  selectedProductIds.length === 0 && (
+                  selectedProductIds.length === 0 &&
+                  globalDealMode === "existing" && (
                     <div className="md:col-span-2">
                       <PipelineDealLinkFields
                         link={
@@ -2129,6 +2205,15 @@ export function SalesPipelinePage() {
                         hideModeTabs
                       />
                     </div>
+                  )}
+                {isCreateLeadPipelineForm(editingPipeline) &&
+                  formData.customer_id &&
+                  selectedProductIds.length === 0 &&
+                  globalDealMode === "new" && (
+                    <p className="md:col-span-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      Saving as a <strong>new separate deal</strong> for this customer
+                      (Lead ID by default).
+                    </p>
                   )}
 
                 {!(

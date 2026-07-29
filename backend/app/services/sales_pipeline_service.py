@@ -586,6 +586,8 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     """
     supabase: Client = get_supabase_client()
     payload = body.model_dump(exclude_unset=True)
+    # Never persist UI-only vendor_name column
+    payload.pop("vendor_name", None)
 
     if not payload.get("stage"):
         payload["stage"] = "Lead ID"
