@@ -77,10 +77,10 @@ function pickBetterPipelineCandidate(
     : existing;
 }
 
-/** One card per customer+product — collapse version history and duplicate chains. */
+/** One card per version chain — independent New-pipeline deals stay separate. */
 export function dedupePipelinesForDisplay(
   pipelines: SalesPipeline[],
-  chemicals: ChemicalFullData[] = [],
+  _chemicals: ChemicalFullData[] = [],
 ): SalesPipeline[] {
   const chainHeads = new Map<string, SalesPipeline>();
   for (const pipeline of pipelines) {
@@ -89,34 +89,7 @@ export function dedupePipelinesForDisplay(
     chainHeads.set(root, prev ? pickBetterPipelineCandidate(prev, pipeline) : pipeline);
   }
 
-  const grouped = new Map<string, SalesPipeline>();
-  for (const pipeline of chainHeads.values()) {
-    const customer = (pipeline.customer_id || "").toLowerCase();
-    const chemId = pipeline.chemical_type_id?.trim().toLowerCase();
-    let productKey: string;
-    if (chemId) {
-      productKey = chemId;
-    } else {
-      const label = getPipelineProductLabel(pipeline, { chemicalFullData: chemicals })
-        .trim()
-        .toLowerCase();
-      if (label && label !== "general / no product linked") {
-        const byName = chemicals.find(
-          (c) => (c.product_name || "").trim().toLowerCase() === label,
-        );
-        productKey = byName?.uuid_id?.toLowerCase() ?? `n:${label}`;
-      } else if (pipeline.tds_id) {
-        productKey = `tds:${pipeline.tds_id.toLowerCase()}`;
-      } else {
-        productKey = "umbrella";
-      }
-    }
-    const key = `${customer}|${productKey}`;
-    const prev = grouped.get(key);
-    grouped.set(key, prev ? pickBetterPipelineCandidate(prev, pipeline) : pipeline);
-  }
-
-  return [...grouped.values()].sort(
+  return [...chainHeads.values()].sort(
     (a, b) => pipelineSortTimestamp(b) - pipelineSortTimestamp(a),
   );
 }
@@ -285,6 +258,32 @@ export function defaultUnitForUnknownQuantity(
     return "kg";
   }
   return trimmed || null;
+}
+
+/**
+ * When advancing an Old pipeline into Discovery/Sample without a quantity,
+ * use 0 kg (TBD) so save can succeed for product-identified deals.
+ */
+export function ensureDiscoveryQuantityDefaults(
+  amount: number | null | undefined,
+  unit: string | null | undefined,
+  targetStage: string,
+): { amount: number | null; unit: string | null } {
+  let nextAmount =
+    amount === null || amount === undefined || Number.isNaN(Number(amount))
+      ? null
+      : Number(amount);
+  let nextUnit = typeof unit === "string" && unit.trim() ? unit.trim() : null;
+
+  if (stageAllowsUnknownQuantity(targetStage) && nextAmount === null) {
+    nextAmount = 0;
+  }
+  if (nextAmount === 0 && !nextUnit && stageAllowsUnknownQuantity(targetStage)) {
+    nextUnit = "kg";
+  } else if (nextAmount !== null && !nextUnit) {
+    nextUnit = defaultUnitForUnknownQuantity(nextUnit, nextAmount, targetStage);
+  }
+  return { amount: nextAmount, unit: nextUnit };
 }
 
 /** Product, unit, and quantity required from Discovery onward. */

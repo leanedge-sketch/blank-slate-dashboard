@@ -241,24 +241,19 @@ export function PipelineDealLinkFields({
       )}
 
       {link.mode === "new" && matchedPipeline && (
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          An open pipeline already exists for this product. Prefer{" "}
+        <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          Note: an open pipeline already exists for this product (
+          <strong>{pipelineOptionLabel(matchedPipeline)}</strong>
+          ). You can still save this as a <strong>separate New pipeline</strong>{" "}
+          at Lead ID — or switch to{" "}
           <button
             type="button"
             onClick={() => preferMode("existing")}
-            className="font-semibold underline underline-offset-2 hover:text-amber-950"
+            className="font-semibold underline underline-offset-2 hover:text-slate-900"
           >
             Old pipeline
           </button>{" "}
-          to advance that deal — or keep{" "}
-          <button
-            type="button"
-            onClick={() => preferMode("new")}
-            className="font-semibold underline underline-offset-2 hover:text-amber-950"
-          >
-            New pipeline
-          </button>{" "}
-          to start a separate deal at Lead ID.
+          to advance that deal instead.
         </p>
       )}
 

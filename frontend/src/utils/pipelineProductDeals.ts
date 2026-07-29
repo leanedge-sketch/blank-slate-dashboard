@@ -32,6 +32,51 @@ export function emptyProductDealSpec(): ProductDealSpec {
   };
 }
 
+/** True when the user has not filled commercial/quantity fields yet. */
+export function isBlankProductDealSpec(spec: ProductDealSpec | null | undefined): boolean {
+  if (!spec) return true;
+  return (
+    spec.amount == null &&
+    !spec.unit &&
+    spec.unit_price == null &&
+    !spec.business_model &&
+    !spec.business_unit &&
+    !spec.currency &&
+    !spec.forex &&
+    !spec.incoterm &&
+    !spec.expected_close_date &&
+    !spec.vendor_name
+  );
+}
+
+/** Fill only empty fields from a source spec (keeps user edits). */
+export function mergeProductDealSpec(
+  current: ProductDealSpec | null | undefined,
+  source: ProductDealSpec,
+): ProductDealSpec {
+  const base = current ?? emptyProductDealSpec();
+  return {
+    vendor_name: base.vendor_name || source.vendor_name,
+    leadSourceEntries:
+      base.leadSourceEntries.some((s) => s.trim())
+        ? base.leadSourceEntries
+        : source.leadSourceEntries,
+    contactPerLeadEntries:
+      base.contactPerLeadEntries.some((s) => s.trim())
+        ? base.contactPerLeadEntries
+        : source.contactPerLeadEntries,
+    expected_close_date: base.expected_close_date || source.expected_close_date,
+    business_model: base.business_model || source.business_model,
+    business_unit: base.business_unit || source.business_unit,
+    unit: base.unit || source.unit,
+    amount: base.amount ?? source.amount,
+    unit_price: base.unit_price ?? source.unit_price,
+    currency: base.currency || source.currency,
+    forex: base.forex || source.forex,
+    incoterm: base.incoterm || source.incoterm,
+  };
+}
+
 export function updateProductSpec(
   specs: Record<string, ProductDealSpec>,
   productId: string,

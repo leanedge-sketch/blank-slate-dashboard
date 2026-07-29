@@ -11,6 +11,9 @@ import {
   SalesPipelineUpdate,
   PipelineStage,
   Currency,
+  BusinessUnit,
+  Forex,
+  Incoterm,
   fetchTDS,
   Customer,
   Tds,
@@ -43,6 +46,8 @@ import { ProductMultiSelect } from "../../components/sales/ProductMultiSelect";
 import { ProductDealSpecFields } from "../../components/sales/ProductDealSpecFields";
 import {
   emptyProductDealSpec,
+  isBlankProductDealSpec,
+  mergeProductDealSpec,
   updateProductSpec,
   type ProductDealSpec,
 } from "../../utils/pipelineProductDeals";
@@ -60,6 +65,7 @@ import {
   amountChangeReasonRequired,
   dedupePipelinesForDisplay,
   defaultUnitForUnknownQuantity,
+  ensureDiscoveryQuantityDefaults,
   formatPipelineAmountInput,
   formatPipelineQuantity,
   getNextPipelineStage,
@@ -222,7 +228,7 @@ export function SalesPipelinePage() {
   const [contactPerLeadEntries, setContactPerLeadEntries] = useState<string[]>(
     [""],
   );
-  const [globalDealMode, setGlobalDealMode] = useState<DealLinkMode>("existing");
+  const [globalDealMode, setGlobalDealMode] = useState<DealLinkMode>("new");
   /** Once the user picks New/Old, don't auto-flip mode when products load. */
   const [dealModeChosenByUser, setDealModeChosenByUser] = useState(false);
   const [globalExistingPipelineId, setGlobalExistingPipelineId] = useState<
@@ -243,17 +249,97 @@ export function SalesPipelinePage() {
     return suggestProductDealLink(customerPipelines, productId, chemicalFullData);
   }
 
+  function specFromExistingPipeline(
+    pipeline: SalesPipeline,
+    targetStage: string,
+  ): ProductDealSpec {
+    const meta = (pipeline.metadata || {}) as Record<string, unknown>;
+    const vendorRaw = meta.vendor ?? meta.vendor_name;
+    const vendor =
+      typeof vendorRaw === "string" && vendorRaw.trim() ? vendorRaw.trim() : null;
+    const defaults = ensureDiscoveryQuantityDefaults(
+      pipeline.amount,
+      pipeline.unit,
+      targetStage,
+    );
+    return {
+      vendor_name: vendor,
+      leadSourceEntries: pipeline.lead_source ? [pipeline.lead_source] : [""],
+      contactPerLeadEntries: pipeline.contact_per_lead
+        ? [pipeline.contact_per_lead]
+        : [""],
+      expected_close_date: pipeline.expected_close_date
+        ? String(pipeline.expected_close_date).slice(0, 10)
+        : null,
+      business_model: pipeline.business_model || null,
+      business_unit: (pipeline.business_unit as BusinessUnit) || null,
+      unit: defaults.unit,
+      amount: defaults.amount,
+      unit_price: pipeline.unit_price ?? null,
+      currency: (pipeline.currency as Currency) || null,
+      forex: (pipeline.forex as Forex) || null,
+      incoterm: (pipeline.incoterm as Incoterm) || null,
+    };
+  }
+
   function applyGlobalExistingPipeline(pipelineId: string | null) {
     setGlobalExistingPipelineId(pipelineId);
     if (!pipelineId) return;
 
     const picked = customerPipelines.find((p) => p.id === pipelineId);
-    if (picked?.stage) {
-      const nextStage = getNextPipelineStage(picked.stage);
-      setFormData((prev) => ({
+    if (!picked) return;
+
+    const nextStage = (getNextPipelineStage(picked.stage) ??
+      picked.stage) as PipelineStage;
+    const hydrated = specFromExistingPipeline(picked, nextStage);
+
+    setFormData((prev) => ({
+      ...prev,
+      stage: nextStage,
+      chemical_type_id: picked.chemical_type_id || prev.chemical_type_id,
+      amount: hydrated.amount ?? prev.amount,
+      unit: hydrated.unit || prev.unit,
+      unit_price: hydrated.unit_price ?? prev.unit_price,
+      currency: hydrated.currency || prev.currency,
+      business_model: hydrated.business_model || prev.business_model,
+      business_unit: hydrated.business_unit || prev.business_unit,
+      forex: hydrated.forex || prev.forex,
+      incoterm: hydrated.incoterm || prev.incoterm,
+      expected_close_date:
+        hydrated.expected_close_date || prev.expected_close_date,
+      lead_source: picked.lead_source || prev.lead_source,
+      contact_per_lead: picked.contact_per_lead || prev.contact_per_lead,
+    }));
+
+    const productKey = picked.chemical_type_id;
+    if (productKey && selectedProductIds.length === 0) {
+      setSelectedProductIds([productKey]);
+      setProductSpecs((prev) => ({
         ...prev,
-        stage: (nextStage ?? picked.stage) as PipelineStage,
+        [productKey]: mergeProductDealSpec(prev[productKey], hydrated),
       }));
+    } else {
+      setProductSpecs((prev) => {
+        const next = { ...prev };
+        const keys =
+          selectedProductIds.length > 0
+            ? selectedProductIds
+            : productKey
+              ? [productKey]
+              : [];
+        for (const key of keys) {
+          const current = next[key];
+          // Prefer matching product; otherwise fill blank specs from the deal
+          if (
+            key === productKey ||
+            isBlankProductDealSpec(current) ||
+            !current
+          ) {
+            next[key] = mergeProductDealSpec(current, hydrated);
+          }
+        }
+        return next;
+      });
     }
 
     setProductDealLinks((prev) => {
@@ -261,7 +347,9 @@ export function SalesPipelinePage() {
       const keys =
         selectedProductIds.length > 0
           ? selectedProductIds
-          : [DEAL_LINK_KEY_NONE];
+          : productKey
+            ? [productKey]
+            : [DEAL_LINK_KEY_NONE];
       for (const key of keys) {
         next[key] = { mode: "existing", existingPipelineId: pipelineId };
       }
@@ -270,11 +358,14 @@ export function SalesPipelinePage() {
   }
 
   function resolveExistingPipelineId(productId: string | null): string | null {
+    // New pipeline must never resolve to an old deal id
+    if (globalDealMode === "new") return null;
     const key = dealLinkKey(productId);
     const fromLink = productDealLinks[key]?.existingPipelineId;
     if (fromLink) return fromLink;
     if (globalExistingPipelineId) return globalExistingPipelineId;
-    return suggestProductDealLink(customerPipelines, productId, chemicalFullData).existingPipelineId;
+    return suggestProductDealLink(customerPipelines, productId, chemicalFullData)
+      .existingPipelineId;
   }
 
   function applyGlobalDealMode(mode: DealLinkMode) {
@@ -315,8 +406,9 @@ export function SalesPipelinePage() {
     contacts: string[],
     metadata: Record<string, unknown>,
     cid: string | undefined,
+    options: { omitNulls?: boolean } = {},
   ): SalesPipelineUpdate {
-    return {
+    const raw: SalesPipelineUpdate = {
       customer_id: cid?.trim() ? cid : undefined,
       chemical_type_id: productId,
       expected_close_date: spec.expected_close_date,
@@ -332,6 +424,14 @@ export function SalesPipelinePage() {
       contact_per_lead: contacts[0] || null,
       metadata: metadata as Record<string, unknown>,
     };
+    if (!options.omitNulls) return raw;
+
+    const patch: SalesPipelineUpdate = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (value === null || value === undefined || value === "") continue;
+      (patch as Record<string, unknown>)[key] = value;
+    }
+    return patch;
   }
 
   function handleSelectedProductsChange(ids: string[]) {
@@ -410,20 +510,22 @@ export function SalesPipelinePage() {
     setProductDealLinks((prev) => {
       const next = { ...prev };
       for (const id of selectedProductIds) {
+        if (globalDealMode === "new") {
+          // Keep New pipeline sticky — never re-link to an old deal
+          next[id] = { mode: "new", existingPipelineId: null };
+          continue;
+        }
         const existing = next[id];
         if (
           !existing ||
           (existing.mode === "existing" && !existing.existingPipelineId)
         ) {
-          next[id] =
-            globalDealMode === "new"
-              ? { mode: "new", existingPipelineId: null }
-              : suggestProductDealLink(customerPipelines, id, chemicalFullData);
-          if (
-            globalDealMode === "existing" &&
-            !next[id].existingPipelineId &&
-            globalExistingPipelineId
-          ) {
+          next[id] = suggestProductDealLink(
+            customerPipelines,
+            id,
+            chemicalFullData,
+          );
+          if (!next[id].existingPipelineId && globalExistingPipelineId) {
             next[id] = {
               mode: "existing",
               existingPipelineId: globalExistingPipelineId,
@@ -432,37 +534,43 @@ export function SalesPipelinePage() {
         }
       }
       if (selectedProductIds.length === 0) {
-        const existing = next[DEAL_LINK_KEY_NONE];
-        if (
-          !existing ||
-          (existing.mode === "existing" && !existing.existingPipelineId)
-        ) {
-          next[DEAL_LINK_KEY_NONE] =
-            globalDealMode === "new"
-              ? { mode: "new", existingPipelineId: null }
-              : suggestProductDealLink(customerPipelines, null, chemicalFullData);
+        if (globalDealMode === "new") {
+          next[DEAL_LINK_KEY_NONE] = {
+            mode: "new",
+            existingPipelineId: null,
+          };
+        } else {
+          const existing = next[DEAL_LINK_KEY_NONE];
           if (
-            globalDealMode === "existing" &&
-            !next[DEAL_LINK_KEY_NONE].existingPipelineId &&
-            globalExistingPipelineId
+            !existing ||
+            (existing.mode === "existing" && !existing.existingPipelineId)
           ) {
-            next[DEAL_LINK_KEY_NONE] = {
-              mode: "existing",
-              existingPipelineId: globalExistingPipelineId,
-            };
+            next[DEAL_LINK_KEY_NONE] = suggestProductDealLink(
+              customerPipelines,
+              null,
+              chemicalFullData,
+            );
+            if (
+              !next[DEAL_LINK_KEY_NONE].existingPipelineId &&
+              globalExistingPipelineId
+            ) {
+              next[DEAL_LINK_KEY_NONE] = {
+                mode: "existing",
+                existingPipelineId: globalExistingPipelineId,
+              };
+            }
           }
         }
       }
       return next;
     });
-    // Only auto-suggest Old pipeline before the user explicitly picks a mode
-    if (dealModeChosenByUser) return;
+    // Soft-suggest only: never auto-force Old when user wants New / Add Pipeline
+    if (dealModeChosenByUser || globalDealMode === "new") return;
     const hasMatch = customerHasMatchingPipelines(
       customerPipelines,
       selectedProductIds,
     );
     if (hasMatch) {
-      setGlobalDealMode("existing");
       const productId = selectedProductIds[0] ?? null;
       const match = findPipelineForProduct(
         customerPipelines,
@@ -471,11 +579,11 @@ export function SalesPipelinePage() {
       );
       const pipelineId = match?.id ?? customerPipelines[0]?.id ?? null;
       if (pipelineId) {
-        applyGlobalExistingPipeline(pipelineId);
+        setGlobalExistingPipelineId(pipelineId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerPipelines, selectedProductIds]);
+  }, [customerPipelines, selectedProductIds, globalDealMode]);
 
   function specForCreate(productId: string | null): ProductDealSpec {
     if (productId) {
@@ -729,9 +837,9 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
-    const preferNew = searchParams.get("deal_mode") === "new";
+    const preferNew = searchParams.get("deal_mode") !== "existing";
     setGlobalDealMode(preferNew ? "new" : "existing");
-    setDealModeChosenByUser(preferNew);
+    setDealModeChosenByUser(true);
     setGlobalExistingPipelineId(null);
     setLeadSourceEntries([""]);
     setContactPerLeadEntries([""]);
@@ -930,7 +1038,7 @@ export function SalesPipelinePage() {
     setProductSpecs({});
     setProductDealLinks({});
     setCustomerPipelines([]);
-    setGlobalDealMode("existing");
+    setGlobalDealMode("new");
     setDealModeChosenByUser(false);
     setGlobalExistingPipelineId(null);
     setLeadSourceEntries([""]);
@@ -1070,23 +1178,28 @@ export function SalesPipelinePage() {
               );
               return;
             }
-            const spec = specForCreate(productId);
-            if (
-              spec.amount === null ||
-              spec.amount === undefined ||
-              Number.isNaN(Number(spec.amount))
-            ) {
+            const existingId = resolveExistingPipelineId(productId);
+            const existing = existingId
+              ? customerPipelines.find((p) => p.id === existingId)
+              : undefined;
+            const merged = existing
+              ? mergeProductDealSpec(
+                  specForCreate(productId),
+                  specFromExistingPipeline(existing, createStage),
+                )
+              : specForCreate(productId);
+            const qty = ensureDiscoveryQuantityDefaults(
+              merged.amount,
+              merged.unit,
+              createStage,
+            );
+            if (qty.amount === null || qty.amount === undefined) {
               alert(
                 "Amount (quantity) is required from Discovery stage onward. Enter 0 if quantity is not yet determined.",
               );
               return;
             }
-            const unit = defaultUnitForUnknownQuantity(
-              spec.unit,
-              spec.amount,
-              createStage,
-            );
-            if (!unit) {
+            if (!qty.unit) {
               alert(
                 "Unit is required from Discovery stage onward (e.g. kg). Or set quantity to 0 for TBD.",
               );
@@ -1095,7 +1208,7 @@ export function SalesPipelinePage() {
             if (
               createStage !== "Discovery" &&
               createStage !== "Sample" &&
-              Number(spec.amount) <= 0
+              Number(qty.amount) <= 0
             ) {
               alert(
                 "Enter a quantity greater than 0 from Validation stage onward.",
@@ -1109,20 +1222,38 @@ export function SalesPipelinePage() {
         setEditingPipeline(null);
 
         for (const productId of productIdsToCreate) {
+          const existingIdForDefaults =
+            globalDealMode === "existing"
+              ? resolveExistingPipelineId(productId)
+              : null;
+          const existingForDefaults = existingIdForDefaults
+            ? customerPipelines.find((p) => p.id === existingIdForDefaults)
+            : undefined;
+
           const rawSpec = specForCreate(productId);
-          const resolvedUnit = defaultUnitForUnknownQuantity(
-            rawSpec.unit,
-            rawSpec.amount,
+          // Old pipeline: fill blanks from the existing deal, then TBD defaults
+          const fromExisting = existingForDefaults
+            ? mergeProductDealSpec(
+                rawSpec,
+                specFromExistingPipeline(existingForDefaults, createStage),
+              )
+            : rawSpec;
+          const qtyDefaults = ensureDiscoveryQuantityDefaults(
+            fromExisting.amount,
+            fromExisting.unit,
             createStage,
           );
+          const resolvedUnit =
+            qtyDefaults.unit ||
+            defaultUnitForUnknownQuantity(
+              fromExisting.unit,
+              qtyDefaults.amount,
+              createStage,
+            );
           const spec: ProductDealSpec = {
-            ...rawSpec,
+            ...fromExisting,
             unit: resolvedUnit,
-            // Preserve explicit 0 (TBD); only null/undefined stay empty
-            amount:
-              rawSpec.amount === null || rawSpec.amount === undefined
-                ? null
-                : Number(rawSpec.amount),
+            amount: qtyDefaults.amount,
           };
           const leadSources = spec.leadSourceEntries
             .map((s) => s.trim())
@@ -1162,12 +1293,54 @@ export function SalesPipelinePage() {
             contacts,
             metadata,
             cid,
+            { omitNulls: globalDealMode === "existing" },
           );
 
           const targetPipelineId =
             globalDealMode === "existing"
               ? resolveExistingPipelineId(productId)
               : null;
+
+          // Belt-and-suspenders: New mode must never update an old deal
+          if (globalDealMode === "new" || !targetPipelineId) {
+            if (globalDealMode === "existing" && !targetPipelineId) {
+              alert(
+                "Could not resolve an existing pipeline to update. Select one at the top or switch to New pipeline.",
+              );
+              return;
+            }
+
+            const { customer_id: _cid, ...formRest } = formData;
+            const createData: SalesPipelineCreate = {
+              ...formRest,
+              ...(cid?.trim() ? { customer_id: cid } : {}),
+              chemical_type_id: productId,
+              stage: globalDealMode === "new" ? (formData.stage || "Lead ID") : createStage,
+              vendor_name: spec.vendor_name,
+              expected_close_date: spec.expected_close_date,
+              business_model: spec.business_model,
+              business_unit: spec.business_unit,
+              unit: spec.unit,
+              amount: spec.amount,
+              unit_price: spec.unit_price,
+              currency: spec.currency,
+              forex: spec.forex,
+              incoterm: spec.incoterm,
+              close_reason:
+                createStage === "Lost" || createStage === "Closed"
+                  ? formData.close_reason?.trim() ||
+                    reasonForStageChange.trim() ||
+                    null
+                  : formData.close_reason,
+              lead_source: leadSources[0] || null,
+              contact_per_lead: contacts[0] || null,
+              metadata: metadata as Record<string, unknown>,
+              reason_for_stage_change: reasonForStageChange.trim(),
+            };
+            console.log("Creating NEW pipeline with payload:", createData);
+            await createSalesPipeline(createData);
+            continue;
+          }
 
           if (targetPipelineId) {
             const existingPipeline = customerPipelines.find(
@@ -1188,12 +1361,7 @@ export function SalesPipelinePage() {
               );
               return;
             }
-            console.log(
-              "Updating existing pipeline (continue old deal):",
-              targetPipelineId,
-              updateData,
-            );
-            await updateSalesPipeline(targetPipelineId, {
+            const oldUpdate: SalesPipelineUpdate = {
               ...updateData,
               stage: createStage,
               close_reason:
@@ -1203,47 +1371,29 @@ export function SalesPipelinePage() {
                     null
                   : updateData.close_reason,
               reason_for_stage_change: reasonForStageChange.trim(),
-              reason_for_amount_change: reasonForAmountChange.trim() || null,
-            });
+            };
+            if (
+              pipelineStageRequiresProductAndAmount(createStage) &&
+              spec.amount !== null &&
+              spec.amount !== undefined
+            ) {
+              oldUpdate.amount = spec.amount;
+              if (spec.unit) oldUpdate.unit = spec.unit;
+            }
+            if (reasonForAmountChange.trim()) {
+              oldUpdate.reason_for_amount_change = reasonForAmountChange.trim();
+            }
+            if (productId) {
+              oldUpdate.chemical_type_id = productId;
+            }
+            console.log(
+              "Updating existing pipeline (continue old deal):",
+              targetPipelineId,
+              oldUpdate,
+            );
+            await updateSalesPipeline(targetPipelineId, oldUpdate);
             continue;
           }
-
-          if (globalDealMode === "existing") {
-            alert(
-              "Could not resolve an existing pipeline to update. Select one at the top or switch to New pipeline.",
-            );
-            return;
-          }
-
-          const { customer_id: _cid, ...formRest } = formData;
-          const createData: SalesPipelineCreate = {
-            ...formRest,
-            ...(cid?.trim() ? { customer_id: cid } : {}),
-            chemical_type_id: productId,
-            stage: createStage,
-            vendor_name: spec.vendor_name,
-            expected_close_date: spec.expected_close_date,
-            business_model: spec.business_model,
-            business_unit: spec.business_unit,
-            unit: spec.unit,
-            amount: spec.amount,
-            unit_price: spec.unit_price,
-            currency: spec.currency,
-            forex: spec.forex,
-            incoterm: spec.incoterm,
-            close_reason:
-              createStage === "Lost" || createStage === "Closed"
-                ? formData.close_reason?.trim() ||
-                  reasonForStageChange.trim() ||
-                  null
-                : formData.close_reason,
-            lead_source: leadSources[0] || null,
-            contact_per_lead: contacts[0] || null,
-            metadata: metadata as Record<string, unknown>,
-            reason_for_stage_change: reasonForStageChange.trim(),
-          };
-          console.log("Creating pipeline with payload:", createData);
-          await createSalesPipeline(createData);
         }
       }
       closeForm();
@@ -1571,7 +1721,9 @@ export function SalesPipelinePage() {
                         </select>
                         <p className="text-xs text-slate-500 mt-1">
                           Stage defaults to the next step when you pick a pipeline.
-                          Change it below if needed.
+                          Quantity defaults to <strong>0 kg (TBD)</strong> at
+                          Discovery/Sample when not set yet. Change stage or
+                          quantity below if needed.
                         </p>
                       </div>
                     )}
@@ -1587,9 +1739,9 @@ export function SalesPipelinePage() {
                     </>
                   ) : (
                     <>
-                      Starting a <strong>new pipeline</strong> at{" "}
-                      <strong>{formData.stage || "Lead ID"}</strong>. Use this only
-                      for a genuinely new order or product line.
+                      Starting a <strong>new pipeline</strong> — this always
+                      creates a separate deal (even if the same product already
+                      has an open pipeline). Defaults to Lead ID.
                     </>
                   )}
                 </p>

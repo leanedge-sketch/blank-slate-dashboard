@@ -1040,12 +1040,51 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
         return base
-    
+
+    # Explicit nulls from empty form inputs mean "leave unchanged", not "clear".
+    _NULL_MEANS_UNSET = {
+        "amount",
+        "unit",
+        "unit_price",
+        "currency",
+        "forex",
+        "business_unit",
+        "incoterm",
+        "business_model",
+        "expected_close_date",
+        "lead_source",
+        "contact_per_lead",
+        "chemical_type_id",
+        "tds_id",
+        "close_reason",
+        "customer_id",
+    }
+    for key in list(update_data.keys()):
+        if key in _NULL_MEANS_UNSET and update_data[key] is None:
+            del update_data[key]
+
     # Check if stage or amount changed (relative to the current version in chain)
     stage_changed = "stage" in update_data and update_data["stage"] != base.stage
     amount_changed = "amount" in update_data and _numeric_values_differ(
         update_data.get("amount"), base.amount
     )
+
+    # Advancing into Discovery/Sample without quantity → TBD 0 kg
+    if stage_changed:
+        target_stage = update_data.get("stage") or base.stage
+        effective_amount = update_data.get("amount", base.amount)
+        if target_stage in ("Discovery", "Sample") and effective_amount is None:
+            update_data["amount"] = 0
+            amount_changed = _numeric_values_differ(0, base.amount)
+            if not update_data.get("unit") and not base.unit:
+                update_data["unit"] = "kg"
+        elif (
+            target_stage in ("Discovery", "Sample")
+            and effective_amount == 0
+            and not update_data.get("unit")
+            and not base.unit
+        ):
+            update_data["unit"] = "kg"
     
     # Validate stage progression if stage changed
     if stage_changed:
@@ -1059,29 +1098,38 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
 
     # New versions must satisfy commercial rules for the effective stage (stage or amount change).
     if stage_changed or amount_changed:
-        merged_stage = update_data.get("stage", base.stage)
-        merged_business_model = update_data.get("business_model", base.business_model)
-        merged_unit = update_data.get("unit", base.unit)
-        merged_unit_price = update_data.get("unit_price", base.unit_price)
-        merged_close_reason = update_data.get("close_reason", base.close_reason)
+        def _coalesce(key: str, base_value: Any) -> Any:
+            if key not in update_data:
+                return base_value
+            val = update_data.get(key)
+            if val is None or (isinstance(val, str) and not str(val).strip()):
+                return base_value
+            return val
+
+        merged_stage = _coalesce("stage", base.stage)
+        merged_business_model = _coalesce("business_model", base.business_model)
+        merged_unit = _coalesce("unit", base.unit)
+        merged_unit_price = _coalesce("unit_price", base.unit_price)
+        merged_close_reason = _coalesce("close_reason", base.close_reason)
         merged_metadata = update_data.get("metadata", base.metadata)
+        merged_amount = _coalesce("amount", base.amount)
         validate_pipeline_stage_requirements(
             stage=merged_stage,
             business_model=merged_business_model,
             unit=merged_unit,
             unit_price=merged_unit_price,
             close_reason=merged_close_reason,
-            currency=update_data.get("currency", base.currency),
-            forex=update_data.get("forex", base.forex),
-            business_unit=update_data.get("business_unit", base.business_unit),
-            incoterm=update_data.get("incoterm", base.incoterm),
+            currency=_coalesce("currency", base.currency),
+            forex=_coalesce("forex", base.forex),
+            business_unit=_coalesce("business_unit", base.business_unit),
+            incoterm=_coalesce("incoterm", base.incoterm),
             chemical_type_id=_resolve_chemical_type_id(
-                update_data.get("chemical_type_id", base.chemical_type_id)
+                _coalesce("chemical_type_id", base.chemical_type_id)
             ),
-            expected_close_date=update_data.get(
+            expected_close_date=_coalesce(
                 "expected_close_date", base.expected_close_date
             ),
-            amount=update_data.get("amount", base.amount),
+            amount=merged_amount,
             metadata=merged_metadata,
         )
         from app.services.business_model_service import validate_pipeline_business_model
@@ -1089,12 +1137,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         validate_pipeline_business_model(merged_business_model)
 
         # Persist TBD quantity with a default unit when omitted
-        effective_amount = update_data.get("amount", base.amount)
-        effective_unit = update_data.get("unit", base.unit)
         if (
-            effective_amount == 0
+            merged_amount == 0
             and merged_stage in ("Discovery", "Sample")
-            and (not effective_unit or not str(effective_unit).strip())
+            and (not merged_unit or not str(merged_unit).strip())
         ):
             update_data["unit"] = "kg"
 
