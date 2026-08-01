@@ -31,11 +31,38 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
+/** Supabase storage honours ?download=<name> by sending Content-Disposition. */
+function openStorageDownload(url: string, filename?: string | null): void {
+  let href = url;
+  try {
+    const target = new URL(url, window.location.href);
+    target.searchParams.set("download", filename?.trim() || "");
+    href = target.toString();
+  } catch {
+    /* Non-absolute URL — use it as-is. */
+  }
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 export async function downloadOriginalTds(
   url: string,
   originalFilename?: string | null,
 ): Promise<void> {
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    // Storage host blocked the cross-origin read — let the browser fetch it directly.
+    openStorageDownload(url, originalFilename);
+    return;
+  }
+
   if (!response.ok) {
     throw new Error(`Original file download failed (${response.status}).`);
   }

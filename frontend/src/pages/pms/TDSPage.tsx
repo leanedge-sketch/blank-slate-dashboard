@@ -26,8 +26,6 @@ import {
   Pencil,
   Trash2,
   Save,
-  Download,
-  ChevronDown,
 } from "lucide-react";
 import { TDS_MASTER_COLUMNS } from "../../utils/tdsMasterColumns";
 import { resolveTdsDocumentUrl } from "../../utils/tdsDocument";
@@ -36,6 +34,7 @@ import {
   downloadOriginalTds,
   downloadTdsProductBrief,
 } from "../../utils/tdsDownloads";
+import { TdsDownloadMenu } from "../../components/pms/TdsDownloadMenu";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import {
   catalogProductValue,
@@ -149,7 +148,6 @@ export function TDSPage() {
   const [editDraft, setEditDraft] = useState<TdsEditDraft>(emptyEditDraft());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [openDownloadId, setOpenDownloadId] = useState<string | null>(null);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
 
   async function loadTDS() {
@@ -199,12 +197,6 @@ export function TDSPage() {
     function onDocClick(e: MouseEvent) {
       if (productSearchRef.current && !productSearchRef.current.contains(e.target as Node)) {
         setShowProductDropdown(false);
-      }
-      if (
-        !(e.target instanceof Element) ||
-        !e.target.closest("[data-tds-download-menu]")
-      ) {
-        setOpenDownloadId(null);
       }
     }
     document.addEventListener("mousedown", onDocClick);
@@ -492,7 +484,6 @@ export function TDSPage() {
   ) {
     const key = `${tds.id}:original`;
     try {
-      setOpenDownloadId(null);
       setDownloadingKey(key);
       await downloadOriginalTds(documentUrl, filename);
     } catch (err: unknown) {
@@ -509,7 +500,6 @@ export function TDSPage() {
   ) {
     const key = `${tds.id}:brief`;
     try {
-      setOpenDownloadId(null);
       setDownloadingKey(key);
       downloadTdsProductBrief({
         productName: product?.product_name || product?.generic_name,
@@ -820,69 +810,24 @@ export function TDSPage() {
                                       <Pencil className="w-3.5 h-3.5" />
                                       Edit
                                     </button>
-                                    <div
-                                      className="relative"
-                                      data-tds-download-menu
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setOpenDownloadId((current) =>
-                                            current === tds.id ? null : tds.id,
-                                          )
-                                        }
-                                        disabled={!!editingId || isDeleting || !!downloadingKey}
-                                        aria-haspopup="menu"
-                                        aria-expanded={openDownloadId === tds.id}
-                                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
-                                      >
-                                        {downloadingKey?.startsWith(`${tds.id}:`) ? (
-                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        ) : (
-                                          <Download className="w-3.5 h-3.5" />
-                                        )}
-                                        Download
-                                        <ChevronDown className="w-3.5 h-3.5" />
-                                      </button>
-                                      {openDownloadId === tds.id && (
-                                        <div
-                                          role="menu"
-                                          className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg"
-                                        >
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            disabled={!docUrl}
-                                            onClick={() => {
-                                              if (docUrl) {
-                                                void handleOriginalDownload(
-                                                  tds,
-                                                  docUrl,
-                                                  typeof meta?.file_name === "string"
-                                                    ? meta.file_name
-                                                    : null,
-                                                );
-                                              }
-                                            }}
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                                          >
-                                            <FileText className="h-3.5 w-3.5" />
-                                            Original PDF
-                                          </button>
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            onClick={() =>
-                                              handleBriefDownload(tds, product, description)
-                                            }
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                                          >
-                                            <FileText className="h-3.5 w-3.5" />
-                                            Product brief
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <TdsDownloadMenu
+                                      disabled={!!editingId || isDeleting}
+                                      busy={!!downloadingKey?.startsWith(`${tds.id}:`)}
+                                      originalAvailable={!!docUrl}
+                                      onDownloadOriginal={() => {
+                                        if (!docUrl) return;
+                                        void handleOriginalDownload(
+                                          tds,
+                                          docUrl,
+                                          typeof meta?.file_name === "string"
+                                            ? meta.file_name
+                                            : null,
+                                        );
+                                      }}
+                                      onDownloadBrief={() =>
+                                        handleBriefDownload(tds, product, description)
+                                      }
+                                    />
                                     <button
                                       type="button"
                                       onClick={() => void handleDelete(tds)}
