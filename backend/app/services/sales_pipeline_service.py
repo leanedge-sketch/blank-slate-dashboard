@@ -100,6 +100,59 @@ def _pipeline_deal_value(p: SalesPipeline) -> float:
     return amount
 
 
+def _resolve_pipeline_celebration_labels(
+    pipeline: SalesPipeline,
+) -> tuple[str, Optional[str]]:
+    customer_name = "Customer"
+    product_name: Optional[str] = None
+    try:
+        if pipeline.customer_id:
+            customer = get_customer_by_id(str(pipeline.customer_id))
+            if customer and customer.customer_name:
+                customer_name = customer.customer_name
+    except Exception:
+        pass
+    try:
+        product_name = _metadata_product_name(pipeline.metadata)
+        if not product_name and pipeline.tds_id:
+            tds = get_tds_by_id(str(pipeline.tds_id))
+            if tds:
+                product_name = (tds.brand or tds.grade or None)
+        if not product_name and pipeline.chemical_type_id:
+            from app.services.chemical_master_data import get_chemical_master_data_by_uuid
+
+            chem = get_chemical_master_data_by_uuid(str(pipeline.chemical_type_id))
+            if chem and chem.product_name:
+                product_name = chem.product_name
+    except Exception:
+        pass
+    return customer_name, product_name
+
+
+def _notify_pipeline_celebration_safe(
+    *,
+    previous_stage: Optional[str],
+    pipeline: SalesPipeline,
+) -> None:
+    """Best-effort Telegram celebration — never fail the pipeline save."""
+    import logging
+
+    try:
+        from app.services.celebration_notify import notify_pipeline_stage_celebration
+
+        customer_name, product_name = _resolve_pipeline_celebration_labels(pipeline)
+        notify_pipeline_stage_celebration(
+            previous_stage=previous_stage,
+            pipeline=pipeline,
+            customer_name=customer_name,
+            product_name=product_name,
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Pipeline Telegram celebration skipped: %s", exc
+        )
+
+
 def convert_uuids(obj: Any) -> Any:
     """
     Recursively convert UUID objects to strings for JSON serialization.
@@ -696,7 +749,10 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     
     row = normalize_pipeline_row_from_db(response.data[0])
     logger.info(f"Created pipeline, returned row: {row}")
-    return SalesPipeline(**row)
+    created = SalesPipeline(**row)
+    if created.stage in ("Closed", "Confirmation"):
+        _notify_pipeline_celebration_safe(previous_stage=None, pipeline=created)
+    return created
 
 
 def _vendor_from_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -1313,6 +1369,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
                 pipeline_id,
                 e,
             )
+        if stage_changed:
+            _notify_pipeline_celebration_safe(
+                previous_stage=base.stage, pipeline=new_pipeline
+            )
         return new_pipeline
     
     # Regular update (no stage/amount change) — update the current chain head
@@ -1327,7 +1387,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
         )
     db_update = convert_uuids(normalize_pipeline_payload_to_db(update_data))
     logger.info("Updating pipeline %s with data: %s", target_id, db_update)
-    return _apply_pipeline_row_update(supabase, target_id, db_update)
+    updated = _apply_pipeline_row_update(supabase, target_id, db_update)
+    if stage_changed:
+        _notify_pipeline_celebration_safe(previous_stage=base.stage, pipeline=updated)
+    return updated
 
 
 def delete_sales_pipeline(pipeline_id: str) -> bool:

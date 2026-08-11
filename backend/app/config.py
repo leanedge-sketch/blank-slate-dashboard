@@ -49,10 +49,29 @@ class Settings(BaseSettings):
     GEMINI_EMBED_MODEL: str = "text-embedding-004"
     GROQ_API_KEY: str = ""
     
-    # Telegram — same bot as legacy CRM notifications (see telegram_service.py)
+    # Notifications — WhatsApp (default) and/or Telegram celebrations
+    NOTIFICATION_ENABLED: bool = True
+    NOTIFICATION_CHANNEL: str = "telegram"  # whatsapp | telegram | both | none
+    TELEGRAM_BIG_SALE_THRESHOLD_USD: float = 10000.0  # Shared big-sale bar (USD)
+
+    # WhatsApp Business (Meta Cloud API by default; Twilio optional)
+    WHATSAPP_PROVIDER: str = "meta"  # meta | twilio
+    WHATSAPP_ACCESS_TOKEN: str = ""
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_TO: str = ""  # Comma-separated E.164 numbers, e.g. 2547...,2519...
+    WHATSAPP_API_VERSION: str = "v21.0"
+    WHATSAPP_USE_TEMPLATES: bool = False
+    WHATSAPP_TEMPLATE_LANGUAGE: str = "en"
+    WHATSAPP_TEMPLATE_DEAL_CLOSED: str = ""
+    WHATSAPP_TEMPLATE_BIG_SALE: str = ""
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_FROM: str = ""  # e.g. whatsapp:+14155238886
+
+    # Telegram (optional — set NOTIFICATION_CHANNEL=telegram or both)
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""  # Comma-separated chat/group ids
-    NOTIFICATION_ENABLED: bool = True  # Set false to disable outbound messages
+    TELEGRAM_NOTIFY_INTERACTIONS: bool = False  # Quiet routine CRM interaction spam
     
     # Web Search APIs
     GOOGLE_PSE_API_KEY: str = ""  # Google Programmable Search Engine API key

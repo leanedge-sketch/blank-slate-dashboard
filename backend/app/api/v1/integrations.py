@@ -1,11 +1,12 @@
 """
-External integration diagnostics (Telegram, legacy archives).
+External integration diagnostics (WhatsApp, Telegram, legacy archives).
 """
 
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.config import settings
 from app.services.crm_service import get_customer_by_id
 from app.services.conversation_archive_service import (
     get_chatgpt_export_archives_for_customer,
@@ -21,8 +22,95 @@ from app.services.telegram_service import (
     telegram_configured,
     telegram_status,
 )
+from app.services.whatsapp_service import (
+    send_whatsapp_message,
+    whatsapp_configured,
+    whatsapp_status,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
+
+
+@router.get("/notifications/status")
+async def get_notification_channels_status() -> Dict[str, Any]:
+    """Active celebration channel(s) and WhatsApp / Telegram setup."""
+    return {
+        "channel": getattr(settings, "NOTIFICATION_CHANNEL", "whatsapp"),
+        "notification_enabled": settings.NOTIFICATION_ENABLED,
+        "big_sale_threshold_usd": float(
+            getattr(settings, "TELEGRAM_BIG_SALE_THRESHOLD_USD", 10000) or 10000
+        ),
+        "whatsapp": whatsapp_status(),
+        "telegram": telegram_status(),
+    }
+
+
+@router.get("/whatsapp/status")
+async def get_whatsapp_integration_status() -> Dict[str, Any]:
+    return whatsapp_status()
+
+
+@router.post("/whatsapp/test")
+async def send_test_whatsapp_notification(
+    kind: str = Query("closed", description="closed | big_sale"),
+) -> Dict[str, Any]:
+    """Send a test celebration to WHATSAPP_TO numbers."""
+    if not whatsapp_configured():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "WhatsApp not active. Set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, "
+                "WHATSAPP_TO (team phones), and NOTIFICATION_ENABLED=true."
+            ),
+        )
+    from app.services.telegram_service import (
+        format_big_sale_notification,
+        format_deal_closed_notification,
+    )
+
+    kind_norm = (kind or "closed").strip().lower()
+    if kind_norm in ("big", "big_sale", "sale"):
+        text = format_big_sale_notification(
+            customer_name="Test Customer",
+            product_name="Test Chemical",
+            amount=25000,
+            unit="kg",
+            unit_price=1.2,
+            currency="USD",
+            value_usd=30000,
+            stage="Confirmation",
+        )
+        label = "big_sale"
+        template = settings.WHATSAPP_TEMPLATE_BIG_SALE or None
+        params = ["Test Customer", "Test Chemical", "30,000 USD", "Confirmation"]
+    else:
+        text = format_deal_closed_notification(
+            customer_name="Test Customer",
+            product_name="Test Chemical",
+            amount=12000,
+            unit="kg",
+            unit_price=1.5,
+            currency="USD",
+            value_usd=18000,
+            close_reason="PO received — test celebration",
+            owner_hint="Sales team",
+        )
+        label = "closed"
+        template = settings.WHATSAPP_TEMPLATE_DEAL_CLOSED or None
+        params = ["Test Customer", "Test Chemical", "18,000 USD", "PO received — test"]
+
+    ok = send_whatsapp_message(
+        text,
+        template_name=template,
+        template_params=params,
+    )
+    if not ok:
+        raise HTTPException(status_code=502, detail="WhatsApp API rejected the message.")
+    return {
+        "ok": True,
+        "kind": label,
+        "message": f"Test {label} WhatsApp notification sent to configured numbers.",
+    }
 
 
 @router.get("/telegram/status")
@@ -32,8 +120,13 @@ async def get_telegram_integration_status() -> Dict[str, Any]:
 
 
 @router.post("/telegram/test")
-async def send_test_telegram_notification() -> Dict[str, Any]:
-    """Send a test message using the CRM bot format (verify bot token + chat id)."""
+async def send_test_telegram_notification(
+    kind: str = Query(
+        "closed",
+        description="closed | big_sale | interaction",
+    ),
+) -> Dict[str, Any]:
+    """Send a test celebration (or legacy interaction) message to verify Telegram."""
     if not telegram_configured():
         raise HTTPException(
             status_code=400,
@@ -42,19 +135,56 @@ async def send_test_telegram_notification() -> Dict[str, Any]:
                 "NOTIFICATION_ENABLED=true in environment variables."
             ),
         )
-    from app.services.telegram_service import format_crm_bot_notification
-
-    text = format_crm_bot_notification(
-        customer_name="Test Customer",
-        customer_id="00000000-0000-0000-0000-000000000000",
-        input_text="Test user note from LeanChem dashboard",
-        ai_response="Test AI response — Telegram integration is connected.",
-        created_at=None,
+    from app.services.telegram_service import (
+        format_big_sale_notification,
+        format_crm_bot_notification,
+        format_deal_closed_notification,
     )
+
+    kind_norm = (kind or "closed").strip().lower()
+    if kind_norm in ("big", "big_sale", "sale"):
+        text = format_big_sale_notification(
+            customer_name="Test Customer",
+            product_name="Test Chemical",
+            amount=25000,
+            unit="kg",
+            unit_price=1.2,
+            currency="USD",
+            value_usd=30000,
+            stage="Confirmation",
+        )
+        label = "big_sale"
+    elif kind_norm in ("interaction", "crm"):
+        text = format_crm_bot_notification(
+            customer_name="Test Customer",
+            customer_id="00000000-0000-0000-0000-000000000000",
+            input_text="Test user note from LeanChem dashboard",
+            ai_response="Test AI response — Telegram integration is connected.",
+            created_at=None,
+        )
+        label = "interaction"
+    else:
+        text = format_deal_closed_notification(
+            customer_name="Test Customer",
+            product_name="Test Chemical",
+            amount=12000,
+            unit="kg",
+            unit_price=1.5,
+            currency="USD",
+            value_usd=18000,
+            close_reason="PO received — test celebration",
+            owner_hint="Sales team",
+        )
+        label = "closed"
+
     ok = send_telegram_message(text)
     if not ok:
         raise HTTPException(status_code=502, detail="Telegram API rejected the message.")
-    return {"ok": True, "message": "Test notification sent to configured chat(s)."}
+    return {
+        "ok": True,
+        "kind": label,
+        "message": f"Test {label} notification sent to configured chat(s).",
+    }
 
 
 @router.post("/telegram/backfill")
