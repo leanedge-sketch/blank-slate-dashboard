@@ -89,11 +89,19 @@ class Settings(BaseSettings):
     # Email (password change verification & notifications)
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = ""  # e.g. "LeanChem Connect <noreply@yourdomain.com>"
+    RESEND_REPLY_TO: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = True
+
+    # Loop A / Loop B — shared public-site Supabase (leanchemweb rfqs + suppliers)
+    NEXT_PUBLIC_SUPABASE_URL: str = ""
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: str = ""
+    LOOP_A_SUPABASE_URL: str = ""
+    LOOP_A_SUPABASE_ANON_KEY: str = ""
+    LOOP_A_SUPABASE_SERVICE_KEY: str = ""
 
     # Security Settings
     JWT_SECRET: str = ""

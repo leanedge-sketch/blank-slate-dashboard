@@ -5,7 +5,13 @@ let supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
 let supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ??
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
   "";
+
+// Prefer CRM VITE_* keys; NEXT_PUBLIC_* is accepted as a fallback alias.
+if (!supabaseUrl && import.meta.env.NEXT_PUBLIC_SUPABASE_URL) {
+  supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+}
 
 let _client: SupabaseClient | null = null;
 let _bootstrapPromise: Promise<boolean> | null = null;

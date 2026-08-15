@@ -25,7 +25,7 @@ from app.config import settings
 from app.database.connection import get_supabase_client, get_supabase_service_client
 
 # Import API routers
-from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations, catalog, reports
+from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations, catalog, reports, sourcing, purchase_orders
 # from app.api.v1 import common  # We'll add this later
 
 # Load environment variables
@@ -250,6 +250,12 @@ app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(integrations.router, prefix="/api/v1")
 
 app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
+
+# Loop B — Supplier Sourcing Engine (exact path: /api/sourcing/request)
+app.include_router(sourcing.router, prefix="/api/sourcing", tags=["Sourcing"])
+
+# Loop C — Logistics Tracking (exact path: /api/po/update)
+app.include_router(purchase_orders.router, prefix="/api/po", tags=["Purchase Orders"])
 
 # We'll add these later:
 # app.include_router(common.router, prefix="/api/v1", tags=["Common"])

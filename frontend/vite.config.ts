@@ -22,13 +22,22 @@ export default defineConfig(({ mode }) => {
   const fromFrontend = loadEnv(mode, __dirname, "");
   const fromRoot = loadEnv(mode, repoRoot, "");
 
-  const supabaseUrl = pickEnv("VITE_SUPABASE_URL", fromFrontend, fromRoot);
-  const supabaseAnonKey =
+  // Loop A shared public-site backend (prefer NEXT_PUBLIC_* — do not fall back to CRM)
+  const loopASupabaseUrl =
+    pickEnv("NEXT_PUBLIC_SUPABASE_URL", fromFrontend, fromRoot) ||
+    pickEnv("VITE_LOOP_A_SUPABASE_URL", fromFrontend, fromRoot);
+  const loopASupabaseAnonKey =
+    pickEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
+    pickEnv("VITE_LOOP_A_SUPABASE_ANON_KEY", fromFrontend, fromRoot);
+
+  // CRM project
+  const crmSupabaseUrl = pickEnv("VITE_SUPABASE_URL", fromFrontend, fromRoot);
+  const crmSupabaseAnonKey =
     pickEnv("VITE_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
     pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot);
   const supabasePublishableKey =
     pickEnv("VITE_SUPABASE_PUBLISHABLE_KEY", fromFrontend, fromRoot) ||
-    supabaseAnonKey;
+    crmSupabaseAnonKey;
 
   // Production always uses plum — VITE_FRONTEND_URL on Vercel is not required.
   const devFrontendUrl = pickEnv("VITE_FRONTEND_URL", fromFrontend, fromRoot);
@@ -39,7 +48,7 @@ export default defineConfig(({ mode }) => {
     rawApiUrl && !rawApiUrl.includes("onrender.com") ? rawApiUrl : "";
 
   console.log(
-    `[vite] ${mode} build — VITE_SUPABASE_URL: ${supabaseUrl ? "set" : "MISSING"}, anon key: ${supabaseAnonKey ? "set" : "MISSING"}, frontend: ${mode === "production" ? CANONICAL_PRODUCTION_URL : devFrontendUrl || "(origin)"}, API: ${mode === "production" ? "Vercel same-origin" : rawApiUrl || "local"}`,
+    `[vite] ${mode} build — CRM Supabase: ${crmSupabaseUrl ? "set" : "MISSING"}, Loop A / NEXT_PUBLIC: ${loopASupabaseUrl ? "set" : "MISSING"}, frontend: ${mode === "production" ? CANONICAL_PRODUCTION_URL : devFrontendUrl || "(origin)"}, API: ${mode === "production" ? "Vercel same-origin" : rawApiUrl || "local"}`,
   );
 
   const buildStamp = new Date().toISOString();
@@ -73,13 +82,21 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_FRONTEND_URL": JSON.stringify(
         mode === "production" ? CANONICAL_PRODUCTION_URL : devFrontendUrl,
       ),
-      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(crmSupabaseUrl),
       "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(
         pickEnv("VITE_SUPABASE_ANON_KEY", fromFrontend, fromRoot) ||
-          supabaseAnonKey,
+          crmSupabaseAnonKey,
       ),
       "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY":
         JSON.stringify(supabasePublishableKey),
+      "import.meta.env.NEXT_PUBLIC_SUPABASE_URL": JSON.stringify(loopASupabaseUrl),
+      "import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY": JSON.stringify(
+        loopASupabaseAnonKey,
+      ),
+      "import.meta.env.VITE_LOOP_A_SUPABASE_URL": JSON.stringify(loopASupabaseUrl),
+      "import.meta.env.VITE_LOOP_A_SUPABASE_ANON_KEY": JSON.stringify(
+        loopASupabaseAnonKey,
+      ),
     },
     server: {
       port: 5173,

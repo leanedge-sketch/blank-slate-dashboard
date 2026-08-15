@@ -29,3 +29,8 @@ export function getApiBaseUrl(): string {
 
   return "http://localhost:8000/api/v1";
 }
+
+/** Origin hosting FastAPI (no `/api/v1` suffix) — for non-v1 routes like Loop B. */
+export function getApiOrigin(): string {
+  return getApiBaseUrl().replace(/\/api\/v1\/?$/, "");
+}

@@ -1043,4 +1043,530 @@ a:hover {
   }
 }
 
+/* ─── Loop A RFQ inbox ─────────────────────────────────────────── */
+.rfq-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.rfq-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.rfq-kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1e5897;
+}
+
+.rfq-refresh-btn,
+.rfq-link-btn,
+.rfq-action-btn,
+.rfq-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.45rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rfq-refresh-btn {
+  padding: 0.45rem 0.85rem;
+}
+
+.rfq-refresh-btn:hover,
+.rfq-link-btn:hover,
+.rfq-action-btn:hover {
+  border-color: #1e5897;
+  color: #1e5897;
+}
+
+.rfq-link-btn {
+  padding: 0.25rem 0.55rem;
+  background: transparent;
+  border-color: transparent;
+  color: #1e5897;
+}
+
+.rfq-icon-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  justify-content: center;
+  padding: 0;
+}
+
+.rfq-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.rfq-icon-lg {
+  width: 2rem;
+  height: 2rem;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.spin {
+  animation: rfq-spin 0.8s linear infinite;
+}
+
+@keyframes rfq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rfq-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.9rem;
+}
+
+.rfq-table-wrap {
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.65rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.rfq-table {
+  min-width: 860px;
+}
+
+.rfq-row {
+  cursor: pointer;
+}
+
+.rfq-row:hover td {
+  background: #f8fafc;
+}
+
+.rfq-row.is-selected td {
+  background: #eff6ff;
+}
+
+.rfq-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e5897;
+}
+
+.rfq-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.rfq-badge--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.rfq-badge--review {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.rfq-badge--sourcing {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.rfq-badge--quoted {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.rfq-badge--closed {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+.rfq-empty {
+  display: grid;
+  place-items: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.rfq-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+.rfq-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.rfq-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 100%);
+  height: 100%;
+  background: #fff;
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.18);
+}
+
+.rfq-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.rfq-drawer-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.rfq-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 1.1rem 1.25rem 2rem;
+}
+
+.rfq-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.rfq-meta-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin-bottom: 0.15rem;
+}
+
+.rfq-meta-grid p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+  word-break: break-word;
+}
+
+.rfq-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+}
+
+.rfq-items-list {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.rfq-item {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.rfq-item:last-child {
+  border-bottom: none;
+}
+
+.rfq-item-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.rfq-item-cas {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1e5897;
+}
+
+.rfq-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.rfq-item-notes {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: #4b5563;
+}
+
+.rfq-item-empty {
+  padding: 1rem;
+  color: #9ca3af;
+  font-size: 0.85rem;
+}
+
+.rfq-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rfq-action-btn {
+  justify-content: center;
+  padding: 0.65rem 0.85rem;
+}
+
+.rfq-action-btn.is-active {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.rfq-action-btn:disabled:not(.is-active) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rfq-toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(360px, calc(100vw - 2rem));
+}
+
+.rfq-toast {
+  padding: 0.75rem 1rem;
+  border-radius: 0.55rem;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.88rem;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+  animation: rfq-toast-in 0.25s ease-out;
+}
+
+@keyframes rfq-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rfq-primary-btn {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-bottom: 1.1rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #1e5897;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(30, 88, 151, 0.28);
+}
+
+.rfq-primary-btn:hover:not(:disabled) {
+  background: #184a7f;
+}
+
+.rfq-primary-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.rfq-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.rfq-modal {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: min(88vh, 720px);
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.35);
+}
+
+.rfq-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.rfq-modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.rfq-modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.15rem;
+}
+
+.rfq-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.85rem 1.15rem;
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.rfq-privacy-banner {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.88rem;
+}
+
+.rfq-privacy-banner p {
+  margin: 0;
+}
+
+.rfq-confirm-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.rfq-confirm-dl dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.rfq-confirm-dl dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.logistics-mono {
+  font-size: 0.82rem;
+  color: #4b5563;
+}
+
+.logistics-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  background: #eef4fb;
+  color: #1e5897;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.logistics-update-btn {
+  white-space: nowrap;
+}
+
+.logistics-modal-lead {
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+  color: #4b5563;
+}
+
+.logistics-select-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.logistics-select {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  background: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
 

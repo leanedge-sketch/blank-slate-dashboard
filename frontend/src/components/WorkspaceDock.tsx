@@ -4,7 +4,7 @@ import { useCanView } from "../hooks/usePermissions";
 const dockItems: {
   label: string;
   to: string;
-  section: "crm" | "pms" | "sales" | "stock" | "reports" | null;
+  section: "crm" | "pms" | "sales" | "stock" | "reports" | "rfqs" | "logistics" | null;
   match: (path: string) => boolean;
 }[] = [
   { label: "Home", to: "/", section: null, match: (p) => p === "/" },
@@ -21,6 +21,18 @@ const dockItems: {
     to: "/sales/pipeline",
     section: "sales",
     match: (p) => p.startsWith("/sales"),
+  },
+  {
+    label: "RFQs",
+    to: "/rfqs",
+    section: "rfqs",
+    match: (p) => p.startsWith("/rfqs"),
+  },
+  {
+    label: "Logistics",
+    to: "/logistics",
+    section: "logistics",
+    match: (p) => p === "/logistics" || p.startsWith("/logistics/"),
   },
   { label: "Stock", to: "/stock", section: "stock", match: (p) => p.startsWith("/stock") },
   {
@@ -49,6 +61,8 @@ export function WorkspaceDock({ embedded = false }: WorkspaceDockProps) {
     if (item.section === "crm") return canViewCrm;
     if (item.section === "pms") return canViewPms;
     if (item.section === "sales") return canViewSales;
+    if (item.section === "rfqs") return canViewSales;
+    if (item.section === "logistics") return canViewSales || canViewPms;
     if (item.section === "stock") return canViewStock;
     if (item.section === "reports") return canViewReports;
     return true;

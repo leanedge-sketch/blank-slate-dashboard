@@ -31,6 +31,8 @@ import { NewPipelineWorkspacePage } from "./pages/finance/NewPipelineWorkspacePa
 import { ExecutiveReportWorkspacePage } from "./pages/finance/ExecutiveReportWorkspacePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
+import { RfqsPage } from "./pages/rfqs/RfqsPage";
+import { LogisticsPage } from "./pages/logistics/LogisticsPage";
 import { StockHomePage } from "./pages/stock/StockHomePage";
 import { AppShell } from "./components/AppShell";
 import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabilityPage";
@@ -348,6 +350,26 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProductLabelStockPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Loop A — public site RFQ inbox */}
+          <Route
+            path="/rfqs"
+            element={
+              <ProtectedRoute>
+                <RfqsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Loop C — logistics / purchase order corridor */}
+          <Route
+            path="/logistics"
+            element={
+              <ProtectedRoute>
+                <LogisticsPage />
               </ProtectedRoute>
             }
           />

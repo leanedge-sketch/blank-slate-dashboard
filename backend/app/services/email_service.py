@@ -27,27 +27,59 @@ def _email_configured() -> bool:
     )
 
 
-def send_email(*, to: str, subject: str, html: str, text: str | None = None) -> None:
+def send_email(
+    *,
+    to: str | list[str],
+    subject: str,
+    html: str,
+    text: str | None = None,
+    bcc: list[str] | None = None,
+    reply_to: str | None = None,
+) -> None:
     if not _email_configured():
         raise EmailNotConfiguredError(
             "Email is not configured. Set RESEND_API_KEY + EMAIL_FROM, or SMTP_* + EMAIL_FROM."
         )
 
+    to_list = [to] if isinstance(to, str) else list(to)
     if settings.RESEND_API_KEY:
-        _send_via_resend(to=to, subject=subject, html=html, text=text)
+        _send_via_resend(
+            to=to_list,
+            subject=subject,
+            html=html,
+            text=text,
+            bcc=bcc,
+            reply_to=reply_to,
+        )
         return
-    _send_via_smtp(to=to, subject=subject, html=html, text=text)
+    # SMTP path: send one message per recipient when BCC unsupported simply
+    primary = to_list[0]
+    _send_via_smtp(to=primary, subject=subject, html=html, text=text)
+    for extra in (bcc or []):
+        _send_via_smtp(to=extra, subject=subject, html=html, text=text)
 
 
-def _send_via_resend(*, to: str, subject: str, html: str, text: str | None) -> None:
+def _send_via_resend(
+    *,
+    to: list[str],
+    subject: str,
+    html: str,
+    text: str | None,
+    bcc: list[str] | None = None,
+    reply_to: str | None = None,
+) -> None:
     payload: dict = {
         "from": settings.EMAIL_FROM,
-        "to": [to],
+        "to": to,
         "subject": subject,
         "html": html,
     }
     if text:
         payload["text"] = text
+    if bcc:
+        payload["bcc"] = bcc
+    if reply_to or settings.RESEND_REPLY_TO:
+        payload["reply_to"] = reply_to or settings.RESEND_REPLY_TO
 
     with httpx.Client(timeout=30.0) as client:
         response = client.post(
