@@ -1,12 +1,14 @@
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, KeyboardEvent, MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { PRODUCTION_APP_URL, useAuth } from "../../contexts/AuthContext";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
+import { LogIn, Mail, Lock, AlertCircle, CheckCircle, Eye, EyeOff } from "lucide-react";
 
 export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
@@ -46,6 +48,12 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const syncCapsLock = (
+    e: KeyboardEvent<HTMLInputElement> | MouseEvent<HTMLInputElement>,
+  ) => {
+    setCapsLockOn(e.getModifierState("CapsLock"));
   };
 
   if (!isSupabaseConfigured()) {
@@ -154,24 +162,53 @@ export function LoginPage() {
             {/* Password Field (hide if forgot password) */}
             {!showForgotPassword && (
               <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-semibold text-slate-300 mb-2"
-                >
-                  Password
-                </label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label
+                    htmlFor="password"
+                    className="block text-sm font-semibold text-slate-300"
+                  >
+                    Password
+                  </label>
+                  {capsLockOn && (
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-amber-300"
+                    >
+                      Caps Lock is ON
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                   <input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={syncCapsLock}
+                    onKeyUp={syncCapsLock}
+                    onClick={syncCapsLock}
+                    onBlur={() => setCapsLockOn(false)}
+                    autoComplete="current-password"
                     required
-                    className="w-full pl-12 pr-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full pl-12 pr-12 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Enter your password"
                     disabled={loading}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
                 </div>
               </div>
             )}
@@ -198,6 +235,8 @@ export function LoginPage() {
                     setError(null);
                     setMagicLinkSent(false);
                     setPassword("");
+                    setShowPassword(false);
+                    setCapsLockOn(false);
                   }}
                   className="text-blue-400 hover:text-blue-300 transition-colors"
                 >
