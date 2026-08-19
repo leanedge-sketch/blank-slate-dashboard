@@ -197,7 +197,9 @@ class ProfileUpdateWorker:
         ]
 
         # 3) Call Gemini for profile text
-        profile_text = sanitize_profile_plain_text(gemini_chat(messages))
+        profile_text = sanitize_profile_plain_text(
+            gemini_chat(messages, task_type="icp", max_tokens=4096)
+        )
         if not profile_text or not profile_text.strip():
             raise RuntimeError("Gemini returned empty profile text")
 

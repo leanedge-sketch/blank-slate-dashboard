@@ -1302,7 +1302,7 @@ Return ONLY valid JSON, no other text.
             }
         ]
         
-        response_text = gemini_chat(messages)
+        response_text = gemini_chat(messages, task_type="extraction")
         
         if not response_text:
             return None
@@ -1378,7 +1378,7 @@ TDS document excerpt:
             },
             {"role": "user", "content": prompt},
         ]
-        response_text = gemini_chat(messages)
+        response_text = gemini_chat(messages, task_type="extraction")
         if response_text:
             return response_text.strip()
     except Exception as e:

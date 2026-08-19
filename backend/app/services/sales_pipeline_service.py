@@ -609,7 +609,7 @@ Format: {"lead_source": "value or null", "contact_per_lead": "value or null"}"""
         ]
         
         try:
-            ai_response = gemini_chat(messages)
+            ai_response = gemini_chat(messages, task_type="extraction")
             # Try to parse JSON from response
             import re
             json_match = re.search(r'\{[^}]+\}', ai_response)
@@ -1635,7 +1635,7 @@ Respond in JSON only:
         ]
         
         # Call Gemini AI
-        response_text = gemini_chat(messages)
+        response_text = gemini_chat(messages, task_type="general")
         
         # Parse JSON response
         # Try to extract JSON from the response (AI might add extra text)
@@ -1929,7 +1929,7 @@ Provide actionable insights and recommendations."""
             }
         ]
         
-        response = gemini_chat(messages)
+        response = gemini_chat(messages, task_type="summary")
         return response.strip()
     except:
         return "Pipeline insights generated successfully."
@@ -2162,7 +2162,7 @@ Guidelines:
     
     # 9) Call Gemini
     try:
-        ai_response = gemini_chat(messages)
+        ai_response = gemini_chat(messages, task_type="general")
     except GeminiError as e:
         raise ValueError(f"AI service error: {str(e)}")
     

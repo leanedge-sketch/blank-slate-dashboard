@@ -656,9 +656,9 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
         }
     ]
     
-    # Step 8: Get AI response (three-tier fallback in ai_service.ai_chat)
+    # Step 8: Get AI response (Gemini primary, OpenAI failover in ai_service)
     try:
-        profile_text = gemini_chat(messages, max_tokens=8192)
+        profile_text = gemini_chat(messages, max_tokens=8192, task_type="icp")
         if not profile_text or not profile_text.strip():
             raise RuntimeError("AI service returned empty response. Please check OPENAI_API_KEY configuration.")
     except Exception as e:
@@ -1879,7 +1879,7 @@ Return only a single digit: 1, 2, 3, 4, 5, 6, or 7
     ]
 
     try:
-        response = gemini_chat(messages).strip()
+        response = gemini_chat(messages, task_type="general").strip()
         # Extract just the number if there's extra text
         import re
         match = re.search(r'\b([1-7])\b', response)
@@ -2012,7 +2012,7 @@ User Memories:
     ]
 
     # 4) Call Gemini
-    ai_response = gemini_chat(messages)
+    ai_response = gemini_chat(messages, task_type="general")
 
     # 5) Store in interactions table
     resolved_tds_id = tds_id

@@ -1,16 +1,17 @@
 """
-AI Service - OpenAI + Gemini fallback and RAG helpers
-====================================================
+AI Service — Gemini primary, OpenAI failover, RAG helpers
+=========================================================
 
-Chat completion cascade (ai_chat / gemini_chat):
-  1. OpenAI gpt-4o
-  2. OpenAI gpt-4o-mini — on OpenAI rate limit / connection errors
-  3. Google Gemini (GEMINI_API_KEY) — if both OpenAI tiers fail or rate limit
+All generative chat flows through AIService.generate_text:
+
+  1. emergency_ai_killswitch (app_settings)
+  2. Google Gemini (GEMINI_CHAT_MODEL, default gemini-2.5-flash)
+  3. On timeout / 504 / 429 / API error → OpenAI (MODEL_CHOICE / gpt-4o, then gpt-4o-mini)
 
 Embeddings remain OpenAI-only (ai_embed / gemini_embed).
 
 Public API (backward-compatible):
-- gemini_chat(messages, *, model=None) -> str
+- gemini_chat(messages, *, model=None, max_tokens=None, task_type="general") -> str
 - gemini_embed(text) -> List[float]
 - log_conversation_to_rag(...)
 - search_documents(...)
@@ -18,25 +19,23 @@ Public API (backward-compatible):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
-from app.models.crm import Customer, Interaction
-
-from openai import (
-    APIConnectionError,
-    APIError,
-    APITimeoutError,
-    AuthenticationError,
-    OpenAI,
-    RateLimitError,
-)
+from openai import AsyncOpenAI, OpenAI
+from supabase import Client
 
 from app.config import settings
+from app.core import ai_config
 from app.database.connection import get_supabase_service_client
-from supabase import Client
+from app.models.crm import Customer, Interaction
 
 logger = logging.getLogger(__name__)
 
@@ -48,37 +47,46 @@ EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
 PRIMARY_OPENAI_MODEL = "gpt-4o"
 FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
-# Tier-2 Gemini model (override via GEMINI_CHAT_MODEL). Google API id is typically
-# gemini-2.5-flash; set env if you use a newer alias.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
+FAILOVER_TELEGRAM_MESSAGE = (
+    "⚠️ AI Failover triggered. Gemini timed out. Falling back to OpenAI."
+)
+
+ICP_TASK_TYPES = frozenset({"icp", "profile", "crm_profile"})
+SUMMARY_TASK_TYPES = frozenset(
+    {"summary", "summaries", "pipeline_insights", "sales_advice"}
+)
+
+
+class TaskComplexity(Enum):
+    HIGH_VOLUME_FAST = "high_volume_fast"
+    DEEP_REASONING_RAG = "deep_reasoning_rag"
 
 
 class AIServiceError(Exception):
-    """Raised when an AI provider call fails."""
+    """Raised when an AI provider call fails or a guardrail blocks generation."""
 
 
-# Backward-compat alias — existing code imports this name.
 GeminiError = AIServiceError
 
 
 _openai_client: Optional[OpenAI] = None
 _gemini_configured = False
+_ai_service: Optional["AIService"] = None
+_sync_loop_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ai-sync")
 
 
 def _openai_api_key() -> str:
-    return (settings.OPENAI_API_KEY or "").strip()
+    return ai_config.openai_api_key()
 
 
 def _gemini_api_key() -> str:
-    return (os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY or "").strip()
+    return ai_config.gemini_api_key()
 
 
 def _gemini_model_name() -> str:
-    return (
-        os.getenv("GEMINI_CHAT_MODEL")
-        or settings.GEMINI_CHAT_MODEL
-        or DEFAULT_GEMINI_MODEL
-    ).strip()
+    return ai_config.gemini_chat_model() or DEFAULT_GEMINI_MODEL
 
 
 def _get_openai_client() -> OpenAI:
@@ -103,56 +111,16 @@ def reset_openai_client() -> None:
     _openai_client = None
 
 
-# Health-check / legacy imports (auth.py)
 _api_key = _openai_api_key
 _get_client = _get_openai_client
 
 
 def reset_gemini_client() -> None:
     """Clear Gemini configure flag so the next call re-reads GEMINI_API_KEY."""
-    global _gemini_configured
+    global _gemini_configured, _ai_service
     _gemini_configured = False
-
-
-def _provider_fallback_eligible(exc: BaseException) -> bool:
-    """True when we should try the next tier (rate limit, timeout, connection, bad key)."""
-    if isinstance(
-        exc, (RateLimitError, APIConnectionError, APITimeoutError, AuthenticationError)
-    ):
-        return True
-    status = getattr(exc, "status_code", None)
-    if status in (401, 429):
-        return True
-    if isinstance(exc, APIError):
-        code = getattr(exc, "code", None)
-        if code in ("rate_limit_exceeded", "invalid_api_key"):
-            return True
-    msg = str(exc).lower()
-    return (
-        "rate limit" in msg
-        or "rate_limit" in msg
-        or "429" in msg
-        or "401" in msg
-        or "invalid_api_key" in msg
-        or "incorrect api key" in msg
-        or "connection" in msg
-        or "timeout" in msg
-        or "timed out" in msg
-    )
-
-
-def _format_openai_error(exc: BaseException, model: str) -> str:
-    status = getattr(exc, "status_code", None) or getattr(exc, "code", "")
-    message = getattr(exc, "message", None) or str(exc)
-    hint = ""
-    if status == 401 or "invalid_api_key" in str(message).lower():
-        hint = (
-            " Check OPENAI_API_KEY on your host and create a new key at "
-            "https://platform.openai.com/api-keys if needed."
-        )
-    elif status == 429 or "rate_limit" in str(message).lower():
-        hint = " Rate limit hit; cascade retries with gpt-4o-mini then Gemini."
-    return f"OpenAI chat error ({model}) {status}: {message}".strip() + hint
+    if _ai_service is not None:
+        _ai_service._reset_gemini()
 
 
 def _extract_openai_text(resp: Any) -> str:
@@ -162,32 +130,9 @@ def _extract_openai_text(resp: Any) -> str:
     return choice.message.content
 
 
-def _chat_openai(
-    messages: List[Dict[str, str]],
-    model: str,
-    *,
-    max_tokens: Optional[int] = None,
-) -> str:
-    kwargs: Dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.7,
-    }
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
-    resp = _get_openai_client().chat.completions.create(**kwargs)
-    return _extract_openai_text(resp)
-
-
 def _openai_messages_to_gemini(
     messages: List[Dict[str, str]],
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-    """
-    Map OpenAI chat schema to Gemini generate_content contents.
-
-    OpenAI roles: system | user | assistant
-    Gemini roles: user | model (+ system_instruction)
-    """
     system_parts: List[str] = []
     contents: List[Dict[str, Any]] = []
 
@@ -207,7 +152,21 @@ def _openai_messages_to_gemini(
     return system_instruction, contents
 
 
-def _configure_gemini() -> None:
+def _messages_to_prompt(
+    messages: List[Dict[str, str]],
+) -> Tuple[str, str]:
+    system_instruction, contents = _openai_messages_to_gemini(messages)
+    prompt_chunks: List[str] = []
+    for item in contents:
+        parts = item.get("parts") or []
+        text = "\n".join(str(p) for p in parts if p)
+        role = item.get("role") or "user"
+        prompt_chunks.append(f"{role}: {text}" if len(contents) > 1 else text)
+    prompt = "\n\n".join(prompt_chunks).strip()
+    return prompt, system_instruction or ""
+
+
+def _configure_gemini_legacy() -> None:
     global _gemini_configured
     key = _gemini_api_key()
     if not key:
@@ -226,38 +185,10 @@ def _configure_gemini() -> None:
         _gemini_configured = True
 
 
-def _chat_gemini(
-    messages: List[Dict[str, str]],
-    *,
-    max_tokens: Optional[int] = None,
-) -> str:
-    """Tier 2: Google Generative AI (Gemini) via GEMINI_API_KEY."""
-    import google.generativeai as genai
-
-    _configure_gemini()
-    system_instruction, contents = _openai_messages_to_gemini(messages)
-    if not contents:
-        raise AIServiceError("No user/model content to send to Gemini.")
-
-    model_name = _gemini_model_name()
-    model_kwargs: Dict[str, Any] = {}
-    if system_instruction:
-        model_kwargs["system_instruction"] = system_instruction
-
-    model = genai.GenerativeModel(model_name, **model_kwargs)
-    generation_config: Dict[str, Any] = {"temperature": 0.7}
-    if max_tokens is not None:
-        generation_config["max_output_tokens"] = max_tokens
-    response = model.generate_content(
-        contents,
-        generation_config=generation_config,
-    )
-
+def _extract_gemini_text(response: Any) -> str:
     text = getattr(response, "text", None)
     if text and str(text).strip():
         return str(text).strip()
-
-    # Fallback parse for blocked / multi-part responses
     candidates = getattr(response, "candidates", None) or []
     for candidate in candidates:
         content = getattr(candidate, "content", None)
@@ -271,8 +202,423 @@ def _chat_gemini(
                 chunks.append(str(part_text))
         if chunks:
             return "\n".join(chunks).strip()
-
     return ""
+
+
+def _usage_from_gemini(response: Any) -> Tuple[int, int]:
+    usage = getattr(response, "usage_metadata", None)
+    if not usage:
+        return 0, 0
+    inp = (
+        getattr(usage, "prompt_token_count", None)
+        or getattr(usage, "prompt_tokens", None)
+        or 0
+    )
+    out = (
+        getattr(usage, "candidates_token_count", None)
+        or getattr(usage, "candidates_tokens", None)
+        or getattr(usage, "output_token_count", None)
+        or 0
+    )
+    return int(inp or 0), int(out or 0)
+
+
+def _usage_from_openai(resp: Any) -> Tuple[int, int]:
+    usage = getattr(resp, "usage", None)
+    if not usage:
+        return 0, 0
+    return int(getattr(usage, "prompt_tokens", 0) or 0), int(
+        getattr(usage, "completion_tokens", 0) or 0
+    )
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text or "") // 4)
+
+
+def _complexity_for_task(task_type: str) -> TaskComplexity:
+    if (task_type or "").strip().lower() in ICP_TASK_TYPES:
+        return TaskComplexity.DEEP_REASONING_RAG
+    return TaskComplexity.HIGH_VOLUME_FAST
+
+
+def _default_timeout_for_task(task_type: str) -> float:
+    kind = (task_type or "general").strip().lower()
+    if kind in ICP_TASK_TYPES:
+        return 45.0
+    if kind in SUMMARY_TASK_TYPES or kind in ("extraction", "tds_extract"):
+        return 25.0
+    return 12.0
+
+
+def _run_coro_sync(coro):
+    """Run an async coroutine from sync FastAPI/service callers."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    future = _sync_loop_pool.submit(asyncio.run, coro)
+    return future.result()
+
+
+class AIService:
+    def __init__(self, supabase_client: Optional[Client] = None):
+        self.supabase = supabase_client
+        self.default_gemini_model = _gemini_model_name()
+        self.default_openai_model = ai_config.openai_chat_model() or PRIMARY_OPENAI_MODEL
+        gemini_key = _gemini_api_key()
+        openai_key = _openai_api_key()
+        self._google_genai_client = None
+        if gemini_key:
+            try:
+                from google import genai as google_genai
+
+                self._google_genai_client = google_genai.Client(api_key=gemini_key)
+            except Exception as exc:
+                logger.info("google.genai Client unavailable (%s); using generativeai", exc)
+        self.gemini_client = self._google_genai_client
+        self.openai_client = AsyncOpenAI(api_key=openai_key) if openai_key else None
+
+    def _reset_gemini(self) -> None:
+        key = _gemini_api_key()
+        self.default_gemini_model = _gemini_model_name()
+        self._google_genai_client = None
+        if key:
+            try:
+                from google import genai as google_genai
+
+                self._google_genai_client = google_genai.Client(api_key=key)
+            except Exception:
+                self._google_genai_client = None
+        self.gemini_client = self._google_genai_client
+
+    def _supabase(self) -> Optional[Client]:
+        if self.supabase is not None:
+            return self.supabase
+        try:
+            self.supabase = get_supabase_service_client()
+        except Exception as exc:
+            logger.debug("AI settings client unavailable: %s", exc)
+            self.supabase = None
+        return self.supabase
+
+    def _table_query(self, table: str):
+        client = self._supabase()
+        if client is None:
+            raise RuntimeError("no supabase")
+        return client.table(table)
+
+    async def _fetch_settings_map(self) -> Optional[Dict[str, Any]]:
+        try:
+            resp = await asyncio.to_thread(
+                lambda: self._table_query("app_settings").select("key, value").execute()
+            )
+        except Exception as exc:
+            logger.debug("app_settings not available: %s", exc)
+            return None
+        rows = getattr(resp, "data", None) or []
+        return {str(row.get("key")): row.get("value") for row in rows if row.get("key")}
+
+    async def read_guardrails(self) -> Dict[str, Any]:
+        data = await self._fetch_settings_map()
+        tables_available = data is not None
+        data = data or {}
+        return {
+            "emergency_ai_killswitch": ai_config.setting_as_bool(
+                data.get("emergency_ai_killswitch"), False
+            ),
+            "enable_ai_summaries": ai_config.setting_as_bool(
+                data.get("enable_ai_summaries"), True
+            ),
+            "enable_ai_icp": ai_config.setting_as_bool(data.get("enable_ai_icp"), True),
+            "monthly_budget_cap_usd": ai_config.setting_as_float(
+                data.get("monthly_budget_cap_usd"), 50.0
+            ),
+            "current_month_spend_usd": ai_config.setting_as_float(
+                data.get("current_month_spend_usd"), 0.0
+            ),
+            "budget_alert_level": int(
+                ai_config.setting_as_float(data.get("budget_alert_level"), 0)
+            ),
+            "tables_available": tables_available,
+        }
+
+    def _assert_feature_enabled(self, flags: Dict[str, Any], task_type: str) -> None:
+        kind = (task_type or "general").strip().lower()
+        if kind in ICP_TASK_TYPES and not flags.get("enable_ai_icp", True):
+            raise AIServiceError("AI ICP generation is disabled (enable_ai_icp).")
+        if kind in SUMMARY_TASK_TYPES and not flags.get("enable_ai_summaries", True):
+            raise AIServiceError("AI summaries are disabled (enable_ai_summaries).")
+
+    async def _log_usage(
+        self,
+        *,
+        provider: str,
+        model: str,
+        task_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost_usd: float,
+        status: str,
+        latency_ms: int,
+    ) -> None:
+        payload = {
+            "provider": provider,
+            "model": model,
+            "task_type": task_type,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "estimated_cost_usd": estimated_cost_usd,
+            "status": status,
+            "latency_ms": latency_ms,
+        }
+        try:
+            await asyncio.to_thread(
+                lambda: self._table_query("ai_usage_logs").insert(payload).execute()
+            )
+        except Exception as exc:
+            logger.debug("ai_usage_logs insert skipped: %s", exc)
+
+    async def _bump_spend_and_alert(self, cost: float, flags: Dict[str, Any]) -> None:
+        if cost <= 0 or not flags.get("tables_available"):
+            return
+        new_spend = float(flags.get("current_month_spend_usd") or 0) + cost
+        cap = float(flags.get("monthly_budget_cap_usd") or 50.0)
+        last_level = int(flags.get("budget_alert_level") or 0)
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            await asyncio.to_thread(
+                lambda: self._table_query("app_settings")
+                .update({"value": new_spend, "updated_at": now})
+                .eq("key", "current_month_spend_usd")
+                .execute()
+            )
+        except Exception as exc:
+            logger.debug("current_month_spend_usd update skipped: %s", exc)
+            return
+
+        new_level = await ai_config.check_budget_and_alert(new_spend, cap, last_level)
+        if new_level != last_level:
+            try:
+                await asyncio.to_thread(
+                    lambda: self._table_query("app_settings")
+                    .upsert(
+                        {
+                            "key": "budget_alert_level",
+                            "value": new_level,
+                            "updated_at": now,
+                        },
+                        on_conflict="key",
+                    )
+                    .execute()
+                )
+            except Exception as exc:
+                logger.debug("budget_alert_level update skipped: %s", exc)
+
+    def _gemini_generate_sync(
+        self,
+        prompt: str,
+        system_instruction: str,
+        max_tokens: Optional[int],
+    ) -> Tuple[str, int, int]:
+        if self._google_genai_client is not None:
+            try:
+                from google.genai import types
+
+                config_kwargs: Dict[str, Any] = {"temperature": 0.7}
+                if max_tokens is not None:
+                    config_kwargs["max_output_tokens"] = max_tokens
+                if system_instruction:
+                    config_kwargs["system_instruction"] = system_instruction
+                response = self._google_genai_client.models.generate_content(
+                    model=self.default_gemini_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                text = _extract_gemini_text(response)
+                inp, out = _usage_from_gemini(response)
+                return text, inp, out
+            except Exception as exc:
+                logger.info("google.genai generate_content failed; trying generativeai: %s", exc)
+
+        import google.generativeai as genai
+
+        _configure_gemini_legacy()
+        model_kwargs: Dict[str, Any] = {}
+        if system_instruction:
+            model_kwargs["system_instruction"] = system_instruction
+        model = genai.GenerativeModel(self.default_gemini_model, **model_kwargs)
+        generation_config: Dict[str, Any] = {"temperature": 0.7}
+        if max_tokens is not None:
+            generation_config["max_output_tokens"] = max_tokens
+        response = model.generate_content(prompt, generation_config=generation_config)
+        text = _extract_gemini_text(response)
+        inp, out = _usage_from_gemini(response)
+        return text, inp, out
+
+    async def _openai_generate(
+        self,
+        prompt: str,
+        system_instruction: str,
+        model: str,
+        max_tokens: Optional[int],
+    ) -> Tuple[str, int, int]:
+        if self.openai_client is None:
+            raise AIServiceError("OPENAI_API_KEY is not configured.")
+        messages: List[Dict[str, str]] = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        resp = await self.openai_client.chat.completions.create(**kwargs)
+        return _extract_openai_text(resp), *_usage_from_openai(resp)
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_instruction: str = "",
+        task_type: str = "general",
+        timeout_seconds: float = 4.0,
+        max_tokens: Optional[int] = None,
+    ) -> dict:
+        """
+        Gemini-first generation with killswitch, timeout, OpenAI failover, and telemetry.
+        """
+        started = time.perf_counter()
+        flags = await self.read_guardrails()
+
+        if flags.get("emergency_ai_killswitch"):
+            latency = int((time.perf_counter() - started) * 1000)
+            await self._log_usage(
+                provider="gemini",
+                model=self.default_gemini_model,
+                task_type=task_type,
+                input_tokens=0,
+                output_tokens=0,
+                estimated_cost_usd=0.0,
+                status="killswitch_active",
+                latency_ms=latency,
+            )
+            raise AIServiceError("Emergency AI killswitch is active.")
+
+        self._assert_feature_enabled(flags, task_type)
+
+        complexity = _complexity_for_task(task_type)
+        openai_model = (
+            self.default_openai_model
+            if complexity == TaskComplexity.DEEP_REASONING_RAG
+            else FALLBACK_OPENAI_MODEL
+        )
+        if complexity == TaskComplexity.DEEP_REASONING_RAG and not openai_model:
+            openai_model = PRIMARY_OPENAI_MODEL
+
+        gemini_error: Optional[BaseException] = None
+        try:
+            content, inp, out = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._gemini_generate_sync,
+                    prompt,
+                    system_instruction,
+                    max_tokens,
+                ),
+                timeout=timeout_seconds,
+            )
+            if not (content or "").strip():
+                raise AIServiceError("Gemini returned empty content.")
+            inp = inp or _estimate_tokens(system_instruction + prompt)
+            out = out or _estimate_tokens(content)
+            cost = ai_config.estimate_cost_usd(self.default_gemini_model, inp, out)
+            latency = int((time.perf_counter() - started) * 1000)
+            await self._log_usage(
+                provider="gemini",
+                model=self.default_gemini_model,
+                task_type=task_type,
+                input_tokens=inp,
+                output_tokens=out,
+                estimated_cost_usd=cost,
+                status="success",
+                latency_ms=latency,
+            )
+            await self._bump_spend_and_alert(cost, flags)
+            return {
+                "content": content,
+                "provider_used": "gemini",
+                "is_fallback": False,
+            }
+        except Exception as exc:
+            gemini_error = exc
+            logger.warning("Gemini generation failed (%s); failing over to OpenAI", exc)
+
+        await ai_config.send_telegram_alert(FAILOVER_TELEGRAM_MESSAGE)
+
+        last_openai_error: Optional[BaseException] = None
+        models_to_try = [openai_model]
+        if openai_model != FALLBACK_OPENAI_MODEL:
+            models_to_try.append(FALLBACK_OPENAI_MODEL)
+
+        for model in models_to_try:
+            try:
+                content, inp, out = await self._openai_generate(
+                    prompt, system_instruction, model, max_tokens
+                )
+                if not (content or "").strip():
+                    raise AIServiceError("OpenAI returned empty content.")
+                inp = inp or _estimate_tokens(system_instruction + prompt)
+                out = out or _estimate_tokens(content)
+                cost = ai_config.estimate_cost_usd(model, inp, out)
+                latency = int((time.perf_counter() - started) * 1000)
+                await self._log_usage(
+                    provider="openai",
+                    model=model,
+                    task_type=task_type,
+                    input_tokens=inp,
+                    output_tokens=out,
+                    estimated_cost_usd=cost,
+                    status="fallback_triggered",
+                    latency_ms=latency,
+                )
+                await self._bump_spend_and_alert(cost, flags)
+                return {
+                    "content": content,
+                    "provider_used": "openai",
+                    "is_fallback": True,
+                }
+            except Exception as openai_exc:
+                last_openai_error = openai_exc
+                logger.warning("OpenAI fallback model %s failed: %s", model, openai_exc)
+
+        latency = int((time.perf_counter() - started) * 1000)
+        await self._log_usage(
+            provider="openai",
+            model=openai_model,
+            task_type=task_type,
+            input_tokens=0,
+            output_tokens=0,
+            estimated_cost_usd=0.0,
+            status="error",
+            latency_ms=latency,
+        )
+        raise AIServiceError(
+            "All chat providers failed. Gemini: "
+            f"{gemini_error}; OpenAI: {last_openai_error}"
+        ) from last_openai_error
+
+
+def get_ai_service() -> AIService:
+    global _ai_service
+    if _ai_service is None:
+        try:
+            client = get_supabase_service_client()
+        except Exception:
+            client = None
+        _ai_service = AIService(client)
+    return _ai_service
 
 
 def ai_chat(
@@ -280,69 +626,36 @@ def ai_chat(
     *,
     model: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    task_type: str = "general",
+    timeout_seconds: Optional[float] = None,
 ) -> str:
     """
-    Chat completion with three-tier fallback (signature unchanged).
+    Chat completion via the central orchestrator (signature extended, still sync).
 
-    messages: [{"role": "system"|"user"|"assistant", "content": "..."}, ...]
-    model: optional — kept for backward compatibility (ignored; cascade is fixed).
-
-    Cascade:
-      1. OpenAI gpt-4o
-      2. OpenAI gpt-4o-mini
-      3. Google Gemini (GEMINI_API_KEY)
-
-    Returns:
-      Response text, or "" if the model returned no content.
+    Cascade: Gemini → OpenAI failover.
     """
-    if model is not None and model.strip() and model.strip() != PRIMARY_OPENAI_MODEL:
-        logger.info(
-            "ai_chat: explicit model=%s ignored; using cascade %s → %s → %s",
-            model,
-            PRIMARY_OPENAI_MODEL,
-            FALLBACK_OPENAI_MODEL,
-            _gemini_model_name(),
-        )
+    if model is not None and model.strip():
+        logger.debug("ai_chat: explicit model=%s ignored; orchestrator selects providers", model)
 
-    # --- Tier 1: OpenAI gpt-4o ---
-    try:
-        logger.debug("ai_chat: attempting OpenAI model=%s", PRIMARY_OPENAI_MODEL)
-        return _chat_openai(messages, PRIMARY_OPENAI_MODEL, max_tokens=max_tokens)
-    except Exception as primary_exc:
-        if not _provider_fallback_eligible(primary_exc):
-            raise AIServiceError(
-                _format_openai_error(primary_exc, PRIMARY_OPENAI_MODEL)
-            ) from primary_exc
-        logger.warning(
-            "ai_chat: OpenAI %s failed (%s); falling back to OpenAI %s",
-            PRIMARY_OPENAI_MODEL,
-            primary_exc,
-            FALLBACK_OPENAI_MODEL,
-        )
+    prompt, system_instruction = _messages_to_prompt(messages)
+    if not prompt:
+        raise AIServiceError("No user/model content to send to the AI orchestrator.")
 
-    # --- Tier 2: OpenAI gpt-4o-mini ---
-    try:
-        return _chat_openai(messages, FALLBACK_OPENAI_MODEL, max_tokens=max_tokens)
-    except Exception as fallback_exc:
-        if not _provider_fallback_eligible(fallback_exc):
-            raise AIServiceError(
-                _format_openai_error(fallback_exc, FALLBACK_OPENAI_MODEL)
-            ) from fallback_exc
-        logger.warning(
-            "ai_chat: OpenAI %s failed (%s); falling back to Gemini %s",
-            FALLBACK_OPENAI_MODEL,
-            fallback_exc,
-            _gemini_model_name(),
+    timeout = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else _default_timeout_for_task(task_type)
+    )
+    result = _run_coro_sync(
+        get_ai_service().generate_text(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            task_type=task_type,
+            timeout_seconds=timeout,
+            max_tokens=max_tokens,
         )
-
-    # --- Tier 3: Google Gemini ---
-    try:
-        return _chat_gemini(messages, max_tokens=max_tokens)
-    except Exception as gemini_exc:
-        raise AIServiceError(
-            f"All chat providers failed. Last error (Gemini {_gemini_model_name()}): "
-            f"{gemini_exc}"
-        ) from gemini_exc
+    )
+    return (result.get("content") or "").strip()
 
 
 def ai_embed(text: str) -> List[float]:
@@ -371,7 +684,6 @@ def ai_embed(text: str) -> List[float]:
     return [float(x) for x in resp.data[0].embedding]
 
 
-# Backward-compat aliases — existing callers import these names.
 gemini_chat = ai_chat
 gemini_embed = ai_embed
 
