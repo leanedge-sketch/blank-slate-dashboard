@@ -36,6 +36,17 @@ const features = [
     },
     {
       icon: FileText,
+      title: "Create Quote",
+      description:
+        "Build a quotation draft bound to a sales deal. Accepting the quote updates the pipeline target amount.",
+      href: "/crm/quotes/new",
+      cta: "Create quote",
+      accent: "from-amber-600 via-amber-500 to-orange-500",
+      accentHover: "group-hover:shadow-amber-500/40",
+      bgAccent: "bg-amber-500/20",
+    },
+    {
+      icon: FileText,
       title: "Customer Interactions & History",
       description:
         "View, add, edit, and delete customer interactions. Chat with AI assistant and manage conversation history.",

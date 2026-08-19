@@ -643,12 +643,15 @@ export function PipelineDetailPage() {
         products: [
           {
             chemical_type_name: productName,
+            chemical_type_id: selectedPipeline.chemical_type_id || null,
             unit: unit,
             quantity: amount, // Should be a number, not string
             target_price: unitPrice > 0 ? `${unitPrice} ${currency}` : null,
           }
         ],
         linked_customer_id: selectedPipeline.customer_id,
+        pipeline_id: selectedPipeline.id,
+        persist_to_pipeline: true,
       };
 
       // Call backend API to generate Excel quote

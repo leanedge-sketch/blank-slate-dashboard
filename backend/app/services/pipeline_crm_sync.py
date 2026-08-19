@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -187,6 +188,10 @@ def _pipeline_create_body(
         ),
         stage=stage,
         metadata=meta,
+        reason_for_stage_change=(
+            str(meta.get("reason_for_stage_change") or "").strip()
+            or "Created from CRM quote / customer sync"
+        ),
     )
 
 
@@ -1063,3 +1068,259 @@ def backfill_all_customers_pipelines(
     if error_details:
         payload["error_details"] = error_details
     return payload
+
+
+_CLOSED_DEAL_STAGES = {"Closed", "Lost"}
+
+
+def _parse_quote_unit_price(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", str(value).replace(",", ""))
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _quote_commercial_from_payload(quotation: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive pipeline amount / unit / unit_price from a stored quotation payload."""
+    products = quotation.get("products") or []
+    first = products[0] if products else {}
+    qty = first.get("quantity")
+    try:
+        amount = float(qty) if qty is not None else None
+    except (TypeError, ValueError):
+        amount = None
+    unit_price = first.get("unit_price")
+    if unit_price is None:
+        unit_price = _parse_quote_unit_price(
+            first.get("target_price") or quotation.get("target_price")
+        )
+    else:
+        unit_price = _parse_quote_unit_price(unit_price)
+    unit = (first.get("unit") or quotation.get("unit") or "").strip() or None
+    chemical_type_id = first.get("chemical_type_id") or quotation.get("chemical_type_id")
+    currency = (quotation.get("currency") or first.get("currency") or "").strip() or None
+    total = quotation.get("total_amount")
+    return {
+        "amount": amount,
+        "unit": unit,
+        "unit_price": unit_price,
+        "chemical_type_id": str(chemical_type_id) if chemical_type_id else None,
+        "currency": currency,
+        "total_amount": total,
+    }
+
+
+def _resolve_customer_for_quote(
+    *,
+    customer_id: Optional[str] = None,
+    customer_name: Optional[str] = None,
+):
+    from app.services.crm_service import (
+        create_customer,
+        get_customer_by_id,
+        search_customers,
+    )
+    from app.models.crm import CustomerCreate
+
+    if customer_id:
+        existing = get_customer_by_id(str(customer_id))
+        if existing:
+            return existing
+    name = (customer_name or "").strip()
+    if not name:
+        raise ValueError("A CRM customer or customer name is required to bind a quote to a deal")
+
+    matches = search_customers(name_query=name, limit=20)
+    exact = next(
+        (
+            c
+            for c in matches
+            if (c.customer_name or "").strip().lower() == name.lower()
+        ),
+        None,
+    )
+    if exact:
+        return exact
+    if matches:
+        return matches[0]
+    try:
+        return create_customer(CustomerCreate(customer_name=name))
+    except ValueError:
+        retry = search_customers(name_query=name, limit=5)
+        if retry:
+            return retry[0]
+        raise
+
+
+def ensure_quote_draft_pipeline(
+    *,
+    pipeline_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    chemical_type_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Bind a quote to a sales_pipeline deal: reuse an open deal when possible,
+    otherwise create a Lead ID draft. Never leaves the quote without a deal id.
+    """
+    if pipeline_id:
+        existing = get_sales_pipeline_by_id(str(pipeline_id))
+        if existing:
+            return {
+                "pipeline": existing,
+                "created": False,
+                "reused": True,
+                "customer_id": str(existing.customer_id) if existing.customer_id else None,
+            }
+
+    customer = _resolve_customer_for_quote(
+        customer_id=customer_id, customer_name=customer_name
+    )
+    cid = str(customer.customer_id)
+    chem = _resolved_catalog_product_ref(chemical_type_id)
+
+    deals = list_sales_pipelines(
+        limit=100,
+        offset=0,
+        customer_id=cid,
+        latest_per_deal=True,
+    )
+    open_deals = [d for d in deals if d.stage not in _CLOSED_DEAL_STAGES]
+
+    if chem:
+        for pipeline in open_deals:
+            pipe_chem = _resolved_catalog_product_ref(pipeline.chemical_type_id)
+            if pipe_chem and pipe_chem == chem:
+                return {
+                    "pipeline": pipeline,
+                    "created": False,
+                    "reused": True,
+                    "customer_id": cid,
+                }
+
+    for pipeline in open_deals:
+        meta = pipeline.metadata if isinstance(pipeline.metadata, dict) else {}
+        if meta.get("quotation") or meta.get("source") in ("crm_quote", "sales_quote"):
+            return {
+                "pipeline": pipeline,
+                "created": False,
+                "reused": True,
+                "customer_id": cid,
+            }
+
+    for pipeline in open_deals:
+        if not pipeline.chemical_type_id and not pipeline.tds_id:
+            return {
+                "pipeline": pipeline,
+                "created": False,
+                "reused": True,
+                "customer_id": cid,
+            }
+
+    if open_deals:
+        return {
+            "pipeline": open_deals[0],
+            "created": False,
+            "reused": True,
+            "customer_id": cid,
+        }
+
+    pipeline = create_sales_pipeline(
+        _pipeline_create_body(
+            cid,
+            chemical_type_id=chem,
+            stage="Lead ID",
+            metadata={
+                "source": "crm_quote",
+                "quote_draft": True,
+                "reason_for_stage_change": "Hidden draft deal created for quotation",
+            },
+        )
+    )
+    return {
+        "pipeline": pipeline,
+        "created": True,
+        "reused": False,
+        "customer_id": cid,
+    }
+
+
+def persist_quotation_on_pipeline(
+    pipeline_id: str,
+    quotation: Dict[str, Any],
+    *,
+    status: Optional[str] = None,
+) -> SalesPipeline:
+    pipeline = get_sales_pipeline_by_id(str(pipeline_id))
+    if not pipeline:
+        raise ValueError("Sales pipeline record not found")
+    meta = dict(pipeline.metadata or {})
+    quote = dict(meta.get("quotation") or {})
+    quote.update(quotation or {})
+    if status:
+        quote["status"] = status
+    elif not quote.get("status"):
+        quote["status"] = "draft"
+    now = datetime.utcnow().isoformat()
+    quote.setdefault("created_at", now)
+    quote["updated_at"] = now
+    meta["quotation"] = quote
+    meta["quotation_created_at"] = meta.get("quotation_created_at") or quote["created_at"]
+    meta["source"] = meta.get("source") or "crm_quote"
+    return update_sales_pipeline(
+        str(pipeline.id),
+        SalesPipelineUpdate(metadata=meta),
+    )
+
+
+def accept_quotation_on_pipeline(
+    pipeline_id: str,
+    quotation: Optional[Dict[str, Any]] = None,
+) -> SalesPipeline:
+    """Mark quote accepted and copy target qty/price onto the bound deal."""
+    pipeline = get_sales_pipeline_by_id(str(pipeline_id))
+    if not pipeline:
+        raise ValueError("Sales pipeline record not found")
+    meta = dict(pipeline.metadata or {})
+    quote = dict(meta.get("quotation") or {})
+    if quotation:
+        quote.update(quotation)
+    commercial = _quote_commercial_from_payload(quote)
+    quote["status"] = "accepted"
+    quote["accepted_at"] = datetime.utcnow().isoformat()
+    meta["quotation"] = quote
+    meta["quotation_status"] = "accepted"
+
+    update: Dict[str, Any] = {"metadata": meta}
+    amount = commercial.get("amount")
+    unit_price = commercial.get("unit_price")
+    unit = commercial.get("unit")
+    chem = commercial.get("chemical_type_id")
+    currency = commercial.get("currency")
+
+    if amount is not None:
+        update["amount"] = amount
+        if pipeline.amount is not None and float(pipeline.amount) != float(amount):
+            update["reason_for_amount_change"] = "Accepted quotation target amount"
+        elif pipeline.amount is None:
+            update["reason_for_amount_change"] = "Accepted quotation target amount"
+    if unit:
+        update["unit"] = unit
+    if unit_price is not None:
+        update["unit_price"] = unit_price
+    if currency in ("ETB", "KES", "USD", "EUR"):
+        update["currency"] = currency
+    if chem and not pipeline.chemical_type_id:
+        update["chemical_type_id"] = chem
+
+    return update_sales_pipeline(str(pipeline.id), SalesPipelineUpdate(**update))
+

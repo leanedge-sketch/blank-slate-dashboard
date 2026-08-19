@@ -189,6 +189,7 @@ class QuoteProductLine(BaseModel):
     unit: str
     target_price: Optional[str] = None
     notes: Optional[str] = None
+    chemical_type_id: Optional[str] = None
 
 
 class QuoteDraftRequest(BaseModel):
@@ -205,6 +206,32 @@ class QuoteDraftRequest(BaseModel):
     terms_and_conditions: Optional[str] = None
     products: List[QuoteProductLine]
     linked_customer_id: Optional[UUID] = None
+    pipeline_id: Optional[UUID] = None
+    persist_to_pipeline: bool = True
+
+
+class QuoteEnsurePipelineRequest(BaseModel):
+    """Create or reuse a draft sales_pipeline deal for a CRM/Sales quote."""
+
+    pipeline_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
+    customer_name: Optional[str] = None
+    chemical_type_id: Optional[str] = None
+
+
+class QuoteEnsurePipelineResponse(BaseModel):
+    pipeline_id: UUID
+    customer_id: Optional[UUID] = None
+    created: bool = False
+    reused: bool = True
+    stage: Optional[str] = None
+
+
+class QuoteAcceptRequest(BaseModel):
+    """Accept a quote and copy quantity/price onto the bound pipeline deal."""
+
+    pipeline_id: UUID
+    quotation: Optional[Dict[str, Any]] = None
 
 
 # =============================

@@ -19,6 +19,9 @@ from app.models.crm import (
     InteractionUpdate,
     CustomerChatRequest,
     QuoteDraftRequest,
+    QuoteEnsurePipelineRequest,
+    QuoteEnsurePipelineResponse,
+    QuoteAcceptRequest,
     DashboardMetrics,
     CustomerProfileUpdate,
     CustomerProfileFeedback,
@@ -154,14 +157,57 @@ async def get_quote_template(format_name: str):
     )
 
 
+@router.post("/quotes/ensure-pipeline", response_model=QuoteEnsurePipelineResponse)
+async def ensure_quote_pipeline_endpoint(body: QuoteEnsurePipelineRequest):
+    """Create or reuse a draft sales_pipeline deal so CRM quotes are never orphaned."""
+    try:
+        from app.services.pipeline_crm_sync import ensure_quote_draft_pipeline
+
+        result = ensure_quote_draft_pipeline(
+            pipeline_id=str(body.pipeline_id) if body.pipeline_id else None,
+            customer_id=str(body.customer_id) if body.customer_id else None,
+            customer_name=body.customer_name,
+            chemical_type_id=body.chemical_type_id,
+        )
+        pipeline = result["pipeline"]
+        return QuoteEnsurePipelineResponse(
+            pipeline_id=pipeline.id,
+            customer_id=pipeline.customer_id,
+            created=bool(result.get("created")),
+            reused=bool(result.get("reused")),
+            stage=pipeline.stage,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error binding quote to pipeline: {str(e)}"
+        )
+
+
+@router.post("/quotes/accept")
+async def accept_quote_endpoint(body: QuoteAcceptRequest):
+    """Accept a quote and update the bound pipeline target amount."""
+    try:
+        from app.services.pipeline_crm_sync import accept_quotation_on_pipeline
+
+        pipeline = accept_quotation_on_pipeline(
+            str(body.pipeline_id),
+            quotation=body.quotation,
+        )
+        return pipeline
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error accepting quote: {str(e)}")
+
+
 @router.post("/quotes/generate")
 async def generate_quote_endpoint(body: QuoteDraftRequest):
     """
     Generate an AI-enhanced quotation Excel file and return it as a download.
 
-    The file is based on the selected template (Baracoda/Betchem) and includes:
-    - A 'LeanChem Draft' sheet with all key fields
-    - An AI-generated commercial summary paragraph
+    The quote is always bound to a sales_pipeline deal (created or reused).
     """
     try:
         tmp_path = generate_quote_excel(body)
@@ -169,11 +215,61 @@ async def generate_quote_endpoint(body: QuoteDraftRequest):
         if not file_path.exists():
             raise HTTPException(status_code=500, detail="Failed to generate quote file")
 
+        pipeline_id = None
+        if body.persist_to_pipeline:
+            try:
+                from app.services.pipeline_crm_sync import (
+                    ensure_quote_draft_pipeline,
+                    persist_quotation_on_pipeline,
+                )
+
+                bound = ensure_quote_draft_pipeline(
+                    pipeline_id=str(body.pipeline_id) if body.pipeline_id else None,
+                    customer_id=(
+                        str(body.linked_customer_id) if body.linked_customer_id else None
+                    ),
+                    customer_name=body.customer_name,
+                    chemical_type_id=next(
+                        (
+                            p.chemical_type_id
+                            for p in body.products
+                            if getattr(p, "chemical_type_id", None)
+                        ),
+                        None,
+                    ),
+                )
+                pipeline = bound["pipeline"]
+                pipeline_id = str(pipeline.id)
+                persist_quotation_on_pipeline(
+                    pipeline_id,
+                    {
+                        "source": "crm",
+                        "status": "draft",
+                        "format": body.format,
+                        "reference": body.reference,
+                        "validity": body.validity,
+                        "payment_terms": body.payment_terms,
+                        "delivery_terms": body.delivery_terms,
+                        "incoterms": body.incoterms,
+                        "notes": body.notes,
+                        "customer_name": body.customer_name,
+                        "products": [p.model_dump() for p in body.products],
+                    },
+                    status="draft",
+                )
+            except Exception as exc:
+                logging.warning("Quote pipeline persist skipped: %s", exc)
+
         filename = f"{body.customer_name or 'quotation'}_{body.format}.xlsx"
+        headers = {}
+        if pipeline_id:
+            headers["X-Pipeline-Id"] = pipeline_id
+            headers["Access-Control-Expose-Headers"] = "X-Pipeline-Id"
         return FileResponse(
             path=file_path,
             filename=filename,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
         )
     except HTTPException:
         raise

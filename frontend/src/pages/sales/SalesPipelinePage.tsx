@@ -24,6 +24,7 @@ import {
   fetchVendors,
   fetchPartnerChemicals,
   syncAllCustomerPipelines,
+  acceptQuoteOnPipeline,
 } from "../../services/api";
 import {
   TrendingUp,
@@ -1510,24 +1511,43 @@ export function SalesPipelinePage() {
     if (!quotationPipelineId) return;
 
     try {
-      // Save quotation data to pipeline metadata
       const pipeline = allPipelines.find((p) => p.id === quotationPipelineId);
       if (pipeline) {
         const updateData: SalesPipelineUpdate = {
           metadata: {
             ...(pipeline.metadata || {}),
-            quotation: data,
+            quotation: { ...data, status: "draft", source: "sales" },
             quotation_created_at: new Date().toISOString(),
+            quotation_status: "draft",
           },
         };
         await updateSalesPipeline(quotationPipelineId, updateData);
-        alert("Quotation saved successfully!");
+        alert("Quotation draft saved on this deal.");
         handleCloseQuotationForm();
         await loadPipelines();
       }
     } catch (err: unknown) {
       console.error("Error saving quotation:", err);
       alert(formatApiErrorDetail(err, "Failed to save quotation"));
+    }
+  }
+
+  async function handleAcceptQuotation(data: QuotationFormData) {
+    if (!quotationPipelineId) return;
+    try {
+      await acceptQuoteOnPipeline(quotationPipelineId, {
+        source: "sales",
+        form_type: data.form_type,
+        products: data.products,
+        payment_terms: data.payment_terms,
+        total_amount: data.total_amount,
+      });
+      alert("Quote accepted. Pipeline target amount was updated.");
+      handleCloseQuotationForm();
+      await loadPipelines();
+    } catch (err: unknown) {
+      console.error("Error accepting quotation:", err);
+      alert(formatApiErrorDetail(err, "Failed to accept quotation"));
     }
   }
 
@@ -2686,6 +2706,7 @@ export function SalesPipelinePage() {
                 };
               })()}
               onSave={handleSaveQuotation}
+              onAccept={handleAcceptQuotation}
               onCancel={handleCloseQuotationForm}
               initialData={
                 quotationPipelineId

@@ -38,6 +38,7 @@ interface QuotationFormProps {
     unit?: string | null;
   } | null;
   onSave?: (data: QuotationFormData) => void;
+  onAccept?: (data: QuotationFormData) => void;
   onCancel?: () => void;
   initialData?: QuotationFormData;
   defaultFormType?: QuotationFormType;
@@ -71,7 +72,7 @@ const PAYMENT_TERMS_OPTIONS = [
   },
 ];
 
-export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, onCancel, initialData, defaultFormType = "Baracoda" }: QuotationFormProps) {
+export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, onAccept, onCancel, initialData, defaultFormType = "Baracoda" }: QuotationFormProps) {
   const [formType, setFormType] = useState<QuotationFormType>(initialData?.form_type || defaultFormType);
   const { chemicalTypes, loading: loadingChemicalTypes } = useProductCatalog();
   const [tdsList, setTdsList] = useState<Tds[]>([]);
@@ -290,6 +291,10 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
 
   // Handle save
   function handleSave() {
+    if (!pipelineId) {
+      alert("This quotation must be bound to a sales deal before saving.");
+      return;
+    }
     if (products.length === 0) {
       alert("Please add at least one product");
       return;
@@ -431,7 +436,14 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900">Create Quotation</h2>
-                  <p className="text-sm text-slate-500 mt-1">Generate professional quotations for your clients</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Bound to deal{" "}
+                    {pipelineId ? (
+                      <span className="font-mono text-slate-700">{pipelineId.slice(0, 8)}…</span>
+                    ) : (
+                      <span className="text-rose-600">missing — save is disabled</span>
+                    )}
+                  </p>
                 </div>
               </div>
               {onCancel && (
@@ -697,9 +709,34 @@ export function QuotationForm({ pipelineId, customerId, pipelineData, onSave, on
               {onSave && (
                 <button
                   onClick={handleSave}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:shadow-lg transition-all"
+                  disabled={!pipelineId}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50"
                 >
-                  Save Quotation
+                  Save draft
+                </button>
+              )}
+              {onAccept && (
+                <button
+                  onClick={() => {
+                    if (products.length === 0) {
+                      alert("Please add products to the quotation before accepting");
+                      return;
+                    }
+                    if (products.some((p) => p.unit_price === null || p.quantity === null)) {
+                      alert("Please enter unit price and quantity for all products");
+                      return;
+                    }
+                    onAccept({
+                      form_type: formType,
+                      products,
+                      payment_terms: paymentTerms,
+                      total_amount: totalAmount,
+                    });
+                  }}
+                  disabled={!pipelineId}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+                >
+                  Accept quote
                 </button>
               )}
             </div>

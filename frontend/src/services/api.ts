@@ -192,6 +192,38 @@ export async function fetchCustomers(params?: {
   return res.data;
 }
 
+export interface QuoteEnsurePipelineResponse {
+  pipeline_id: string;
+  customer_id?: string | null;
+  created: boolean;
+  reused: boolean;
+  stage?: string | null;
+}
+
+export async function ensureQuotePipeline(body: {
+  pipeline_id?: string | null;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  chemical_type_id?: string | null;
+}): Promise<QuoteEnsurePipelineResponse> {
+  const res = await api.post<QuoteEnsurePipelineResponse>(
+    "/crm/quotes/ensure-pipeline",
+    body,
+  );
+  return res.data;
+}
+
+export async function acceptQuoteOnPipeline(
+  pipelineId: string,
+  quotation?: Record<string, unknown>,
+) {
+  const res = await api.post<SalesPipeline>("/crm/quotes/accept", {
+    pipeline_id: pipelineId,
+    quotation,
+  });
+  return res.data;
+}
+
 export async function updateCustomerProfile(
   customerId: string,
   body: CustomerProfileUpdate

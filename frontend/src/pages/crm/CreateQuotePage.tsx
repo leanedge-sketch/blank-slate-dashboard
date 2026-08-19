@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, Customer } from "../../services/api";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  api,
+  Customer,
+  acceptQuoteOnPipeline,
+  ensureQuotePipeline,
+} from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { CrmProductSelect } from "../../components/crm/CrmProductSelect";
 import { resolveCatalogProductName } from "../../utils/catalogProducts";
@@ -37,10 +42,17 @@ const formatFields: Record<QuoteFormat, string[]> = {
 const units = ["MT", "KG", "L", "Bag", "Carton", "Drum"];
 
 export function CreateQuotePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const { chemicals, chemicalTypes } = useProductCatalog();
   const [error, setError] = useState<string | null>(null);
   const [format, setFormat] = useState<QuoteFormat>("Baracoda");
+  const [pipelineId, setPipelineId] = useState<string | null>(
+    searchParams.get("pipeline_id"),
+  );
+  const [pipelineStage, setPipelineStage] = useState<string | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<"draft" | "accepted" | null>(null);
 
   const [customerName, setCustomerName] = useState("");
   const [linkedCustomer, setLinkedCustomer] = useState<Customer | null>(null);
@@ -94,7 +106,66 @@ export function CreateQuotePage() {
     };
   }, [customerName]);
 
+  useEffect(() => {
+    const fromUrl = searchParams.get("pipeline_id");
+    if (fromUrl && fromUrl !== pipelineId) {
+      setPipelineId(fromUrl);
+    }
+  }, [searchParams, pipelineId]);
+
   const selectedFormatFields = formatFields[format];
+  const firstChemicalTypeId = productLines.find((p) => p.chemicalTypeId.trim())
+    ?.chemicalTypeId;
+
+  async function bindToDeal(opts?: { customer?: Customer | null }) {
+    const customer = opts?.customer ?? linkedCustomer;
+    const name = (customer?.customer_name || customerName).trim();
+    if (!name && !customer?.customer_id && !pipelineId) {
+      throw new Error("Select or enter a customer so this quote can bind to a deal.");
+    }
+    const bound = await ensureQuotePipeline({
+      pipeline_id: pipelineId,
+      customer_id: customer?.customer_id ?? null,
+      customer_name: name || null,
+      chemical_type_id: firstChemicalTypeId || null,
+    });
+    setPipelineId(bound.pipeline_id);
+    setPipelineStage(bound.stage ?? null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("pipeline_id", bound.pipeline_id);
+        if (bound.customer_id) next.set("customer_id", bound.customer_id);
+        return next;
+      },
+      { replace: true },
+    );
+    return bound;
+  }
+
+  function quotationPayload() {
+    return {
+      source: "crm",
+      format,
+      reference,
+      validity,
+      payment_terms: paymentTerms,
+      delivery_terms: deliveryTerms,
+      incoterms,
+      notes,
+      customer_name: customerName,
+      products: productLines
+        .filter((p) => p.chemicalTypeId && p.quantity)
+        .map((p) => ({
+          chemical_type_id: p.chemicalTypeId,
+          chemical_type_name: getChemicalName(p.chemicalTypeId),
+          quantity: Number(p.quantity),
+          unit: p.unit,
+          target_price: p.targetPrice || null,
+          notes: p.notes || null,
+        })),
+    };
+  }
 
   const summaryReady = useMemo(() => {
     return (
@@ -150,20 +221,22 @@ Notes: ${notes || "N/A"}`;
 
     async function run() {
       try {
-        // If the quote is linked to an existing CRM customer, log a summary interaction
+        setError(null);
+        const bound = await bindToDeal();
+        const dealId = bound.pipeline_id;
+
         if (linkedCustomer?.customer_id) {
           try {
             await api.post(`/crm/customers/${linkedCustomer.customer_id}/interactions`, {
               input_text: "Quotation draft generated for this customer.",
               ai_response: interactionText,
+              pipeline_id: dealId,
             });
           } catch (err) {
-            // Do not block the UI on interaction logging
             console.error("Failed to log quotation interaction", err);
           }
         }
 
-        // Ask backend to generate an AI-enhanced Excel and trigger download
         try {
           const payload = {
             format,
@@ -174,11 +247,14 @@ Notes: ${notes || "N/A"}`;
             delivery_terms: deliveryTerms,
             incoterms,
             notes,
-            linked_customer_id: linkedCustomer?.customer_id ?? null,
+            linked_customer_id: linkedCustomer?.customer_id ?? bound.customer_id ?? null,
+            pipeline_id: dealId,
+            persist_to_pipeline: true,
             products: productLines
               .filter((p) => p.chemicalTypeId && p.quantity)
               .map((p) => ({
                 chemical_type_name: getChemicalName(p.chemicalTypeId),
+                chemical_type_id: p.chemicalTypeId,
                 quantity: Number(p.quantity),
                 unit: p.unit,
                 target_price: p.targetPrice || null,
@@ -189,6 +265,11 @@ Notes: ${notes || "N/A"}`;
           const res = await api.post("/crm/quotes/generate", payload, {
             responseType: "blob",
           });
+          const headerDeal = res.headers?.["x-pipeline-id"];
+          if (headerDeal && typeof headerDeal === "string") {
+            setPipelineId(headerDeal);
+          }
+          setQuoteStatus("draft");
 
           const blobUrl = window.URL.createObjectURL(
             new Blob([res.data], {
@@ -207,12 +288,33 @@ Notes: ${notes || "N/A"}`;
           console.error("Failed to download generated quote", err);
           alert("Quote generated but download failed. Please try again.");
         }
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail ?? err?.message ?? "Failed to bind quote to a deal";
+        setError(String(detail));
       } finally {
         setLoading(false);
       }
     }
 
     void run();
+  }
+
+  async function handleAcceptQuote() {
+    if (!summaryReady) return;
+    setAccepting(true);
+    setError(null);
+    try {
+      const bound = await bindToDeal();
+      await acceptQuoteOnPipeline(bound.pipeline_id, quotationPayload());
+      setQuoteStatus("accepted");
+      alert("Quote accepted. Pipeline target amount was updated.");
+    } catch (err: any) {
+      const detail =
+        err?.response?.data?.detail ?? err?.message ?? "Failed to accept quote";
+      setError(String(detail));
+    } finally {
+      setAccepting(false);
+    }
   }
 
   function getChemicalName(id: string) {
@@ -238,9 +340,22 @@ Notes: ${notes || "N/A"}`;
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-                Choose a quotation format (Baracoda or Betchem), pick products from your
-                chemical_types catalog, and build a draft. Attach the right Excel template later.
+                Choose a quotation format, pick products, and generate a draft. Every quote is
+                bound to a sales pipeline deal so CRM and Sales stay on the same amount.
               </p>
+              {pipelineId && (
+                <p className="text-xs text-emerald-300">
+                  Deal ID{" "}
+                  <Link
+                    to={`/sales/pipeline/${pipelineId}`}
+                    className="underline font-mono"
+                  >
+                    {pipelineId.slice(0, 8)}…
+                  </Link>
+                  {pipelineStage ? ` · ${pipelineStage}` : ""}
+                  {quoteStatus ? ` · ${quoteStatus}` : " · draft"}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3 text-sm text-slate-200">
               <Sparkles size={16} className="text-amber-300" />
@@ -275,7 +390,7 @@ Notes: ${notes || "N/A"}`;
               </div>
               <div className="flex items-center gap-2">
                 <Settings2 size={16} className="text-slate-500" />
-                <span className="text-xs text-slate-500">Frontend draft (no save yet)</span>
+                <span className="text-xs text-slate-500">Bound to a sales deal</span>
               </div>
             </div>
 
@@ -304,6 +419,9 @@ Notes: ${notes || "N/A"}`;
                           setLinkedCustomer(c);
                           setCustomerName(c.customer_name);
                           setCustomerSearchResults([]);
+                          void bindToDeal({ customer: c }).catch((err) => {
+                            setError(err?.message ?? "Could not bind quote to a deal");
+                          });
                         }}
                         className="block w-full text-left px-3 py-1.5 hover:bg-blue-50 text-slate-800"
                       >
@@ -537,9 +655,11 @@ Notes: ${notes || "N/A"}`;
               </p>
               <h3 className="text-lg font-semibold text-slate-900">Draft snapshot</h3>
               <p className="text-xs text-slate-500">
-                Shows the data that will populate the chosen Excel template. Backend save/export coming soon.
+                Data is saved on the bound sales deal. Accepting copies quantity and price onto
+                the pipeline target amount.
               </p>
             </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handleGenerateDraft}
@@ -555,6 +675,24 @@ Notes: ${notes || "N/A"}`;
                 "Generate draft"
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => void handleAcceptQuote()}
+              disabled={!summaryReady || accepting || loading}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              {accepting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Accepting...
+                </>
+              ) : quoteStatus === "accepted" ? (
+                "Accepted"
+              ) : (
+                "Accept quote"
+              )}
+            </button>
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
