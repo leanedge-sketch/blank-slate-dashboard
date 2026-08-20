@@ -331,6 +331,9 @@ class PricingJunctionRecordBase(BaseModel):
     valid_from: date
     valid_to: Optional[date] = None
     status: str = "active"
+    active_from: Optional[datetime] = None
+    expired_at: Optional[datetime] = None
+    is_current: Optional[bool] = None
 
 
 class PricingJunctionRecordCreate(PricingJunctionRecordBase):
@@ -346,6 +349,23 @@ class PricingJunctionRecord(PricingJunctionRecordBase):
 class PricingJunctionRecordListResponse(BaseModel):
     records: List[PricingJunctionRecord]
     total: int
+
+
+class PricingBulkReviseChange(BaseModel):
+    id: UUID
+    incoterm: Optional[str] = None
+    cost_amount: Optional[float] = None
+    price_amount: Optional[float] = None
+    cost_currency: Optional[str] = None
+    price_currency: Optional[str] = None
+
+
+class PricingBulkReviseRequest(BaseModel):
+    changes: List[PricingBulkReviseChange]
+
+
+class PricingBulkReviseResponse(BaseModel):
+    records: List[PricingJunctionRecord]
 
 
 # =============================

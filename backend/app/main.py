@@ -26,6 +26,7 @@ from app.database.connection import get_supabase_client, get_supabase_service_cl
 
 # Import API routers
 from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations, catalog, reports, sourcing, purchase_orders, ai
+from app.api.v1.endpoints import auth_support, home_summary, crm_ai, pms_ai, sales_ai
 # from app.api.v1 import common  # We'll add this later
 
 # Load environment variables
@@ -90,14 +91,43 @@ async def lifespan(app: FastAPI):
             print("ProfileUpdateWorker started in background thread")
         except Exception as e:
             print(f"Failed to start ProfileUpdateWorker: {e}")
+
+    home_scheduler = None
+    try:
+        from app.workers.home_summary_worker import start_home_summary_scheduler
+
+        home_scheduler = start_home_summary_scheduler()
+        print("APScheduler started: home_summary_refresh every 15 minutes")
+    except Exception as e:
+        print(f"Failed to start home summary APScheduler: {e}")
+
+    exec_scheduler = None
+    try:
+        from app.workers.executive_report_worker import start_executive_briefing_scheduler
+
+        exec_scheduler = start_executive_briefing_scheduler()
+        print("APScheduler started: generate_weekly_executive_briefing (Mon 08:00 Africa/Nairobi)")
+    except Exception as e:
+        print(f"Failed to start executive briefing APScheduler: {e}")
     
     yield  # Server runs here
     
     # SHUTDOWN - Runs when server stops
     print("Shutting down LeanChem Connect API...")
-    # Clean up tasks here:
-    # - Close database connections
-    # - Stop background workers
+    try:
+        from app.workers.home_summary_worker import shutdown_home_summary_scheduler
+
+        shutdown_home_summary_scheduler()
+    except Exception:
+        pass
+    try:
+        from app.workers.executive_report_worker import shutdown_executive_briefing_scheduler
+
+        shutdown_executive_briefing_scheduler()
+    except Exception:
+        pass
+    _ = home_scheduler
+    _ = exec_scheduler
 
 # ============================================
 # CREATE FASTAPI APP
@@ -231,15 +261,18 @@ async def root():
 # ============================================
 # Register CRM routes
 app.include_router(crm.router, prefix="/api/v1/crm", tags=["CRM"])
+app.include_router(crm_ai.router, prefix="/api/v1/crm", tags=["CRM AI"])
 
 # Register PMS routes
 app.include_router(pms.router, prefix="/api/v1/pms", tags=["PMS"])
+app.include_router(pms_ai.router, prefix="/api/v1/pms", tags=["PMS AI"])
 
 # Shared product catalog (read by Sales, CRM, Stock, Reports)
 app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["Catalog"])
 
 # Register Sales Pipeline routes
 app.include_router(sales_pipeline.router, prefix="/api/v1", tags=["Sales Pipeline"])
+app.include_router(sales_ai.router, prefix="/api/v1/sales", tags=["Sales AI"])
 
 # Register Stock Management routes
 app.include_router(stock.router, prefix="/api/v1", tags=["Stock Management"])
@@ -248,10 +281,13 @@ app.include_router(stock.router, prefix="/api/v1", tags=["Stock Management"])
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI Orchestration"])
+app.include_router(auth_support.router, prefix="/api/v1/ai", tags=["AI Support"])
 
 app.include_router(integrations.router, prefix="/api/v1")
 
 app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
+
+app.include_router(home_summary.router, prefix="/api/v1/home", tags=["Home"])
 
 # Loop B — Supplier Sourcing Engine (exact path: /api/sourcing/request)
 app.include_router(sourcing.router, prefix="/api/sourcing", tags=["Sourcing"])

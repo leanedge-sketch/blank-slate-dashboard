@@ -15,6 +15,7 @@ import {
   fetchImportFinanceProducts,
   fetchImportShipmentsForReport,
 } from "../../services/importFinance";
+import { fetchExecutiveReportSnapshot } from "../../services/api";
 import {
   buildCostStructure,
   buildCustomerEfficiency,
@@ -90,22 +91,27 @@ export function ExecutiveReportDashboard() {
   const [products, setProducts] = useState<Awaited<
     ReturnType<typeof fetchImportFinanceProducts>
   >>([]);
+  const [execSnapshot, setExecSnapshot] = useState<Awaited<
+    ReturnType<typeof fetchExecutiveReportSnapshot>
+  > | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const { start, end } = resolveDateRange(dateRange);
-      const [shipments, productRows] = await Promise.all([
+      const [shipments, productRows, snapshot] = await Promise.all([
         fetchImportShipmentsForReport({
           startIso: start.toISOString(),
           endIso: end.toISOString(),
           pipelineDomain: PROCUREMENT_PIPELINE_DOMAIN,
         }),
         fetchImportFinanceProducts(),
+        fetchExecutiveReportSnapshot().catch(() => null),
       ]);
       setRawShipments(shipments);
       setProducts(productRows);
+      setExecSnapshot(snapshot);
     } catch (err) {
       setError(String((err as Error)?.message ?? err));
     } finally {
@@ -330,6 +336,59 @@ export function ExecutiveReportDashboard() {
           </div>
         </div>
       </header>
+
+      {execSnapshot ? (
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-slate-900/80 p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">
+              Materialized Sales Roll-up
+            </p>
+            <div className="mt-3 space-y-2">
+              {execSnapshot.sales_summary.length > 0 ? (
+                execSnapshot.sales_summary.map((row) => (
+                  <div
+                    key={`${row.stage}-${row.currency ?? "na"}`}
+                    className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-sm"
+                  >
+                    <span className="text-slate-300">
+                      {row.stage}
+                      {row.currency ? ` · ${row.currency}` : ""}
+                    </span>
+                    <span className="font-medium text-white">
+                      {row.total_deals} deals · ${row.pipeline_value_usd.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">No sales summary rows available.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-slate-900/80 p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">
+              Materialized Transit Roll-up
+            </p>
+            <div className="mt-3 space-y-2">
+              {execSnapshot.transit_summary.length > 0 ? (
+                execSnapshot.transit_summary.map((row) => (
+                  <div
+                    key={row.status}
+                    className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-sm"
+                  >
+                    <span className="text-slate-300">{row.status}</span>
+                    <span className="font-medium text-white">
+                      {row.active_shipments} shipments · {row.total_transit_value.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">No transit summary rows available.</p>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="inline-flex flex-wrap rounded-xl border border-white/10 bg-slate-900/80 p-1 gap-1">
         {DECK_OPTIONS.map((opt) => (

@@ -59,7 +59,7 @@ export function AppShell() {
           </div>
         </div>
 
-        {user && (
+        {user && location.pathname !== "/" && (
           <div className="app-shell-tier2">
             <WorkspaceDock embedded />
           </div>

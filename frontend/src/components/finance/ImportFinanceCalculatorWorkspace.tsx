@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Database,
   FileSpreadsheet,
@@ -20,7 +20,7 @@ import {
 import { catalogProductValue } from "../../utils/catalogProducts";
 import { chemicalSearchPrimaryLabel } from "../../utils/chemicalMasterColumns";
 import { DEFAULT_TRADE_PARAMETERS, validatePipelineRequestFields } from "../../types/tradeParameters";
-import { formatNumber } from "../../utils/importFinanceCalc";
+import { formatNumber, type FinanceConstants } from "../../utils/importFinanceCalc";
 import { EXPECTED_COST_2026_SCENARIOS } from "../../data/expectedCost2026Scenarios";
 import { parseWorkbookImport, type ExpectedCostScenario } from "../../utils/expectedCostCsv";
 import { WorkbookImportActions } from "./trade-transit-hub/WorkbookImportActions";
@@ -117,6 +117,7 @@ export function ImportFinanceCalculatorWorkspace({
   salesPipelineId = null,
 }: ImportFinanceCalculatorWorkspaceProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const lineFromUrl = searchParams.get("line")?.trim() ?? "";
   const {
@@ -139,6 +140,20 @@ export function ImportFinanceCalculatorWorkspace({
   const setRequest = transitCtx?.setRequest ?? setLocalRequest;
   const parameters = transitCtx?.parameters;
   const updateParameters = transitCtx?.updateParameters;
+  const autosaveSavedAt = transitCtx?.autosaveSavedAt ?? null;
+  const autosaveRestored = transitCtx?.autosaveRestored ?? false;
+  const clearAutosave = transitCtx?.clearAutosave;
+  const setAutosaveEnabled = transitCtx?.setAutosaveEnabled;
+
+  useEffect(() => {
+    if (!setAutosaveEnabled) return;
+
+    // If there's an unsaved draft waiting for user confirmation, keep autosave frozen.
+    if (autosaveSavedAt && !autosaveRestored) return;
+
+    const shouldEnable = !(historyOnly || Boolean(editPipeline));
+    setAutosaveEnabled(shouldEnable);
+  }, [autosaveRestored, autosaveSavedAt, editPipeline, historyOnly, setAutosaveEnabled]);
 
   const syncCustomerContext = useCallback(
     (patch: {
@@ -171,6 +186,7 @@ export function ImportFinanceCalculatorWorkspace({
     scenarios: ExpectedCostScenario[];
     metadata: ReturnType<typeof parseWorkbookImport>["metadata"];
     initialDraft: WorkbookImportDraft;
+    rawText: string;
   } | null>(null);
   const preWorkbookSnapshot = useRef<{
     request: TradeTransitRequest;
@@ -232,6 +248,7 @@ export function ImportFinanceCalculatorWorkspace({
       scenarios: parsed.scenarios,
       metadata: parsed.metadata,
       initialDraft: buildWorkbookDraft(parsed.metadata, stashed.fileName),
+      rawText: stashed.text,
     });
     // Consume hub / header upload once when this workspace mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -332,7 +349,12 @@ export function ImportFinanceCalculatorWorkspace({
     setRenamingLineId(null);
     setSelectedScenarioId("");
     if (activeSection === "summary") {
-      navigate(buildProductCostingLinePath(lineId));
+      navigate(
+        buildProductCostingLinePath(lineId, {
+          returnTo: `${location.pathname}${location.search}#trade-transit-product-workspace`,
+          returnLabel: "Back to procurement request",
+        }),
+      );
       return;
     }
     setCalculatorFocusSignal((n) => n + 1);
@@ -507,6 +529,7 @@ export function ImportFinanceCalculatorWorkspace({
       scenarios: parsed.scenarios,
       metadata: parsed.metadata,
       initialDraft: buildWorkbookDraft(parsed.metadata, fileName),
+      rawText: text,
     });
   }
 
@@ -766,6 +789,12 @@ export function ImportFinanceCalculatorWorkspace({
               parameters?.customerId?.trim() ||
               request.customerId?.trim() ||
               undefined,
+          }, {
+            returnTo: `${location.pathname}${location.search}#trade-transit-product-workspace`,
+            returnLabel:
+              pipelineDomain === PROCUREMENT_PIPELINE_DOMAIN
+                ? "Back to procurement request"
+                : "Back to sales deal costing",
           }),
         );
       }
@@ -852,6 +881,7 @@ export function ImportFinanceCalculatorWorkspace({
           scenarios={pendingWorkbook.scenarios}
           metadata={pendingWorkbook.metadata}
           initial={pendingWorkbook.initialDraft}
+          rawText={pendingWorkbook.rawText}
           onConfirm={handleConfirmWorkbookImport}
           onCancel={handleCancelWorkbookImport}
         />
@@ -865,6 +895,9 @@ export function ImportFinanceCalculatorWorkspace({
           readOnly={historyOnly}
           showProcurementLineAction={showProcurementLineAction}
           showCustomerFields={showCustomerFields}
+          autosaveSavedAt={autosaveSavedAt}
+          autosaveRestored={autosaveRestored}
+          onClearAutosave={clearAutosave}
           onSync={syncCustomerContext}
         />
       )}

@@ -37,6 +37,9 @@ type ApiPricingRecord = {
   valid_from: string;
   valid_to?: string | null;
   status: "active" | "historical" | "draft";
+  active_from?: string | null;
+  expired_at?: string | null;
+  is_current?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -69,6 +72,9 @@ function mapRecord(row: ApiPricingRecord): PricingRecord {
     validFrom: row.valid_from,
     validTo: row.valid_to ?? null,
     status: row.status,
+    activeFrom: row.active_from ?? null,
+    expiredAt: row.expired_at ?? null,
+    isCurrent: row.is_current ?? row.status === "active",
   };
 }
 
@@ -220,6 +226,28 @@ export async function revisePricingRecordApi(
   return mapRecord(res.data);
 }
 
+export async function bulkRevisePricingRecordsApi(
+  changes: {
+    id: string;
+    incoterm: string;
+    costAmount: number;
+    priceAmount: number;
+  }[],
+): Promise<PricingRecord[]> {
+  const res = await api.post<{ records: ApiPricingRecord[] }>(
+    "/pms/pricing-junction/records/bulk-revise",
+    {
+      changes: changes.map((change) => ({
+        id: change.id,
+        incoterm: change.incoterm,
+        cost_amount: change.costAmount,
+        price_amount: change.priceAmount,
+      })),
+    },
+  );
+  return (res.data.records ?? []).map(mapRecord);
+}
+
 export async function deletePricingRecordApi(recordId: string): Promise<void> {
   await api.delete(`/pms/pricing-junction/records/${recordId}`);
 }
@@ -236,6 +264,20 @@ export function isPricingJunctionMissingError(error: unknown): boolean {
   );
 }
 
-export function partnerKindLabel(kind: PartnerKind): string {
-  return kind === "crm" ? "CRM" : "PMS";
+export function recordToPricingInput(record: PricingRecord): PricingRecordInput {
+  return {
+    crmPartnerId: record.crmPartnerId,
+    supplierPartnerId: record.supplierPartnerId ?? null,
+    partnerKind: record.partnerKind,
+    pmsProductId: record.pmsProductId,
+    incoterm: record.incoterm,
+    locationId: record.locationId,
+    costCurrency: record.costCurrency,
+    costAmount: record.costAmount,
+    priceCurrency: record.priceCurrency,
+    priceAmount: record.priceAmount,
+    needsCurrencyConversion: record.needsCurrencyConversion,
+    exchangeRateUsed: record.exchangeRateUsed,
+    baseCurrency: record.baseCurrency,
+  };
 }

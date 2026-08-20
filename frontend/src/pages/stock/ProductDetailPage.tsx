@@ -24,6 +24,7 @@ import {
   deleteStockMovement,
   StockMovementCreate,
 } from "../../services/api";
+import { trackRecentRecord } from "../../hooks/useRecentlyAccessed";
 
 export function ProductDetailPage() {
   const { productId } = useParams<{ productId: string }>();
@@ -94,6 +95,13 @@ export function ProductDetailPage() {
 
       setProduct(productData);
       setMovements(sortedMovements);
+      trackRecentRecord({
+        id: productData.id,
+        title: productData.chemical,
+        subtitle: productData.chemical_type || "Stock",
+        module: "stock",
+        url: `/stock/products/${productData.id}`,
+      });
     } catch (err: any) {
       console.error(err);
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load product data");

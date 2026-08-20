@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import type { AuthChangeEvent } from "@supabase/supabase-js";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-import { EmployeeRole, getPermissionsForRole } from "../utils/permissions";
+import { EmployeeRole, canViewSection, getPermissionsForRole } from "../utils/permissions";
+import type { WorkspaceModuleKey } from "../lib/workspaceModules";
 import { resolveEmployeeStatus } from "../services/employeeAccess";
 import { CANONICAL_PRODUCTION_URL } from "../lib/canonical-host";
 import { isRequestAborted } from "../lib/request-errors";
@@ -19,6 +20,7 @@ const EMPLOYEE_CHECK_SKIP_EVENTS = new Set<AuthChangeEvent>([
 ]);
 
 const EMPLOYEE_CHECK_TIMEOUT_MS = 8_000;
+const SIGN_IN_TIMEOUT_MS = 8_000;
 const EMPLOYEE_CHECK_RETRY_ATTEMPTS = 3;
 const EMPLOYEE_CHECK_RETRY_DELAY_MS = 500;
 const EMPLOYEE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -83,6 +85,43 @@ function employeeDataFromCache(
     role: cached.role,
     name: cached.name,
   };
+}
+
+export class AuthNetworkError extends Error {
+  constructor(
+    message = "Unable to reach the authentication server. Please check your internet connection.",
+  ) {
+    super(message);
+    this.name = "AuthNetworkError";
+  }
+}
+
+export class EmployeeProfileMissingError extends Error {
+  constructor(
+    message = "Authenticated successfully, but no active LeanChem employee profile was found.",
+  ) {
+    super(message);
+    this.name = "EmployeeProfileMissingError";
+  }
+}
+
+export function isAuthNetworkFailure(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof AuthNetworkError) return true;
+  if (error instanceof TypeError) return true;
+  const err = error as { name?: string; message?: string; status?: number };
+  if (err.name === "TypeError" || err.name === "AuthRetryableFetchError") {
+    return true;
+  }
+  const msg = (err.message || "").toLowerCase();
+  return (
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("network request failed") ||
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("internet connection")
+  );
 }
 
 /** Canonical production URL (Vercel production alias). */
@@ -292,12 +331,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const normalized = email.toLowerCase().trim();
 
-    // Invite-only auth: a valid Supabase session is enough to enter the app.
-    // Enrich role/name from employees API without blocking login on timeouts.
-    if (authUser?.email && !options?.background && !verifiedEmployeeRef.current) {
-      applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
-    }
-
     const outcome = await checkEmployeeStatus(normalized, generation);
     if (generation !== employeeCheckGeneration.current) {
       return;
@@ -308,12 +341,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (outcome.kind === "not_employee") {
+      clearVerifiedEmployee();
+      return;
+    }
+
     if (outcome.kind === "stale") {
       return;
     }
 
     const cached = readEmployeeCache(normalized);
-    if (cached) {
+    if (cached && outcome.kind === "failed") {
       applyVerifiedEmployee(employeeDataFromCache(cached));
       if (!options?.background) {
         console.warn(
@@ -324,34 +362,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (
-      outcome.kind === "failed" &&
-      lastEmployeeEmail.current === normalized &&
-      verifiedEmployeeRef.current
-    ) {
-      console.warn(
-        "Employee re-check failed; keeping prior verification for",
-        normalized,
-      );
-      return;
-    }
-
-    // Invite-only Supabase Auth: keep (or grant) access from the signed-in session
-    // when the employees API is down or the row is missing / delayed.
-    if (outcome.kind === "not_employee" || outcome.kind === "failed") {
-      if (authUser?.email) {
-        if (!verifiedEmployeeRef.current) {
-          if (outcome.kind === "failed") {
-            console.warn(
-              "Employee check failed after retries; granting access from signed-in session for",
-              normalized,
-            );
-          }
-          applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
-        }
-        return;
+    // Transient employees-API failures: keep cached/session access so outages
+    // do not lock verified staff out. Missing rows are denied above.
+    if (outcome.kind === "failed") {
+      if (authUser?.email && !verifiedEmployeeRef.current) {
+        console.warn(
+          "Employee check failed after retries; granting access from signed-in session for",
+          normalized,
+        );
+        applyVerifiedEmployee(employeeFromAuthenticatedUser(authUser));
       }
-      clearVerifiedEmployee();
     }
   };
 
@@ -392,16 +412,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const generation = ++employeeCheckGeneration.current;
       const useCacheWhileLoading =
         EMPLOYEE_CHECK_EVENTS.has(event) && hydrateEmployeeFromCache(normalized);
-
-      // Invite-only: unlock the app immediately from the signed-in session.
-      if (
-        !useCacheWhileLoading &&
-        !alreadyVerified &&
-        session?.user?.email &&
-        !verifiedEmployeeRef.current
-      ) {
-        applyVerifiedEmployee(employeeFromAuthenticatedUser(session.user));
-      }
 
       const blockUi =
         !useCacheWhileLoading &&
@@ -449,18 +459,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await Promise.race([
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(
+            () => reject(new AuthNetworkError()),
+            SIGN_IN_TIMEOUT_MS,
+          );
+        }),
+      ]);
 
       if (error) {
+        if (isAuthNetworkFailure(error)) {
+          return { error: new AuthNetworkError() };
+        }
         return { error };
       }
 
-      // Employee verification runs once via onAuthStateChange (SIGNED_IN).
+      const generation = ++employeeCheckGeneration.current;
+      const outcome = await checkEmployeeStatus(
+        email.toLowerCase().trim(),
+        generation,
+      );
+      if (outcome.kind === "not_employee") {
+        clearVerifiedEmployee();
+        return { error: new EmployeeProfileMissingError() };
+      }
+      if (outcome.kind === "employee") {
+        applyVerifiedEmployee(outcome.data);
+      }
+
       return { error: null };
     } catch (error) {
+      if (isAuthNetworkFailure(error)) {
+        return { error: new AuthNetworkError() };
+      }
       return { error: error as Error };
     }
   };
@@ -614,18 +650,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         applyVerifiedEmployee(lookup.employee);
         return;
       }
+      if (lookup.status === "not_found") {
+        clearVerifiedEmployee();
+        return;
+      }
       const cached = readEmployeeCache(normalized);
       if (cached) {
         applyVerifiedEmployee(employeeDataFromCache(cached));
         return;
       }
-      if (
-        lastEmployeeEmail.current === normalized &&
-        verifiedEmployeeRef.current
-      ) {
-        return;
-      }
-      // not_found, error, or stale with an active session → grant from auth user
+      // Transient lookup failure with an active session → keep/grant access.
       if (user) {
         applyVerifiedEmployee(employeeFromAuthenticatedUser(user));
       }
@@ -678,5 +712,10 @@ export function useAuth() {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+}
+
+export function useCanView(section: WorkspaceModuleKey): boolean {
+  const { employeeRole } = useAuth();
+  return canViewSection(employeeRole, section);
 }
 

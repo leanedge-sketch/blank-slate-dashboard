@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = True
 
+    # Module 8 Phase 2 — Monday executive briefing email
+    # Comma-separated leadership inboxes, e.g. "ceo@leanchem.com,coo@leanchem.com"
+    EXECUTIVE_REPORT_RECIPIENTS: str = ""
+    # Spec alias — if set, takes precedence over EXECUTIVE_REPORT_RECIPIENTS
+    EXECUTIVE_TEAM_EMAIL: str = ""
+    EXECUTIVE_BRIEFING_ENABLED: bool = True
+    EXECUTIVE_BRIEFING_TIMEZONE: str = "Africa/Nairobi"
+    EXECUTIVE_BRIEFING_GEMINI_MODEL: str = "gemini-3.1-pro-preview"
+
     # Loop A / Loop B — shared public-site Supabase (leanchemweb rfqs + suppliers)
     NEXT_PUBLIC_SUPABASE_URL: str = ""
     NEXT_PUBLIC_SUPABASE_ANON_KEY: str = ""

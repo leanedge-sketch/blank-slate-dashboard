@@ -54,8 +54,12 @@ FAILOVER_TELEGRAM_MESSAGE = (
 )
 
 ICP_TASK_TYPES = frozenset({"icp", "profile", "crm_profile"})
+# Deep-reasoning tasks (Gemini Pro preferred; OpenAI gpt-4o failover).
+DEEP_REASONING_TASK_TYPES = frozenset(
+    {"icp", "profile", "crm_profile", "executive_briefing"}
+)
 SUMMARY_TASK_TYPES = frozenset(
-    {"summary", "summaries", "pipeline_insights", "sales_advice"}
+    {"summary", "summaries", "pipeline_insights", "sales_advice", "executive_briefing"}
 )
 
 
@@ -237,17 +241,19 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _complexity_for_task(task_type: str) -> TaskComplexity:
-    if (task_type or "").strip().lower() in ICP_TASK_TYPES:
+    if (task_type or "").strip().lower() in DEEP_REASONING_TASK_TYPES:
         return TaskComplexity.DEEP_REASONING_RAG
     return TaskComplexity.HIGH_VOLUME_FAST
 
 
 def _default_timeout_for_task(task_type: str) -> float:
     kind = (task_type or "general").strip().lower()
-    if kind in ICP_TASK_TYPES:
-        return 45.0
+    if kind in DEEP_REASONING_TASK_TYPES:
+        return 60.0 if kind == "executive_briefing" else 45.0
     if kind in SUMMARY_TASK_TYPES or kind in ("extraction", "tds_extract"):
         return 25.0
+    if kind == "login_support":
+        return 8.0
     return 12.0
 
 
@@ -420,18 +426,23 @@ class AIService:
         prompt: str,
         system_instruction: str,
         max_tokens: Optional[int],
+        json_mode: bool = False,
+        model_name: Optional[str] = None,
     ) -> Tuple[str, int, int]:
+        gemini_model = (model_name or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
         if self._google_genai_client is not None:
             try:
                 from google.genai import types
 
-                config_kwargs: Dict[str, Any] = {"temperature": 0.7}
+                config_kwargs: Dict[str, Any] = {"temperature": 0 if json_mode else 0.7}
+                if json_mode:
+                    config_kwargs["response_mime_type"] = "application/json"
                 if max_tokens is not None:
                     config_kwargs["max_output_tokens"] = max_tokens
                 if system_instruction:
                     config_kwargs["system_instruction"] = system_instruction
                 response = self._google_genai_client.models.generate_content(
-                    model=self.default_gemini_model,
+                    model=gemini_model,
                     contents=prompt,
                     config=types.GenerateContentConfig(**config_kwargs),
                 )
@@ -447,8 +458,10 @@ class AIService:
         model_kwargs: Dict[str, Any] = {}
         if system_instruction:
             model_kwargs["system_instruction"] = system_instruction
-        model = genai.GenerativeModel(self.default_gemini_model, **model_kwargs)
-        generation_config: Dict[str, Any] = {"temperature": 0.7}
+        model = genai.GenerativeModel(gemini_model, **model_kwargs)
+        generation_config: Dict[str, Any] = {"temperature": 0 if json_mode else 0.7}
+        if json_mode:
+            generation_config["response_mime_type"] = "application/json"
         if max_tokens is not None:
             generation_config["max_output_tokens"] = max_tokens
         response = model.generate_content(prompt, generation_config=generation_config)
@@ -462,6 +475,7 @@ class AIService:
         system_instruction: str,
         model: str,
         max_tokens: Optional[int],
+        json_mode: bool = False,
     ) -> Tuple[str, int, int]:
         if self.openai_client is None:
             raise AIServiceError("OPENAI_API_KEY is not configured.")
@@ -472,12 +486,231 @@ class AIService:
         kwargs: Dict[str, Any] = {
             "model": model,
             "messages": messages,
-            "temperature": 0.7,
+            "temperature": 0 if json_mode else 0.7,
         }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         resp = await self.openai_client.chat.completions.create(**kwargs)
         return _extract_openai_text(resp), *_usage_from_openai(resp)
+
+    def _gemini_stream_sync(
+        self,
+        prompt: str,
+        system_instruction: str,
+        max_tokens: Optional[int],
+        cached_content: Optional[str] = None,
+    ):
+        """Yield text chunks from Gemini (google.genai, then generativeai)."""
+        if self._google_genai_client is not None:
+            try:
+                from google.genai import types
+
+                config_kwargs: Dict[str, Any] = {"temperature": 0.7}
+                if max_tokens is not None:
+                    config_kwargs["max_output_tokens"] = max_tokens
+                if cached_content:
+                    config_kwargs["cached_content"] = cached_content
+                elif system_instruction:
+                    config_kwargs["system_instruction"] = system_instruction
+                stream = self._google_genai_client.models.generate_content_stream(
+                    model=self.default_gemini_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                for response in stream:
+                    text = _extract_gemini_text(response)
+                    if text:
+                        yield text
+                return
+            except Exception as exc:
+                logger.info("google.genai stream failed; trying generativeai: %s", exc)
+
+        import google.generativeai as genai
+
+        _configure_gemini_legacy()
+        model_kwargs: Dict[str, Any] = {}
+        if system_instruction and not cached_content:
+            model_kwargs["system_instruction"] = system_instruction
+        model = genai.GenerativeModel(self.default_gemini_model, **model_kwargs)
+        generation_config: Dict[str, Any] = {"temperature": 0.7}
+        if max_tokens is not None:
+            generation_config["max_output_tokens"] = max_tokens
+        response = model.generate_content(
+            prompt, generation_config=generation_config, stream=True
+        )
+        if hasattr(response, "__iter__") and not hasattr(response, "text"):
+            for chunk in response:
+                text = _extract_gemini_text(chunk)
+                if text:
+                    yield text
+            return
+        text = _extract_gemini_text(response)
+        if text:
+            yield text
+
+    async def _gemini_stream(
+        self,
+        prompt: str,
+        system_instruction: str,
+        max_tokens: Optional[int],
+        cached_content: Optional[str] = None,
+    ):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        sentinel = object()
+
+        def run() -> None:
+            try:
+                for piece in self._gemini_stream_sync(
+                    prompt, system_instruction, max_tokens, cached_content
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, piece)
+                loop.call_soon_threadsafe(queue.put_nowait, sentinel)
+            except Exception as exc:
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
+
+        worker = loop.run_in_executor(None, run)
+        try:
+            while True:
+                item = await queue.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield str(item)
+        finally:
+            try:
+                await worker
+            except Exception:
+                pass
+
+    async def _openai_stream(
+        self,
+        prompt: str,
+        system_instruction: str,
+        model: str,
+        max_tokens: Optional[int],
+    ):
+        if self.openai_client is None:
+            raise AIServiceError("OPENAI_API_KEY is not configured.")
+        messages: List[Dict[str, str]] = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        stream = await self.openai_client.chat.completions.create(**kwargs)
+        async for event in stream:
+            try:
+                delta = event.choices[0].delta.content if event.choices else None
+            except Exception:
+                delta = None
+            if delta:
+                yield str(delta)
+
+    async def stream_text(
+        self,
+        prompt: str,
+        system_instruction: str = "",
+        task_type: str = "general",
+        max_tokens: Optional[int] = None,
+        cached_content: Optional[str] = None,
+        timeout_seconds: float = 90.0,
+    ):
+        """
+        Stream tokens from Gemini, silently failing over to OpenAI gpt-4o.
+        Yields plain text chunks. CancelledError is re-raised for client disconnects.
+        """
+        started = time.perf_counter()
+        flags = await self.read_guardrails()
+        if flags.get("emergency_ai_killswitch"):
+            raise AIServiceError("Emergency AI killswitch is active.")
+        self._assert_feature_enabled(flags, task_type)
+
+        gemini_error: Optional[BaseException] = None
+        collected = 0
+        try:
+            async for piece in self._gemini_stream(
+                prompt, system_instruction, max_tokens, cached_content
+            ):
+                collected += len(piece)
+                yield piece
+            if collected > 0:
+                latency = int((time.perf_counter() - started) * 1000)
+                await self._log_usage(
+                    provider="gemini",
+                    model=self.default_gemini_model,
+                    task_type=task_type,
+                    input_tokens=_estimate_tokens(system_instruction + prompt),
+                    output_tokens=_estimate_tokens("x" * collected),
+                    estimated_cost_usd=0.0,
+                    status="success",
+                    latency_ms=latency,
+                )
+                return
+            raise AIServiceError("Gemini stream returned no content.")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if collected > 0:
+                logger.warning("Gemini stream ended after partial output: %s", exc)
+                return
+            gemini_error = exc
+            logger.warning("Gemini stream failed (%s); failing over to OpenAI", exc)
+
+        try:
+            await ai_config.send_telegram_alert(FAILOVER_TELEGRAM_MESSAGE)
+        except Exception:
+            pass
+
+        openai_collected = 0
+        try:
+            async for piece in self._openai_stream(
+                prompt, system_instruction, PRIMARY_OPENAI_MODEL, max_tokens
+            ):
+                openai_collected += len(piece)
+                yield piece
+        except asyncio.CancelledError:
+            raise
+        except Exception as openai_exc:
+            logger.warning("OpenAI gpt-4o stream failed: %s", openai_exc)
+            try:
+                async for piece in self._openai_stream(
+                    prompt, system_instruction, FALLBACK_OPENAI_MODEL, max_tokens
+                ):
+                    openai_collected += len(piece)
+                    yield piece
+            except asyncio.CancelledError:
+                raise
+            except Exception as mini_exc:
+                raise AIServiceError(
+                    "All chat providers failed to stream. Gemini: "
+                    f"{gemini_error}; OpenAI: {mini_exc}"
+                ) from mini_exc
+
+        if openai_collected <= 0:
+            raise AIServiceError(
+                f"OpenAI stream returned no content after Gemini error: {gemini_error}"
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+        await self._log_usage(
+            provider="openai",
+            model=PRIMARY_OPENAI_MODEL,
+            task_type=task_type,
+            input_tokens=_estimate_tokens(system_instruction + prompt),
+            output_tokens=_estimate_tokens("x" * openai_collected),
+            estimated_cost_usd=0.0,
+            status="fallback_triggered",
+            latency_ms=latency,
+        )
 
     async def generate_text(
         self,
@@ -486,18 +719,23 @@ class AIService:
         task_type: str = "general",
         timeout_seconds: float = 4.0,
         max_tokens: Optional[int] = None,
+        json_mode: bool = False,
+        gemini_model: Optional[str] = None,
     ) -> dict:
         """
         Gemini-first generation with killswitch, timeout, OpenAI failover, and telemetry.
         """
         started = time.perf_counter()
         flags = await self.read_guardrails()
+        active_gemini_model = (
+            (gemini_model or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
+        )
 
         if flags.get("emergency_ai_killswitch"):
             latency = int((time.perf_counter() - started) * 1000)
             await self._log_usage(
                 provider="gemini",
-                model=self.default_gemini_model,
+                model=active_gemini_model,
                 task_type=task_type,
                 input_tokens=0,
                 output_tokens=0,
@@ -511,12 +749,14 @@ class AIService:
 
         complexity = _complexity_for_task(task_type)
         openai_model = (
-            self.default_openai_model
+            PRIMARY_OPENAI_MODEL
             if complexity == TaskComplexity.DEEP_REASONING_RAG
             else FALLBACK_OPENAI_MODEL
         )
-        if complexity == TaskComplexity.DEEP_REASONING_RAG and not openai_model:
-            openai_model = PRIMARY_OPENAI_MODEL
+        # Prefer configured OPENAI_CHAT_MODEL / MODEL_CHOICE when it is already gpt-4o-class.
+        configured = (self.default_openai_model or "").strip()
+        if complexity == TaskComplexity.DEEP_REASONING_RAG and configured.startswith("gpt-4o"):
+            openai_model = configured
 
         gemini_error: Optional[BaseException] = None
         try:
@@ -526,6 +766,8 @@ class AIService:
                     prompt,
                     system_instruction,
                     max_tokens,
+                    json_mode,
+                    active_gemini_model,
                 ),
                 timeout=timeout_seconds,
             )
@@ -533,11 +775,11 @@ class AIService:
                 raise AIServiceError("Gemini returned empty content.")
             inp = inp or _estimate_tokens(system_instruction + prompt)
             out = out or _estimate_tokens(content)
-            cost = ai_config.estimate_cost_usd(self.default_gemini_model, inp, out)
+            cost = ai_config.estimate_cost_usd(active_gemini_model, inp, out)
             latency = int((time.perf_counter() - started) * 1000)
             await self._log_usage(
                 provider="gemini",
-                model=self.default_gemini_model,
+                model=active_gemini_model,
                 task_type=task_type,
                 input_tokens=inp,
                 output_tokens=out,
@@ -550,6 +792,7 @@ class AIService:
                 "content": content,
                 "provider_used": "gemini",
                 "is_fallback": False,
+                "model_used": active_gemini_model,
             }
         except Exception as exc:
             gemini_error = exc
@@ -565,7 +808,7 @@ class AIService:
         for model in models_to_try:
             try:
                 content, inp, out = await self._openai_generate(
-                    prompt, system_instruction, model, max_tokens
+                    prompt, system_instruction, model, max_tokens, json_mode
                 )
                 if not (content or "").strip():
                     raise AIServiceError("OpenAI returned empty content.")
@@ -580,7 +823,7 @@ class AIService:
                     input_tokens=inp,
                     output_tokens=out,
                     estimated_cost_usd=cost,
-                    status="fallback_triggered",
+                    status="fallback_success",
                     latency_ms=latency,
                 )
                 await self._bump_spend_and_alert(cost, flags)
@@ -588,10 +831,11 @@ class AIService:
                     "content": content,
                     "provider_used": "openai",
                     "is_fallback": True,
+                    "model_used": model,
                 }
             except Exception as openai_exc:
                 last_openai_error = openai_exc
-                logger.warning("OpenAI fallback model %s failed: %s", model, openai_exc)
+                logger.warning("OpenAI %s failed: %s", model, openai_exc)
 
         latency = int((time.perf_counter() - started) * 1000)
         await self._log_usage(
@@ -605,9 +849,8 @@ class AIService:
             latency_ms=latency,
         )
         raise AIServiceError(
-            "All chat providers failed. Gemini: "
-            f"{gemini_error}; OpenAI: {last_openai_error}"
-        ) from last_openai_error
+            f"All AI providers failed. Gemini: {gemini_error}; OpenAI: {last_openai_error}"
+        )
 
 
 def get_ai_service() -> AIService:

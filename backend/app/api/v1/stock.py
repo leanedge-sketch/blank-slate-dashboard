@@ -33,6 +33,7 @@ from app.models.stock import (
     StockAvailabilitySummary,
     StockCatalogAvailability,
     StockPipelineContext,
+    AtomicStockTransferRequest,
 )
 from app.services.stock_service import (
     list_products,
@@ -51,6 +52,7 @@ from app.services.stock_service import (
     get_stock_availability_summary,
     get_stock_availability_by_catalog,
     get_pipeline_stock_context,
+    atomic_stock_transfer,
 )
 from app.dependencies import get_current_user
 
@@ -253,6 +255,25 @@ async def get_stock_movement_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching stock movement: {str(e)}")
+
+
+@router.post("/stock/transfers", response_model=StockMovement, status_code=201)
+async def atomic_stock_transfer_endpoint(body: AtomicStockTransferRequest):
+    """Paired warehouse transfer in one Postgres transaction. No AI."""
+    try:
+        return atomic_stock_transfer(
+            product_id=str(body.product_id),
+            source_location=body.source_location,
+            dest_location=body.dest_location,
+            quantity=float(body.quantity),
+            batch_id=body.batch_id,
+            expiry_date=body.expiry_date,
+            notes=body.notes or "Internal Transfer",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error transferring stock: {e}") from e
 
 
 @router.post("/stock/movements", response_model=StockMovement, status_code=201)

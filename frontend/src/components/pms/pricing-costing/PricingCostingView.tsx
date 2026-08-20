@@ -46,7 +46,7 @@ import {
 
   mapPmsPartnerToCRMPartner,
 
-  revisePricingRecordApi,
+  bulkRevisePricingRecordsApi,
 
 } from "./pricingApi";
 
@@ -392,12 +392,15 @@ export function PricingCostingView() {
 
 
 
-  const handleUpdatePricing = useCallback(
+  const handleBulkSave = useCallback(
 
     async (
-      sourceRecordId: string,
-      input: PricingRecordInput,
-      options?: { offerUpdateOpenDeals?: boolean },
+      changes: {
+        id: string;
+        incoterm: string;
+        costAmount: number;
+        priceAmount: number;
+      }[],
     ) => {
 
       setSaving(true);
@@ -406,9 +409,7 @@ export function PricingCostingView() {
 
       try {
 
-        await revisePricingRecordApi(sourceRecordId, input, {
-          offerUpdateOpenDeals: options?.offerUpdateOpenDeals,
-        });
+        await bulkRevisePricingRecordsApi(changes);
 
         await reloadRecords();
 
@@ -416,7 +417,7 @@ export function PricingCostingView() {
 
       } catch (err) {
 
-        setError(err instanceof Error ? err.message : "Failed to update pricing.");
+        setError(err instanceof Error ? err.message : "Failed to save pending pricing changes.");
 
         throw err;
 
@@ -596,7 +597,7 @@ export function PricingCostingView() {
 
             onAddRecord={handleAddRecord}
 
-            onUpdatePricing={handleUpdatePricing}
+            onBulkSave={handleBulkSave}
 
             onDeleteRecord={handleDeleteRecord}
 

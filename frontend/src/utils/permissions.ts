@@ -123,16 +123,21 @@ export function getPermissionsForRole(role: EmployeeRole | null): Permissions {
  */
 export function canViewSection(
   role: EmployeeRole | null,
-  section: "crm" | "pms" | "sales" | "stock"
+  section: "crm" | "pms" | "sales" | "stock" | "reports" | "finance" | "rfqs" | "logistics"
 ): boolean {
   const permissions = getPermissionsForRole(role);
   switch (section) {
     case "crm":
+    case "reports":
       return permissions.canViewCRM;
     case "pms":
+    case "finance":
       return permissions.canViewPMS;
     case "sales":
+    case "rfqs":
       return permissions.canViewSalesPipeline;
+    case "logistics":
+      return permissions.canViewSalesPipeline || permissions.canViewPMS;
     case "stock":
       return permissions.canViewStock;
     default:

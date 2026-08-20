@@ -1,0 +1,3 @@
+-- Mirror of migrations/004_pms_scd_pricing.sql
+-- SCD Type 2 columns live on public.pricing_records.
+-- See migrations/004_pms_scd_pricing.sql for the full script (view + backfill).

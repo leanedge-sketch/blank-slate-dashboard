@@ -37,6 +37,7 @@ class ProductBase(BaseModel):
     tds_id: Optional[UUID] = Field(None, description="Link to TDS/product from PMS")
     catalog_uuid_id: Optional[UUID] = Field(None, description="Link to PMS catalog uuid_id")
     tds_link: Optional[str] = None
+    minimum_stock_threshold: float = Field(default=0.0, ge=0)
 
 
 class ProductCreate(ProductBase):
@@ -55,6 +56,7 @@ class ProductUpdate(BaseModel):
     tds_id: Optional[UUID] = None
     catalog_uuid_id: Optional[UUID] = None
     tds_link: Optional[str] = None
+    minimum_stock_threshold: Optional[float] = Field(None, ge=0)
 
 
 class Product(ProductBase):
@@ -154,6 +156,8 @@ class StockMovementBase(BaseModel):
     reference: Optional[str] = None
     remark: Optional[str] = None
     warehouse: Optional[str] = None
+    batch_id: Optional[str] = None
+    expiry_date: Optional[date] = None
 
     @field_validator("location")
     @classmethod
@@ -215,6 +219,8 @@ class StockMovementUpdate(BaseModel):
     reference: Optional[str] = None
     remark: Optional[str] = None
     warehouse: Optional[str] = None
+    batch_id: Optional[str] = None
+    expiry_date: Optional[date] = None
 
 
 class StockMovement(StockMovementBase):
@@ -258,6 +264,8 @@ class StockAvailabilitySummary(BaseModel):
     sez_kenya_available: float
     nairobi_partner_available: float
     total_available: float
+    minimum_stock_threshold: float = 0.0
+    is_low_stock: bool = False
 
 
 class StockCatalogAvailability(BaseModel):
@@ -303,3 +311,13 @@ class NairobiPartnerStock(BaseModel):
     date: date
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class AtomicStockTransferRequest(BaseModel):
+    product_id: UUID
+    source_location: str
+    dest_location: str
+    quantity: float = Field(gt=0)
+    batch_id: Optional[str] = None
+    expiry_date: Optional[date] = None
+    notes: Optional[str] = "Internal Transfer"

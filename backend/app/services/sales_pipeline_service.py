@@ -55,6 +55,7 @@ _PIPELINE_WRITE_COLUMNS = frozenset({
     "chemical_type_id",
     "stage",
     "amount",
+    "target_amount",
     "currency",
     "expected_close_date",
     "close_reason",
@@ -66,6 +67,8 @@ _PIPELINE_WRITE_COLUMNS = frozenset({
     "forex",
     "business_unit",
     "incoterm",
+    "pricing_record_id",
+    "snapshot_unit_price",
     "metadata",
     "ai_interactions",
     "parent_pipeline_id",
@@ -715,6 +718,10 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
         db_payload["is_current_version"] = True
     if not db_payload.get("version_number"):
         db_payload["version_number"] = 1
+
+    from app.services.pms_service import attach_price_snapshot_to_pipeline_payload
+
+    db_payload = attach_price_snapshot_to_pipeline_payload(db_payload)
     
     # Log the payload for debugging
     import logging
@@ -728,7 +735,14 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     except Exception as e:
         # If it fails because column doesn't exist, try mapping 'amount' to 'deal_value' or 'deal_value_usd'
         error_str = str(e).lower()
-        if "amount" in error_str and ("column" in error_str or "does not exist" in error_str or "unknown" in error_str):
+        if "pricing_record" in error_str or "snapshot_unit_price" in error_str:
+            db_payload.pop("pricing_record_id", None)
+            db_payload.pop("snapshot_unit_price", None)
+            try:
+                response = supabase.table("sales_pipeline").insert(db_payload).execute()
+            except Exception:
+                raise
+        elif "amount" in error_str and ("column" in error_str or "does not exist" in error_str or "unknown" in error_str):
             logger.warning(f"Column 'amount' not found, trying 'deal_value' instead. Error: {str(e)}")
             if "amount" in db_payload and db_payload["amount"] is not None:
                 db_payload["deal_value"] = db_payload.pop("amount")
@@ -2269,4 +2283,116 @@ Guidelines:
             "grade": product.grade if product else None,
         } if product else None,
     }
+
+
+def list_sales_quotations(pipeline_id: str) -> List["SalesQuotation"]:
+    from app.models.sales_pipeline import SalesQuotation
+
+    supabase: Client = get_supabase_client()
+    response = (
+        supabase.table("sales_quotations")
+        .select("*")
+        .eq("pipeline_id", pipeline_id)
+        .order("version", desc=True)
+        .execute()
+    )
+    return [SalesQuotation(**row) for row in (response.data or [])]
+
+
+def create_sales_quotation(
+    pipeline_id: str,
+    *,
+    target_amount: float,
+    currency: str = "USD",
+    file_url: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> "SalesQuotation":
+    from app.models.sales_pipeline import SalesQuotation
+
+    if not get_sales_pipeline_by_id(pipeline_id):
+        raise ValueError("Sales pipeline record not found")
+    supabase: Client = get_supabase_client()
+    existing = (
+        supabase.table("sales_quotations")
+        .select("version")
+        .eq("pipeline_id", pipeline_id)
+        .order("version", desc=True)
+        .limit(1)
+        .execute()
+    )
+    next_version = 1
+    if existing.data:
+        next_version = int(existing.data[0].get("version") or 0) + 1
+    payload: Dict[str, Any] = {
+        "pipeline_id": pipeline_id,
+        "version": next_version,
+        "target_amount": target_amount,
+        "currency": currency or "USD",
+        "file_url": file_url,
+        "is_accepted": False,
+    }
+    if created_by:
+        payload["created_by"] = created_by
+    try:
+        response = supabase.table("sales_quotations").insert(payload).execute()
+    except Exception:
+        payload.pop("created_by", None)
+        response = supabase.table("sales_quotations").insert(payload).execute()
+    if not response.data:
+        raise RuntimeError("Failed to create sales quotation")
+    return SalesQuotation(**response.data[0])
+
+
+def accept_sales_quotation(pipeline_id: str, quotation_id: str) -> "SalesQuotation":
+    from app.models.sales_pipeline import SalesQuotation, SalesPipelineUpdate
+
+    supabase: Client = get_supabase_client()
+    found = (
+        supabase.table("sales_quotations")
+        .select("*")
+        .eq("id", quotation_id)
+        .eq("pipeline_id", pipeline_id)
+        .limit(1)
+        .execute()
+    )
+    row = (found.data or [None])[0]
+    if not row:
+        raise ValueError("Quotation not found")
+
+    supabase.table("sales_quotations").update({"is_accepted": False}).eq(
+        "pipeline_id", pipeline_id
+    ).eq("is_accepted", True).execute()
+    accepted = (
+        supabase.table("sales_quotations")
+        .update({"is_accepted": True})
+        .eq("id", quotation_id)
+        .execute()
+    )
+    if not accepted.data:
+        raise RuntimeError("Failed to accept quotation")
+
+    quote = SalesQuotation(**accepted.data[0])
+    pipeline = get_sales_pipeline_by_id(pipeline_id)
+    meta = dict(pipeline.metadata or {}) if pipeline else {}
+    meta["accepted_quotation"] = {
+        "id": str(quote.id),
+        "version": quote.version,
+        "target_amount": float(quote.target_amount),
+        "currency": quote.currency,
+    }
+    update = SalesPipelineUpdate(
+        target_amount=float(quote.target_amount),
+        currency=quote.currency if quote.currency in ("ETB", "KES", "USD", "EUR") else None,
+        metadata=meta,
+        reason_for_amount_change=f"Accepted quotation v{quote.version}",
+    )
+    try:
+        update_sales_pipeline(pipeline_id, update)
+    except Exception:
+        fallback = SalesPipelineUpdate(
+            metadata=meta,
+            reason_for_amount_change=f"Accepted quotation v{quote.version}",
+        )
+        update_sales_pipeline(pipeline_id, fallback)
+    return quote
 

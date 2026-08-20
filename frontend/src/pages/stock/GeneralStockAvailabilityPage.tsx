@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowLeft,
+  AlertTriangle,
 } from "lucide-react";
 import {
   fetchStockAvailability,
@@ -18,6 +19,69 @@ import {
   fetchStockMovements,
   StockMovement,
 } from "../../services/api";
+
+type BrandRollupRow = {
+  product_id: string;
+  product_name: string;
+  chemical: string;
+  brand: string;
+  addis_ababa_available: number;
+  sez_kenya_available: number;
+  nairobi_partner_available: number;
+  total_available: number;
+  addis_ababa_reserved: number;
+  sez_kenya_reserved: number;
+  nairobi_partner_reserved: number;
+};
+
+type DisplayRow = StockAvailabilitySummary | BrandRollupRow;
+
+type LowStockAlert = {
+  product_id: string;
+  product_name: string;
+  location: string;
+  available: number;
+  threshold: number;
+};
+
+function isStockSummary(row: DisplayRow): row is StockAvailabilitySummary {
+  return "is_low_stock" in row || "minimum_stock_threshold" in row;
+}
+
+function getLocationAlerts(row: StockAvailabilitySummary): LowStockAlert[] {
+  const threshold = Number(row.minimum_stock_threshold || 0);
+  if (threshold <= 0) return [];
+
+  const alerts: LowStockAlert[] = [];
+  if (row.addis_ababa_available < threshold) {
+    alerts.push({
+      product_id: row.product_id,
+      product_name: row.product_name,
+      location: "Addis Ababa",
+      available: row.addis_ababa_available,
+      threshold,
+    });
+  }
+  if (row.sez_kenya_available < threshold) {
+    alerts.push({
+      product_id: row.product_id,
+      product_name: row.product_name,
+      location: "SEZ Kenya",
+      available: row.sez_kenya_available,
+      threshold,
+    });
+  }
+  if (row.nairobi_partner_available < threshold) {
+    alerts.push({
+      product_id: row.product_id,
+      product_name: row.product_name,
+      location: "Nairobi Partner",
+      available: row.nairobi_partner_available,
+      threshold,
+    });
+  }
+  return alerts;
+}
 
 export function GeneralStockAvailabilityPage() {
   const navigate = useNavigate();
@@ -93,6 +157,9 @@ export function GeneralStockAvailabilityPage() {
       item.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.product_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const lowStockAlerts = filteredData.flatMap((item) => getLocationAlerts(item));
+  const lowStockCount = lowStockAlerts.length;
 
   // Calculate stock by brand directly from stock_movements if view mode is "per-product"
   const { displayData, brandMovementsMap, productMovementsMap } = viewMode === "per-product" 
@@ -234,7 +301,7 @@ export function GeneralStockAvailabilityPage() {
         });
         
         // Convert to display format
-        const displayData = aggregatedBrands.map((brandData) => ({
+        const displayData: BrandRollupRow[] = aggregatedBrands.map((brandData) => ({
           product_id: `brand-${(brandData.brand || "").toLowerCase().trim()}`,
           product_name: brandData.brand + (brandData.product_entries.length > 0 ? ` (${brandData.product_entries.length} products)` : ""),
           chemical: brandData.brand,
@@ -363,6 +430,27 @@ export function GeneralStockAvailabilityPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {lowStockCount > 0 ? (
+          <div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+            <div className="space-y-1">
+              <p className="font-medium text-red-900">
+                {lowStockCount} low-stock alert{lowStockCount === 1 ? "" : "s"} across warehouse balances.
+              </p>
+              <div className="space-y-1 text-red-800">
+                {lowStockAlerts.slice(0, 5).map((alert) => (
+                  <p key={`${alert.product_id}-${alert.location}`}>
+                    Alert: {alert.product_name} has dropped below minimum threshold in {alert.location}
+                    {" "}({formatNumber(alert.available)} kg vs {formatNumber(alert.threshold)} kg).
+                  </p>
+                ))}
+                {lowStockAlerts.length > 5 ? (
+                  <p>+{lowStockAlerts.length - 5} more low-stock alerts.</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -471,9 +559,13 @@ export function GeneralStockAvailabilityPage() {
                     const isExpanded = expandedProducts.has(expandKey);
                     
                     // Get movements based on view mode
-                    const movements = viewMode === "per-product"
+                    const productEntries = viewMode === "per-product"
                       ? (brandMovementsMap.get((item.brand || "").toLowerCase().trim()) || [])
-                      : (productMovementsMap?.get(item.product_id) || []);
+                      : [];
+                    const movements = viewMode === "total"
+                      ? (productMovementsMap?.get(item.product_id) || [])
+                      : [];
+                    const hasRowAlert = isStockSummary(item) && getLocationAlerts(item).length > 0;
                     
                     // For "total" mode, group movements by brand to show in sub-table
                     const movementsByBrand = viewMode === "total" && movements.length > 0
@@ -493,7 +585,11 @@ export function GeneralStockAvailabilityPage() {
                     return (
                       <React.Fragment key={`${item.product_id}-${index}`}>
                         <tr
-                          className="hover:bg-slate-50 transition-colors"
+                          className={`hover:bg-slate-50 transition-colors ${
+                            hasRowAlert
+                              ? "bg-red-50/80"
+                              : ""
+                          }`}
                     >
                       <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
@@ -517,6 +613,12 @@ export function GeneralStockAvailabilityPage() {
                                 {viewMode === "per-product" && item.brand && (
                                   <p className="text-sm text-slate-500">Brand: {item.brand}</p>
                                 )}
+                                {hasRowAlert ? (
+                                  <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                    Below minimum threshold
+                                  </div>
+                                ) : null}
                               </div>
                         </div>
                       </td>
@@ -614,7 +716,7 @@ export function GeneralStockAvailabilityPage() {
                           </td>
                         </tr>
                         {/* Expandable sub-table for "per-product" mode (products for brand) */}
-                        {viewMode === "per-product" && isExpanded && movements.length > 0 && (
+                        {viewMode === "per-product" && isExpanded && productEntries.length > 0 && (
                           <tr>
                             <td colSpan={6} className="px-6 py-4 bg-slate-50">
                               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -648,10 +750,12 @@ export function GeneralStockAvailabilityPage() {
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-200">
-                                      {movements.map((movementItem) => (
+                                      {productEntries.map((movementItem) => (
                                         <tr
                                           key={movementItem.product_id}
-                                          className="hover:bg-slate-50 transition-colors cursor-pointer"
+                                          className={`cursor-pointer transition-colors hover:bg-slate-50 ${
+                                            getLocationAlerts(movementItem).length > 0 ? "bg-red-50/50" : ""
+                                          }`}
                                           onClick={() => navigate(`/stock/products/${movementItem.product_id}`)}
                                         >
                                           <td className="px-4 py-3">

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { LoginAssistantDrawer } from "./LoginAssistantDrawer";
+import { storeRedirectPath } from "../lib/redirectPath";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -15,6 +17,7 @@ export function ProtectedRoute({
   const { user, loading, employeeLoading, isEmployee, recheckEmployeeAccess } =
     useAuth();
   const [rechecking, setRechecking] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const autoRetriedRef = useRef(false);
 
   // After login, a transient API failure can leave the user signed in but not
@@ -69,6 +72,9 @@ export function ProtectedRoute({
   }
 
   if (!user) {
+    if (typeof window !== "undefined") {
+      storeRedirectPath(window.location.pathname, window.location.search);
+    }
     return <Navigate to="/login" replace />;
   }
 
@@ -78,15 +84,12 @@ export function ProtectedRoute({
         <div className="max-w-md w-full bg-slate-900/90 border border-amber-500/40 rounded-xl p-6 text-center space-y-3">
           <p className="text-amber-400 font-semibold">Access not granted</p>
           <p className="text-slate-300 text-sm">
-            {user.email
-              ? `Signed in as ${user.email}, but this account is not registered as an employee.`
-              : "Your account is not registered as an employee."}
+            Authenticated successfully, but no active LeanChem employee profile was found.
           </p>
           <p className="text-slate-500 text-xs">
-            Your Supabase login is separate from the <code className="text-slate-400">employees</code>{" "}
-            table. The email here must match a row in that table exactly (e.g.{" "}
-            <code className="text-slate-400">{user.email}</code>). After an admin adds you, click retry
-            below.
+            Signed in as{" "}
+            <code className="text-slate-400">{user.email}</code>. After an admin adds this
+            email to the employees table, click retry below.
           </p>
           <div className="flex flex-col gap-2 pt-2">
             <button
@@ -104,11 +107,24 @@ export function ProtectedRoute({
             >
               {rechecking || employeeLoading ? "Checking access…" : "Retry access check"}
             </button>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="w-full rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/20"
+            >
+              Need Help?
+            </button>
             <a href="/login" className="inline-block text-blue-400 text-sm hover:underline">
               Back to login
             </a>
           </div>
         </div>
+        <LoginAssistantDrawer
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          failContext="employee_missing"
+          email={user.email || ""}
+        />
       </div>
     );
   }

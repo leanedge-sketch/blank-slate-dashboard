@@ -9,5 +9,5 @@ This package groups versioned API routers:
 - Authentication routes in `auth.py`
 """
 
-from . import crm, pms, sales_pipeline, stock, auth, sourcing, purchase_orders, ai  # noqa: F401
+from . import crm, pms, sales_pipeline, stock, auth, sourcing, purchase_orders, ai, home  # noqa: F401
 

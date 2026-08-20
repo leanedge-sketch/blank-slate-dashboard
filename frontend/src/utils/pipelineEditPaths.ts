@@ -8,11 +8,19 @@ export type PipelineRequestQuery = {
   customerId?: string;
 };
 
+export type PipelineReturnLink = {
+  returnTo?: string;
+  returnLabel?: string;
+};
+
 export function buildNewPipelinePath(): string {
-  return newPipelinePath(true);
+  return newPipelinePath(false);
 }
 
-export function buildEditProductCostingPath(query: PipelineRequestQuery): string {
+export function buildEditProductCostingPath(
+  query: PipelineRequestQuery,
+  options?: PipelineReturnLink,
+): string {
   const params = new URLSearchParams();
   params.set("edit", "1");
   params.set("requestRef", query.requestRef.trim());
@@ -20,13 +28,20 @@ export function buildEditProductCostingPath(query: PipelineRequestQuery): string
   const customerId = query.customerId?.trim();
   if (client) params.set("client", client);
   if (customerId) params.set("customerId", customerId);
+  if (options?.returnTo?.trim()) params.set("returnTo", options.returnTo.trim());
+  if (options?.returnLabel?.trim()) params.set("returnLabel", options.returnLabel.trim());
   return `${TRADE_TRANSIT_ROUTES.productCosting}?${params.toString()}`;
 }
 
 /** Open product costing with a specific pipeline line selected. */
-export function buildProductCostingLinePath(lineId: string): string {
+export function buildProductCostingLinePath(
+  lineId: string,
+  options?: PipelineReturnLink,
+): string {
   const params = new URLSearchParams();
   params.set("line", lineId.trim());
+  if (options?.returnTo?.trim()) params.set("returnTo", options.returnTo.trim());
+  if (options?.returnLabel?.trim()) params.set("returnLabel", options.returnLabel.trim());
   return `${TRADE_TRANSIT_ROUTES.productCosting}?${params.toString()}`;
 }
 
@@ -69,5 +84,17 @@ export function pipelineRequestQueryFromShipment(
     requestRef: (row.request_ref ?? "").trim(),
     clientName: (row.client_name ?? "").trim() || undefined,
     customerId: (row.customer_id ?? "").trim() || undefined,
+  };
+}
+
+export function parseReturnLinkSearchParams(
+  searchParams: URLSearchParams,
+): PipelineReturnLink | null {
+  const returnTo = searchParams.get("returnTo")?.trim() ?? "";
+  const returnLabel = searchParams.get("returnLabel")?.trim() ?? "";
+  if (!returnTo) return null;
+  return {
+    returnTo,
+    returnLabel: returnLabel || undefined,
   };
 }

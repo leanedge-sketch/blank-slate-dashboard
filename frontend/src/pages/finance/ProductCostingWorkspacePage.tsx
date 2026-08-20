@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Package, PenLine } from "lucide-react";
 import { ImportFinanceCalculatorWorkspace } from "../../components/finance/ImportFinanceCalculatorWorkspace";
@@ -7,7 +7,10 @@ import {
   TRADE_TRANSIT_ROUTES,
   useTradeTransitRequest,
 } from "../../contexts/TradeTransitRequestContext";
-import { parseEditProductCostingSearchParams } from "../../utils/pipelineEditPaths";
+import {
+  parseEditProductCostingSearchParams,
+  parseReturnLinkSearchParams,
+} from "../../utils/pipelineEditPaths";
 import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 
 export function ProductCostingWorkspacePage() {
@@ -17,14 +20,36 @@ export function ProductCostingWorkspacePage() {
     () => parseEditProductCostingSearchParams(searchParams),
     [searchParams],
   );
+  const returnLink = useMemo(
+    () => parseReturnLinkSearchParams(searchParams),
+    [searchParams],
+  );
   const isEditMode = editPipeline != null;
-  const { applyParametersToRequest } = useTradeTransitRequest();
+  const {
+    applyParametersToRequest,
+    autosaveSavedAt,
+    autosaveRestored,
+    restoreAutosaveDraft,
+    clearAutosave,
+    setAutosaveEnabled,
+  } = useTradeTransitRequest();
+
+  const [draftPromptOpen, setDraftPromptOpen] = useState(false);
 
   useEffect(() => {
     if (!historyOnly && !isEditMode) {
       applyParametersToRequest();
     }
   }, [applyParametersToRequest, historyOnly, isEditMode]);
+
+  useEffect(() => {
+    // Phase 1 prompt only for the non-history, non-edit procurement wizard views.
+    if (historyOnly || isEditMode) return;
+    const shouldPrompt = Boolean(autosaveSavedAt) && !autosaveRestored;
+    if (!shouldPrompt) return;
+    setAutosaveEnabled(false);
+    setDraftPromptOpen(true);
+  }, [autosaveSavedAt, autosaveRestored, historyOnly, isEditMode, setAutosaveEnabled]);
 
   const title = historyOnly
     ? "Saved pipeline history"
@@ -60,6 +85,8 @@ export function ProductCostingWorkspacePage() {
           </Link>
         ) : undefined
       }
+      backHref={returnLink?.returnTo || TRADE_TRANSIT_ROUTES.hub}
+      backLabel={returnLink?.returnLabel || "Back to Hub"}
     >
       <ImportFinanceCalculatorWorkspace
         activeSection="products"
@@ -70,6 +97,45 @@ export function ProductCostingWorkspacePage() {
         editPipeline={editPipeline}
         pipelineDomain={PROCUREMENT_PIPELINE_DOMAIN}
       />
+
+      {draftPromptOpen && autosaveSavedAt ? (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-950/90 p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-white">
+              Unsaved costing draft detected
+            </h3>
+            <p className="mt-2 text-sm text-slate-300">
+              You have an unsaved costing draft from{" "}
+              {new Date(autosaveSavedAt).toLocaleString()}. Resume Draft or
+              Discard.
+            </p>
+            <div className="mt-5 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  restoreAutosaveDraft();
+                  setDraftPromptOpen(false);
+                  setAutosaveEnabled(true);
+                }}
+                className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-500 transition"
+              >
+                Resume Draft
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAutosave();
+                  setDraftPromptOpen(false);
+                  setAutosaveEnabled(true);
+                }}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700 transition"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </TradeTransitWorkspaceLayout>
   );
 }

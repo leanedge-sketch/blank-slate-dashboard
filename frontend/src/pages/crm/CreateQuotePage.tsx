@@ -8,6 +8,7 @@ import {
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { CrmProductSelect } from "../../components/crm/CrmProductSelect";
+import { CRMQuoteModal } from "../../components/crm/CRMQuoteModal";
 import { resolveCatalogProductName } from "../../utils/catalogProducts";
 import { FileText, Loader2, Sparkles, Package, Settings2 } from "lucide-react";
 
@@ -53,6 +54,9 @@ export function CreateQuotePage() {
   );
   const [pipelineStage, setPipelineStage] = useState<string | null>(null);
   const [quoteStatus, setQuoteStatus] = useState<"draft" | "accepted" | null>(null);
+  const [dealPickerOpen, setDealPickerOpen] = useState(
+    !searchParams.get("pipeline_id"),
+  );
 
   const [customerName, setCustomerName] = useState("");
   const [linkedCustomer, setLinkedCustomer] = useState<Customer | null>(null);
@@ -110,8 +114,21 @@ export function CreateQuotePage() {
     const fromUrl = searchParams.get("pipeline_id");
     if (fromUrl && fromUrl !== pipelineId) {
       setPipelineId(fromUrl);
+      setDealPickerOpen(false);
     }
   }, [searchParams, pipelineId]);
+
+  useEffect(() => {
+    const cid = searchParams.get("customer_id");
+    if (!cid || linkedCustomer?.customer_id === cid) return;
+    api
+      .get<Customer>(`/crm/customers/${cid}`)
+      .then((res) => {
+        setLinkedCustomer(res.data);
+        setCustomerName(res.data.customer_name);
+      })
+      .catch(() => undefined);
+  }, [searchParams, linkedCustomer?.customer_id]);
 
   const selectedFormatFields = formatFields[format];
   const firstChemicalTypeId = productLines.find((p) => p.chemicalTypeId.trim())
@@ -120,8 +137,8 @@ export function CreateQuotePage() {
   async function bindToDeal(opts?: { customer?: Customer | null }) {
     const customer = opts?.customer ?? linkedCustomer;
     const name = (customer?.customer_name || customerName).trim();
-    if (!name && !customer?.customer_id && !pipelineId) {
-      throw new Error("Select or enter a customer so this quote can bind to a deal.");
+    if (!pipelineId) {
+      throw new Error("Select an open deal or create a new deal before generating a quote.");
     }
     const bound = await ensureQuotePipeline({
       pipeline_id: pipelineId,
@@ -353,7 +370,14 @@ Notes: ${notes || "N/A"}`;
                     {pipelineId.slice(0, 8)}…
                   </Link>
                   {pipelineStage ? ` · ${pipelineStage}` : ""}
-                  {quoteStatus ? ` · ${quoteStatus}` : " · draft"}
+                  {quoteStatus ? ` · ${quoteStatus}` : " · draft"}{" "}
+                  <button
+                    type="button"
+                    className="underline text-amber-200"
+                    onClick={() => setDealPickerOpen(true)}
+                  >
+                    Change deal
+                  </button>
                 </p>
               )}
             </div>
@@ -419,9 +443,7 @@ Notes: ${notes || "N/A"}`;
                           setLinkedCustomer(c);
                           setCustomerName(c.customer_name);
                           setCustomerSearchResults([]);
-                          void bindToDeal({ customer: c }).catch((err) => {
-                            setError(err?.message ?? "Could not bind quote to a deal");
-                          });
+                          if (!pipelineId) setDealPickerOpen(true);
                         }}
                         className="block w-full text-left px-3 py-1.5 hover:bg-blue-50 text-slate-800"
                       >
@@ -738,6 +760,30 @@ Notes: ${notes || "N/A"}`;
           </div>
         </section>
       </main>
+      <CRMQuoteModal
+        open={dealPickerOpen}
+        onClose={pipelineId ? () => setDealPickerOpen(false) : undefined}
+        customerId={linkedCustomer?.customer_id}
+        customerName={linkedCustomer?.customer_name || customerName || undefined}
+        onBound={({ pipeline_id, customer, stage }) => {
+          setPipelineId(pipeline_id);
+          setPipelineStage(stage ?? null);
+          if (customer) {
+            setLinkedCustomer(customer);
+            setCustomerName(customer.customer_name);
+          }
+          setDealPickerOpen(false);
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("pipeline_id", pipeline_id);
+              if (customer?.customer_id) next.set("customer_id", customer.customer_id);
+              return next;
+            },
+            { replace: true },
+          );
+        }}
+      />
     </div>
   );
 }

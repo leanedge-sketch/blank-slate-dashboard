@@ -20,7 +20,7 @@ from uuid import UUID
 
 from supabase import Client
 
-from app.database.connection import get_supabase_client
+from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.services.ai_service import gemini_chat
 from app.services.file_service import extract_text_from_file, normalize_tds_metadata
 
@@ -911,12 +911,69 @@ def count_pricing_junction_records(crm_partner_id: Optional[str] = None) -> int:
     return response.count or 0
 
 
+def _expire_current_pricing_versions(
+    supabase: Client,
+    *,
+    crm_partner_id: str,
+    pms_product_id: str,
+    except_id: Optional[str] = None,
+) -> None:
+    """Close SCD Type 2 current rows for this product+partner pair."""
+    now = datetime.now(timezone.utc).isoformat()
+    today = date.today().isoformat()
+    query = (
+        supabase.table("pricing_records")
+        .update(
+            {
+                "is_current": False,
+                "expired_at": now,
+                "valid_to": today,
+                "status": "historical",
+                "updated_at": now,
+            }
+        )
+        .eq("crm_partner_id", crm_partner_id)
+        .eq("pms_product_id", pms_product_id)
+        .eq("is_current", True)
+    )
+    if except_id:
+        query = query.neq("id", except_id)
+    try:
+        query.execute()
+    except Exception:
+        # Columns missing until migrations/004_pms_scd_pricing.sql is applied.
+        fallback = (
+            supabase.table("pricing_records")
+            .update({"valid_to": today, "status": "historical", "updated_at": now})
+            .eq("crm_partner_id", crm_partner_id)
+            .eq("pms_product_id", pms_product_id)
+            .eq("status", "active")
+        )
+        if except_id:
+            fallback = fallback.neq("id", except_id)
+        fallback.execute()
+
+
 def create_pricing_junction_record(body: PricingJunctionRecordCreate) -> PricingJunctionRecord:
     supabase: Client = get_supabase_client()
     now = datetime.now(timezone.utc).isoformat()
     payload = body.model_dump(mode="json")
     payload["updated_at"] = now
-    response = supabase.table("pricing_records").insert(payload).execute()
+    if payload.get("status", "active") == "active":
+        payload["is_current"] = True
+        payload["active_from"] = now
+        payload["expired_at"] = None
+        _expire_current_pricing_versions(
+            supabase,
+            crm_partner_id=str(body.crm_partner_id),
+            pms_product_id=str(body.pms_product_id),
+        )
+    try:
+        response = supabase.table("pricing_records").insert(payload).execute()
+    except Exception:
+        for key in ("is_current", "active_from", "expired_at"):
+            payload.pop(key, None)
+        response = supabase.table("pricing_records").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create pricing junction record")
     record = PricingJunctionRecord(**response.data[0])
@@ -944,7 +1001,7 @@ def revise_pricing_junction_record(
     *,
     offer_update_open_deals: bool = False,
 ) -> PricingJunctionRecord:
-    """Archive the active row and insert a new active record (append-only update)."""
+    """Archive the active row and insert a new current record (SCD Type 2)."""
     supabase: Client = get_supabase_client()
     existing = get_pricing_junction_record_by_id(record_id)
     if not existing:
@@ -952,9 +1009,22 @@ def revise_pricing_junction_record(
 
     today = date.today().isoformat()
     now = datetime.now(timezone.utc).isoformat()
+    _expire_current_pricing_versions(
+        supabase,
+        crm_partner_id=str(existing.crm_partner_id),
+        pms_product_id=str(existing.pms_product_id),
+    )
     archive = (
         supabase.table("pricing_records")
-        .update({"valid_to": today, "status": "historical", "updated_at": now})
+        .update(
+            {
+                "valid_to": today,
+                "status": "historical",
+                "is_current": False,
+                "expired_at": now,
+                "updated_at": now,
+            }
+        )
         .eq("id", record_id)
         .execute()
     )
@@ -963,12 +1033,175 @@ def revise_pricing_junction_record(
 
     payload = body.model_dump(mode="json")
     payload["updated_at"] = now
-    response = supabase.table("pricing_records").insert(payload).execute()
+    payload["status"] = payload.get("status") or "active"
+    payload["is_current"] = payload["status"] == "active"
+    payload["active_from"] = now
+    payload["expired_at"] = None
+    payload["valid_to"] = None
+    try:
+        response = supabase.table("pricing_records").insert(payload).execute()
+    except Exception:
+        for key in ("is_current", "active_from", "expired_at"):
+            payload.pop(key, None)
+        response = supabase.table("pricing_records").insert(payload).execute()
     if not response.data:
         raise RuntimeError("Failed to create revised pricing record")
     record = PricingJunctionRecord(**response.data[0])
     _sync_active_pricing_outward(record, offer_update_open_deals=offer_update_open_deals)
     return record
+
+
+def get_current_pricing_snapshot(
+    pms_product_id: Optional[str],
+    crm_partner_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return the live SCD row for a product (and optional CRM partner)."""
+    if not pms_product_id:
+        return None
+    supabase: Client = get_supabase_client()
+
+    def _query(partner: Optional[str], use_scd: bool):
+        query = (
+            supabase.table("pricing_records")
+            .select("id, price_amount, cost_amount, incoterm, price_currency, cost_currency, is_current, status")
+            .eq("pms_product_id", str(pms_product_id))
+        )
+        if partner:
+            query = query.eq("crm_partner_id", partner)
+        if use_scd:
+            query = query.eq("is_current", True)
+        else:
+            query = query.eq("status", "active")
+        return query.order("updated_at", desc=True).limit(1).execute()
+
+    partners = [crm_partner_id] if crm_partner_id else [None]
+    if crm_partner_id:
+        partners.append(None)
+
+    for partner in partners:
+        for use_scd in (True, False):
+            try:
+                response = _query(partner, use_scd)
+            except Exception:
+                continue
+            row = (response.data or [None])[0]
+            if row:
+                return row
+    return None
+
+
+def attach_price_snapshot_to_pipeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Freeze PMS price + SCD row id onto a sales_pipeline insert payload."""
+    next_payload = dict(payload)
+    chem = next_payload.get("chemical_type_id")
+    if not chem:
+        return next_payload
+    snap = get_current_pricing_snapshot(
+        str(chem),
+        crm_partner_id=str(next_payload["customer_id"]) if next_payload.get("customer_id") else None,
+    )
+    if not snap:
+        return next_payload
+
+    record_id = str(snap.get("id") or "")
+    live_price = snap.get("price_amount")
+    quoted = next_payload.get("unit_price")
+    snapshot_price = quoted if quoted is not None else live_price
+
+    if record_id and not next_payload.get("pricing_record_id"):
+        next_payload["pricing_record_id"] = record_id
+    if snapshot_price is not None and next_payload.get("snapshot_unit_price") is None:
+        next_payload["snapshot_unit_price"] = snapshot_price
+    if quoted is None and live_price is not None:
+        next_payload["unit_price"] = live_price
+
+    meta = dict(next_payload.get("metadata") or {}) if isinstance(next_payload.get("metadata"), dict) else {}
+    meta["pricing_snapshot"] = {
+        "pricing_record_id": record_id or None,
+        "snapshot_unit_price": snapshot_price,
+        "live_price_amount": live_price,
+        "incoterm": snap.get("incoterm"),
+        "price_currency": snap.get("price_currency"),
+    }
+    next_payload["metadata"] = meta
+    return next_payload
+
+
+def freeze_quotation_product_prices(quotation: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy SCD ids and numeric prices onto quote product lines."""
+    quote = dict(quotation or {})
+    products = list(quote.get("products") or [])
+    frozen = []
+    for raw in products:
+        product = dict(raw or {})
+        chem = (
+            product.get("chemical_type_id")
+            or product.get("product_id")
+            or quote.get("chemical_type_id")
+        )
+        if not product.get("pricing_record_id") or product.get("snapshot_unit_price") is None:
+            snap = get_current_pricing_snapshot(str(chem) if chem else None)
+            if snap:
+                product.setdefault("pricing_record_id", str(snap.get("id")))
+                live = snap.get("price_amount")
+                if product.get("snapshot_unit_price") is None:
+                    quoted = product.get("unit_price")
+                    if quoted is None:
+                        quoted = product.get("target_price")
+                    product["snapshot_unit_price"] = quoted if quoted is not None else live
+                if product.get("unit_price") is None and live is not None:
+                    product["unit_price"] = live
+        frozen.append(product)
+    quote["products"] = frozen
+    return quote
+
+
+def bulk_revise_pricing_records_scd(changes: List[Dict[str, Any]]) -> List[PricingJunctionRecord]:
+    """Expire + insert pricing versions in one Postgres transaction (RPC)."""
+    if not changes:
+        return []
+    payload = []
+    for item in changes:
+        payload.append(
+            {
+                "id": str(item.get("id")),
+                "incoterm": item.get("incoterm"),
+                "cost_amount": item.get("cost_amount"),
+                "price_amount": item.get("price_amount"),
+                "cost_currency": item.get("cost_currency"),
+                "price_currency": item.get("price_currency"),
+            }
+        )
+    try:
+        supabase: Client = get_supabase_service_client()
+        response = supabase.rpc("revise_pricing_records_scd", {"p_changes": payload}).execute()
+    except Exception as primary_exc:
+        try:
+            supabase = get_supabase_client()
+            response = supabase.rpc("revise_pricing_records_scd", {"p_changes": payload}).execute()
+        except Exception as exc:
+            raise RuntimeError(
+                "SCD bulk revise RPC failed. Run migrations/005_pms_scd_bulk_and_snapshots.sql. "
+                f"{primary_exc}; {exc}"
+            ) from exc
+
+    data = response.data or {}
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    revisions = data.get("revisions") if isinstance(data, dict) else None
+    if not revisions:
+        raise RuntimeError("SCD bulk revise RPC returned no revisions")
+
+    records: List[PricingJunctionRecord] = []
+    for rev in revisions:
+        new_id = str((rev or {}).get("new_id") or "")
+        if not new_id:
+            continue
+        record = get_pricing_junction_record_by_id(new_id)
+        if record:
+            _sync_active_pricing_outward(record)
+            records.append(record)
+    return records
 
 
 def _pricing_location_label(supabase: Client, location_id: str) -> str:

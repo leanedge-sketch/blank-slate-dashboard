@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ClipboardPaste, Loader2 } from "lucide-react";
-import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
+import { buildNewPipelinePath } from "../../../utils/pipelineEditPaths";
 import { stashWorkbookText } from "../../../utils/workbookUploadSession";
 
 type WorkbookPasteButtonProps = {
@@ -32,7 +32,7 @@ export function WorkbookPasteButton({
   variant = "inline",
   layout = "compact",
   className = "",
-  navigateTo = `${TRADE_TRANSIT_ROUTES.newPipeline}?fresh=1`,
+  navigateTo = buildNewPipelinePath(),
   onPaste,
 }: WorkbookPasteButtonProps) {
   const navigate = useNavigate();

@@ -20,6 +20,9 @@ type TradeRequestContextBarProps = {
   readOnly?: boolean;
   showProcurementLineAction?: boolean;
   showCustomerFields?: boolean;
+  autosaveSavedAt?: string | null;
+  autosaveRestored?: boolean;
+  onClearAutosave?: () => void;
   onSync: (patch: {
     customerId?: string;
     clientName?: string;
@@ -44,6 +47,9 @@ export function TradeRequestContextBar({
   readOnly = false,
   showProcurementLineAction = true,
   showCustomerFields = false,
+  autosaveSavedAt = null,
+  autosaveRestored = false,
+  onClearAutosave,
   onSync,
 }: TradeRequestContextBarProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -158,6 +164,27 @@ export function TradeRequestContextBar({
           pipeline code.
         </p>
       )}
+
+      {!readOnly && autosaveSavedAt ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-100">
+          <span>
+            Draft Autosaved{" "}
+            {new Date(autosaveSavedAt).toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}{" "}
+          </span>
+          {onClearAutosave ? (
+            <button
+              type="button"
+              onClick={onClearAutosave}
+              className="rounded-md border border-white/10 px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800"
+            >
+              Clear local draft
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {readOnly ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">

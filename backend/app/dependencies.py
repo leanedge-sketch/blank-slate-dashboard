@@ -102,6 +102,38 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
+
+def get_employee_role_from_db(user: dict) -> str:
+    """Prefer employees.role over JWT metadata (often stale or missing)."""
+    email = str(user.get("email") or "").strip().lower()
+    if email:
+        try:
+            from app.database.connection import get_supabase_service_client
+
+            rows = (
+                get_supabase_service_client()
+                .table("employees")
+                .select("email, role")
+                .ilike("email", email)
+                .limit(10)
+                .execute()
+                .data
+                or []
+            )
+            for row in rows:
+                if str(row.get("email") or "").strip().lower() == email:
+                    return str(row.get("role") or "").strip().lower()
+        except Exception:
+            pass
+    return str(get_user_role(user) or "").strip().lower()
+
+
+def require_employee_admin(user: dict = Depends(get_current_user)) -> dict:
+    """LeanChem Connect admin role from the employees table."""
+    if get_employee_role_from_db(user) != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 def require_manager(user: dict = Depends(get_current_user)) -> dict:
     """CEO, Admin, or Manager can access"""
     role = get_user_role(user)

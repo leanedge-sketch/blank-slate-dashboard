@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Customer, CustomerListResponse, CustomerUpdate, buildCustomerProfile } from "../../services/api";
 import { CompanyContactSearchPanel } from "../../components/crm/CompanyContactSearchPanel";
-import { Plus, Edit2, Trash2, X, Save, Search, Sparkles } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Save, Search, Sparkles, GitMerge } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 
 // Sales stage definitions
 const SALES_STAGES: { [key: string]: string } = {
@@ -16,6 +17,7 @@ const SALES_STAGES: { [key: string]: string } = {
 };
 
 export function ManageCustomersPage() {
+  const { employeeRole } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -317,6 +319,25 @@ export function ManageCustomersPage() {
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           {!showAddForm ? (
             <>
+              {employeeRole === "admin" ? (
+                <Link
+                  to="/crm/customers/merge"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.75rem 1.5rem",
+                    backgroundColor: "#0f766e",
+                    color: "white",
+                    borderRadius: "0.5rem",
+                    fontWeight: "600",
+                    textDecoration: "none",
+                  }}
+                >
+                  <GitMerge size={18} />
+                  Merge duplicates
+                </Link>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowAddForm(true)}

@@ -25,6 +25,9 @@ export interface PricingRecord {
   validFrom: string;
   validTo: string | null;
   status: "active" | "historical" | "draft";
+  activeFrom?: string | null;
+  expiredAt?: string | null;
+  isCurrent?: boolean | null;
 }
 
 export interface CRMPartner {

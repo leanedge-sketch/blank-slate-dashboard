@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileSpreadsheet, Loader2 } from "lucide-react";
-import { TRADE_TRANSIT_ROUTES } from "../../../contexts/TradeTransitRequestContext";
+import { buildNewPipelinePath } from "../../../utils/pipelineEditPaths";
 import { stashWorkbookForUpload } from "../../../utils/workbookUploadSession";
 
 type WorkbookUploadButtonProps = {
@@ -35,7 +35,7 @@ export function WorkbookUploadButton({
   variant = "inline",
   layout = "compact",
   className = "",
-  navigateTo = `${TRADE_TRANSIT_ROUTES.newPipeline}?fresh=1`,
+  navigateTo = buildNewPipelinePath(),
   onCsvFile,
 }: WorkbookUploadButtonProps) {
   const navigate = useNavigate();

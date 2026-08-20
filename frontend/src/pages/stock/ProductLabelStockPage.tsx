@@ -12,6 +12,7 @@ import {
   Trash2,
   Calendar,
   MapPin,
+  AlertTriangle,
 } from "lucide-react";
 import {
   fetchTDS,
@@ -22,6 +23,7 @@ import {
   updateStockMovement,
   deleteStockMovement,
   createStockProduct,
+  updateStockProduct,
   fetchStockProductById,
   fetchStockProducts,
   StockMovement,
@@ -34,6 +36,7 @@ import {
   Partner,
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import { TransferModal } from "../../components/stock/TransferModal";
 
 export function ProductLabelStockPage() {
   const navigate = useNavigate();
@@ -55,6 +58,7 @@ export function ProductLabelStockPage() {
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [loadingMovements, setLoadingMovements] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeLocationTab, setActiveLocationTab] = useState<string>("addis_ababa");
@@ -80,6 +84,8 @@ export function ProductLabelStockPage() {
     customer_name: null,
     pipeline_id: null,
     catalog_uuid_id: null,
+    batch_id: null,
+    expiry_date: null,
   });
 
   const catalogIdParam = searchParams.get("catalog_id");
@@ -617,6 +623,26 @@ export function ProductLabelStockPage() {
         (selectedProduct?.metadata as { uuid_id?: string } | null)?.uuid_id ||
         null;
 
+      if (
+        formData.transaction_type === "Inter-company transfer" &&
+        !formData.transfer_to_location
+      ) {
+        alert("Select a destination warehouse for the transfer.");
+        return;
+      }
+
+      const requiresInboundBatchFields =
+        formData.transaction_type === "Purchase" ||
+        formData.transaction_type === "Inter-company transfer";
+      if (requiresInboundBatchFields && !formData.batch_id) {
+        alert("Batch ID is required on inbound stock movements.");
+        return;
+      }
+      if (requiresInboundBatchFields && !formData.expiry_date) {
+        alert("Expiry date is required on inbound stock movements.");
+        return;
+      }
+
       const movementData: StockMovementCreate = {
         ...formData,
         product_id: productId,
@@ -681,6 +707,8 @@ export function ProductLabelStockPage() {
       unit: movement.unit || "kg",
       reference: movement.reference || "",
       remark: movement.remark || "",
+      batch_id: movement.batch_id || null,
+      expiry_date: movement.expiry_date || null,
     });
     // Set selected supplier/customer based on movement
     if (movement.supplier_id) {
@@ -716,6 +744,8 @@ export function ProductLabelStockPage() {
       customer_id: selectedCustomer?.customer_id || null,
       customer_name: selectedCustomer?.customer_name || null,
       brand: null,
+      batch_id: null,
+      expiry_date: null,
     });
   }
 
@@ -911,7 +941,15 @@ export function ProductLabelStockPage() {
               </div>
               
               {/* Add Stock Entry Button */}
-              <div className="mt-4 flex items-center justify-end">
+              <div className="mt-4 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(true)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-slate-900 transition-colors hover:bg-amber-400"
+                >
+                  <ArrowRight className="h-5 w-5" />
+                  Transfer Stock
+                </button>
                 <button
                   onClick={() => {
                     setSelectedCustomer(null);
@@ -928,6 +966,37 @@ export function ProductLabelStockPage() {
 
             {/* Stock Summary Cards */}
             {stockProduct && (
+              <div className="mb-6">
+                {Number(stockProduct.minimum_stock_threshold || 0) > 0 &&
+                stockProduct.total_available_stock <=
+                  Number(stockProduct.minimum_stock_threshold) ? (
+                  <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Low stock: {formatNumber(stockProduct.total_available_stock)} kg available
+                    is at or below the {formatNumber(stockProduct.minimum_stock_threshold || 0)} kg
+                    threshold.
+                  </div>
+                ) : null}
+                <label className="mb-6 flex max-w-xs items-center gap-2 text-sm text-slate-600">
+                  Min. stock threshold (kg)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={stockProduct.minimum_stock_threshold ?? 0}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      setStockProduct({ ...stockProduct, minimum_stock_threshold: value });
+                    }}
+                    onBlur={() => {
+                      if (!stockProduct.id) return;
+                      void updateStockProduct(stockProduct.id, {
+                        minimum_stock_threshold: stockProduct.minimum_stock_threshold ?? 0,
+                      });
+                    }}
+                    className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                  />
+                </label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 {/* Addis Ababa Stock */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -991,6 +1060,7 @@ export function ProductLabelStockPage() {
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
             )}
 
@@ -1346,8 +1416,8 @@ export function ProductLabelStockPage() {
                             required
                           />
                         </div>
-                        {/* Transfer destination - required for SEZ Kenya */}
-                        {formData.location === "sez_kenya" && (
+                        {/* Transfer destination — required for atomic warehouse transfer */}
+                        {formData.transaction_type === "Inter-company transfer" && (
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">
                               Transfer To Location *
@@ -1379,6 +1449,43 @@ export function ProductLabelStockPage() {
                         )}
                       </>
                     )}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Batch / lot
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.batch_id ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, batch_id: e.target.value || null })
+                          }
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                          placeholder="Required for inbound stock"
+                          required={
+                            formData.transaction_type === "Purchase" ||
+                            formData.transaction_type === "Inter-company transfer"
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Expiry date
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.expiry_date ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, expiry_date: e.target.value || null })
+                          }
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                          required={
+                            formData.transaction_type === "Purchase" ||
+                            formData.transaction_type === "Inter-company transfer"
+                          }
+                        />
+                      </div>
+                    </div>
                     {/* Stock Availability fields - only show for Stock Availability transaction type (Nairobi Partner) */}
                     {formData.transaction_type === "Stock Availability" && (
                       <>
@@ -1470,6 +1577,15 @@ export function ProductLabelStockPage() {
               </div>
               </>
             )}
+
+            <TransferModal
+              isOpen={showTransferModal}
+              defaultProductId={stockProductId}
+              onClose={() => setShowTransferModal(false)}
+              onTransferred={() => {
+                void loadStockHistory();
+              }}
+            />
 
             {/* Stock History */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">

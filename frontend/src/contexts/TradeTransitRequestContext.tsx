@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -24,6 +25,11 @@ import {
 } from "../utils/tradeTransitRequest";
 import { customsRatesFromConstants } from "../utils/tradeTransitCalc";
 import { DEFAULT_FINANCE_CONSTANTS } from "../utils/importFinanceCalc";
+import {
+  clearTradeTransitAutosave,
+  loadTradeTransitAutosave,
+  saveTradeTransitAutosave,
+} from "../utils/tradeTransitAutosave";
 
 export const TRADE_TRANSIT_ROUTES = {
   hub: "/finance/import",
@@ -31,7 +37,7 @@ export const TRADE_TRANSIT_ROUTES = {
   tradeParameters: "/finance/trade-parameters",
   productCosting: "/finance/product-costing",
   transitSummary: "/finance/transit-summary",
-  executiveReport: "/finance/executive-report",
+  executiveReport: "/reports/executive",
 } as const;
 
 interface TradeTransitRequestContextValue {
@@ -42,21 +48,32 @@ interface TradeTransitRequestContextValue {
   setRequest: React.Dispatch<React.SetStateAction<TradeTransitRequest>>;
   applyParametersToRequest: () => void;
   loadExpectedCost2026Sample: () => void;
-  beginNewPipelineSession: () => void;
+  beginNewPipelineSession: (opts?: { clearAutosave?: boolean }) => void;
+  autosaveSavedAt: string | null;
+  autosaveRestored: boolean;
+  restoreAutosaveDraft: () => void;
+  clearAutosave: () => void;
+  setAutosaveEnabled: (enabled: boolean) => void;
 }
 
 const TradeTransitRequestContext =
   createContext<TradeTransitRequestContextValue | null>(null);
 
 export function TradeTransitRequestProvider({ children }: { children: ReactNode }) {
-  const [parameters, setParametersState] = useState<TradeParameters>(() =>
-    normalizeTradeParameters({
+  const initialDraft = loadTradeTransitAutosave();
+  const [parameters, setParametersState] = useState<TradeParameters>(() => {
+    return normalizeTradeParameters({
       validityDate: "",
-    }),
+    });
+  });
+  const [request, setRequest] = useState<TradeTransitRequest>(() => {
+    return createTradeTransitRequest("");
+  });
+  const [autosaveSavedAt, setAutosaveSavedAt] = useState<string | null>(
+    initialDraft?.savedAt ?? null,
   );
-  const [request, setRequest] = useState<TradeTransitRequest>(() =>
-    createTradeTransitRequest(""),
-  );
+  const [autosaveRestored, setAutosaveRestored] = useState<boolean>(false);
+  const [autosaveEnabled, setAutosaveEnabledState] = useState<boolean>(true);
 
   const setParameters = useCallback((next: TradeParameters) => {
     setParametersState(next);
@@ -110,27 +127,67 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
     setRequest(next);
   }, [parameters.clientName]);
 
-  const beginNewPipelineSession = useCallback(() => {
-    const exchangeRate = DEFAULT_TRADE_PARAMETERS.exchangeRate;
+  const beginNewPipelineSession = useCallback(
+    (opts?: { clearAutosave?: boolean }) => {
+      const exchangeRate = DEFAULT_TRADE_PARAMETERS.exchangeRate;
+      const clear = opts?.clearAutosave !== false;
+      if (clear) {
+        clearTradeTransitAutosave();
+        setAutosaveSavedAt(null);
+      }
+      setAutosaveRestored(false);
 
-    setParametersState(
-      normalizeTradeParameters({
-        customerId: "",
-        clientName: "",
-        contactPerson: "",
-        requestDate: "",
-        requestRef: "",
-        validityDate: createDefaultValidityDate(),
-        exchangeRate,
-      }),
-    );
+      setParametersState(
+        normalizeTradeParameters({
+          customerId: "",
+          clientName: "",
+          contactPerson: "",
+          requestDate: "",
+          requestRef: "",
+          validityDate: createDefaultValidityDate(),
+          exchangeRate,
+        }),
+      );
 
-    const line = createBlankTradeTransitLine("", {
-      ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
-      capitalParallelRate: exchangeRate,
-    });
+      const line = createBlankTradeTransitLine("", {
+        ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+        capitalParallelRate: exchangeRate,
+      });
 
-    setRequest(createTradeTransitRequest("", [line]));
+      setRequest(createTradeTransitRequest("", [line]));
+    },
+    [],
+  );
+
+  const clearAutosave = useCallback(() => {
+    clearTradeTransitAutosave();
+    setAutosaveSavedAt(null);
+    setAutosaveRestored(false);
+  }, []);
+
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+
+    const timer = window.setTimeout(() => {
+      const saved = saveTradeTransitAutosave({
+        tradeParameters: parameters,
+        productLines: request.lines,
+        calculatorInputs: request.lines.map((l) => l.inputs),
+        request,
+      });
+      if (saved?.savedAt) setAutosaveSavedAt(saved.savedAt);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [autosaveEnabled, parameters, request]);
+
+  const restoreAutosaveDraft = useCallback(() => {
+    const draft = loadTradeTransitAutosave();
+    if (!draft) return;
+    setParametersState(normalizeTradeParameters(draft.tradeParameters));
+    setRequest(draft.request);
+    setAutosaveSavedAt(draft.savedAt);
+    setAutosaveRestored(true);
   }, []);
 
   const value = useMemo(
@@ -143,6 +200,11 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       applyParametersToRequest,
       loadExpectedCost2026Sample,
       beginNewPipelineSession,
+      autosaveSavedAt,
+      autosaveRestored,
+      restoreAutosaveDraft,
+      clearAutosave,
+      setAutosaveEnabled: setAutosaveEnabledState,
     }),
     [
       parameters,
@@ -152,6 +214,11 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       applyParametersToRequest,
       loadExpectedCost2026Sample,
       beginNewPipelineSession,
+      autosaveSavedAt,
+      autosaveRestored,
+      restoreAutosaveDraft,
+      clearAutosave,
+      setAutosaveEnabledState,
     ],
   );
 

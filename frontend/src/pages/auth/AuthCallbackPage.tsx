@@ -3,7 +3,11 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
 import { isRequestAborted } from "../../lib/request-errors";
+import { consumeRedirectPath } from "../../lib/redirectPath";
+import { LoginAssistantDrawer } from "../../components/LoginAssistantDrawer";
 import { AlertCircle } from "lucide-react";
+
+const EXPIRED_LINK_MESSAGE = "This reset link has expired or is invalid.";
 
 function readCallbackType(
   searchParams: URLSearchParams,
@@ -26,10 +30,22 @@ function shouldSetPassword(
   return type === "setup" || type === "reset" || !passwordSet;
 }
 
+function isExpiredAuthError(code: string | null, description: string | null): boolean {
+  const blob = `${code || ""} ${description || ""}`.toLowerCase();
+  return (
+    blob.includes("otp_expired") ||
+    blob.includes("expired") ||
+    blob.includes("invalid") ||
+    blob.includes("access_denied")
+  );
+}
+
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,33 +66,36 @@ export function AuthCallbackPage() {
       if (shouldSetPassword(user, type)) {
         navigate("/auth/set-password", { replace: true });
       } else {
-        navigate("/", { replace: true });
+        navigate(consumeRedirectPath() || "/", { replace: true });
       }
     };
 
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     const errorCode =
-      searchParams.get("error_code") || hashParams.get("error_code");
+      searchParams.get("error_code") ||
+      searchParams.get("error") ||
+      hashParams.get("error_code") ||
+      hashParams.get("error");
     const errorDescription =
       searchParams.get("error_description") ||
       hashParams.get("error_description");
 
     if (errorCode) {
-      let errorMessage = "Authentication failed";
-      if (errorCode === "otp_expired") {
-        errorMessage = "The magic link has expired. Please request a new one.";
-      } else if (errorDescription) {
-        errorMessage = decodeURIComponent(
-          errorDescription.replace(/\+/g, " "),
-        );
-      }
       finished = true;
-      setError(errorMessage);
       setLoading(false);
+      if (isExpiredAuthError(errorCode, errorDescription)) {
+        setExpired(true);
+        setError(EXPIRED_LINK_MESSAGE);
+      } else if (errorDescription) {
+        setError(
+          decodeURIComponent(errorDescription.replace(/\+/g, " ")),
+        );
+      } else {
+        setError("Authentication failed");
+      }
       return;
     }
 
-    // detectSessionInUrl parses the hash — do not call setSession() again here.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -91,7 +110,17 @@ export function AuthCallbackPage() {
 
     supabase.auth
       .getSession()
-      .then(({ data: { session } }) => {
+      .then(({ data: { session }, error: sessionError }) => {
+        if (sessionError) {
+          const msg = sessionError.message || "";
+          if (isExpiredAuthError(sessionError.name, msg)) {
+            finished = true;
+            setExpired(true);
+            setError(EXPIRED_LINK_MESSAGE);
+            setLoading(false);
+            return;
+          }
+        }
         if (session?.user) {
           finish(session);
         }
@@ -99,6 +128,13 @@ export function AuthCallbackPage() {
       .catch((err) => {
         if (!isRequestAborted(err)) {
           console.error("Auth callback session read failed:", err);
+        }
+        const msg = err instanceof Error ? err.message : "";
+        if (isExpiredAuthError(null, msg)) {
+          finished = true;
+          setExpired(true);
+          setError(EXPIRED_LINK_MESSAGE);
+          setLoading(false);
         }
       });
 
@@ -125,13 +161,35 @@ export function AuthCallbackPage() {
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm">{error}</span>
           </div>
+          {expired && (
+            <Link
+              to="/login?forgot=1"
+              className="mb-3 block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold rounded-xl hover:shadow-2xl hover:shadow-blue-500/40 transition-all duration-300 text-center"
+            >
+              Request a New Link
+            </Link>
+          )}
+          {expired && (
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="mb-3 w-full rounded-xl border border-cyan-500/40 bg-cyan-500/10 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/20"
+            >
+              Need Help?
+            </button>
+          )}
           <Link
             to="/login"
-            className="block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold rounded-xl hover:shadow-2xl hover:shadow-blue-500/40 transition-all duration-300 text-center"
+            className="block w-full py-3 px-4 border border-slate-600 text-slate-200 font-semibold rounded-xl hover:bg-slate-800 transition-all duration-300 text-center"
           >
             Back to Login
           </Link>
         </div>
+        <LoginAssistantDrawer
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          failContext="expired_link"
+        />
       </div>
     );
   }

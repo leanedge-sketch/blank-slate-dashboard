@@ -1,6 +1,7 @@
 import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { consumeRedirectPath } from "../../lib/redirectPath";
 import { Lock, AlertCircle, CheckCircle, Eye, EyeOff } from "lucide-react";
 
 export function SetPasswordPage() {
@@ -36,7 +37,7 @@ export function SetPasswordPage() {
         setError(error.message || "Failed to set password");
       } else {
         // Password set successfully, redirect to home
-        navigate("/");
+        navigate(consumeRedirectPath() || "/", { replace: true });
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");

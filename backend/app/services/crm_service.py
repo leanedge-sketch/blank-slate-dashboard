@@ -473,6 +473,59 @@ def delete_customer(customer_id: str) -> None:
     supabase.table("customers").delete().eq("customer_id", customer_id).execute()
 
 
+def merge_customers(
+    source_customer_id: str,
+    target_customer_id: str,
+    field_choices: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Retarget CRM, sales, and procurement records from source → target, then
+    delete the source customer. Field conflicts are resolved from field_choices
+    values of 'source' or 'target' (default target).
+    """
+    source_id = str(source_customer_id)
+    target_id = str(target_customer_id)
+    if source_id == target_id:
+        raise ValueError("Source and target customers must be different")
+
+    source = get_customer_by_id(source_id)
+    target = get_customer_by_id(target_id)
+    if not source or not target:
+        raise ValueError("Customer not found")
+
+    supabase = get_supabase_service_client()
+    choices = field_choices or {}
+    try:
+        rpc = supabase.rpc(
+            "merge_customers_txn",
+            {
+                "p_source": source_id,
+                "p_target": target_id,
+                "p_fields": choices,
+            },
+        ).execute()
+    except Exception as exc:
+        raise RuntimeError(
+            "Customer merge transaction failed. Run migrations/003_crm_ai_caching.sql "
+            f"in Supabase if merge_customers_txn is missing. Detail: {exc}"
+        ) from exc
+
+    payload = rpc.data if hasattr(rpc, "data") else rpc
+    if isinstance(payload, list) and payload:
+        payload = payload[0]
+    if not isinstance(payload, dict):
+        payload = {"reassigned": {}, "deleted_source_id": source_id}
+
+    merged = get_customer_by_id(target_id)
+    if not merged:
+        raise RuntimeError("Target customer missing after merge")
+    return {
+        "target": merged,
+        "reassigned": payload.get("reassigned") or {},
+        "deleted_source_id": payload.get("deleted_source_id") or source_id,
+    }
+
+
 def build_customer_profile(
     customer_id: str,
     user_id: Optional[str] = None,

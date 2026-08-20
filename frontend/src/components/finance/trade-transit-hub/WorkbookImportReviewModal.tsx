@@ -49,6 +49,9 @@ import {
   type WorkbookDiscrepancy,
 } from "../../../utils/workbookImportAlign";
 import { calculateTradeTransit } from "../../../utils/tradeTransitCalc";
+import {
+  WorkbookMappingModal,
+} from "../WorkbookMappingModal";
 
 const inputClass =
   "w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40";
@@ -81,6 +84,7 @@ type WorkbookImportReviewModalProps = {
   scenarios: ExpectedCostScenario[];
   metadata: WorkbookImportMetadata;
   initial: WorkbookImportDraft;
+  rawText: string;
   onConfirm: (payload: WorkbookImportConfirmPayload) => void;
   onCancel: () => void;
 };
@@ -146,6 +150,7 @@ export function WorkbookImportReviewModal({
   scenarios,
   metadata,
   initial,
+  rawText,
   onConfirm,
   onCancel,
 }: WorkbookImportReviewModalProps) {
@@ -159,6 +164,7 @@ export function WorkbookImportReviewModal({
   const [pmsSearch, setPmsSearch] = useState("");
   const [syncSharedRates, setSyncSharedRates] = useState(true);
   const [autoLinkOthers, setAutoLinkOthers] = useState(true);
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
 
   useEffect(() => {
     void refreshCatalog();
@@ -205,6 +211,11 @@ export function WorkbookImportReviewModal({
     };
   }, []);
 
+  useEffect(() => {
+    // New workbook import => require column mapping confirmation again.
+    setMappingConfirmed(false);
+  }, [rawText, fileName]);
+
   const missingFromCsv = useMemo(
     () => ({
       clientName: !metadata.clientName.trim(),
@@ -232,6 +243,9 @@ export function WorkbookImportReviewModal({
 
   const saveBlockers = useMemo(() => {
     const blockers: string[] = [];
+    if (!mappingConfirmed) {
+      blockers.push("Confirm workbook column mapping before saving.");
+    }
     const validationError = validatePipelineRequestFields(preparedDraft);
     if (validationError) blockers.push(validationError);
     const unlinked = lineDrafts.filter((line) => !isLineLinked(line));
@@ -241,7 +255,7 @@ export function WorkbookImportReviewModal({
       );
     }
     return blockers;
-  }, [lineDrafts, preparedDraft]);
+  }, [lineDrafts, preparedDraft, mappingConfirmed]);
 
   const canSave = saveBlockers.length === 0 && lineDrafts.length > 0;
 
@@ -515,6 +529,15 @@ export function WorkbookImportReviewModal({
                   : " Complete the Request tab (contact person, pipeline #), then save."}
             </p>
           )}
+
+          <WorkbookMappingModal
+            rawText={rawText}
+            onConfirmed={() => {
+              // Phase 1 gate: block saving until mandatory columns have a validated target.
+              setMappingConfirmed(true);
+              setError(null);
+            }}
+          />
 
           {activeTab === "request" ? (
             <section className="space-y-4">

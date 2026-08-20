@@ -56,6 +56,8 @@ from app.models.pms import (
     PricingJunctionRecord,
     PricingJunctionRecordCreate,
     PricingJunctionRecordListResponse,
+    PricingBulkReviseRequest,
+    PricingBulkReviseResponse,
     PartnerChemical,
     PartnerChemicalCreate,
     PartnerChemicalUpdate,
@@ -105,6 +107,7 @@ from app.services.pms_service import (
     count_pricing_junction_records,
     create_pricing_junction_record,
     revise_pricing_junction_record,
+    bulk_revise_pricing_records_scd,
     delete_pricing_junction_record,
     process_tds_file_with_ai,
     build_tds_product_description,
@@ -817,6 +820,21 @@ async def revise_pricing_junction_record_endpoint(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error revising pricing record: {e}") from e
+
+
+@router.post(
+    "/pricing-junction/records/bulk-revise",
+    response_model=PricingBulkReviseResponse,
+)
+async def bulk_revise_pricing_junction_records_endpoint(body: PricingBulkReviseRequest):
+    """Expire current SCD rows and insert successors in one Postgres transaction."""
+    try:
+        records = bulk_revise_pricing_records_scd(
+            [change.model_dump(mode="json") for change in body.changes]
+        )
+        return PricingBulkReviseResponse(records=records)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error bulk-revising pricing: {e}") from e
 
 
 @router.delete("/pricing-junction/records/{record_id}", status_code=204)

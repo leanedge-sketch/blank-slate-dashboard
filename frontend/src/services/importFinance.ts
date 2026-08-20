@@ -65,6 +65,8 @@ export interface ImportShipmentRow {
   status: string;
   created_at: string;
   /** Customer quote currency at save (USD / ETB). */
+  pricing_record_id?: string | null;
+  snapshot_pms_price?: number | null;
   snapshot_target_currency?: string | null;
   /** procurement | sales — separates Trade & Transit from sales-deal costing. */
   pipeline_domain?: ImportFinancePipelineDomain | string | null;
@@ -227,10 +229,43 @@ function isMissingPipelineDomainColumn(error: unknown): boolean {
   );
 }
 
+function isMissingPricingSnapshotColumn(error: unknown): boolean {
+  const msg = String(
+    (error as { message?: string; details?: string })?.message ??
+      (error as { details?: string })?.details ??
+      error,
+  ).toLowerCase();
+  return (
+    msg.includes("pricing_record_id") ||
+    msg.includes("snapshot_pms_price")
+  );
+}
+
+function isDeletedSalesPipelineReference(error: unknown): boolean {
+  const msg = String(
+    (error as { message?: string; details?: string })?.message ??
+      (error as { details?: string })?.details ??
+      error,
+  ).toLowerCase();
+  return (
+    msg.includes("sales_pipeline_id") &&
+    (msg.includes("foreign key") ||
+      msg.includes("violates foreign key constraint") ||
+      msg.includes("is not present in table"))
+  );
+}
+
 function stripDomainFields(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const { pipeline_domain, sales_pipeline_id, ...rest } = payload;
+  return rest;
+}
+
+function stripSalesPipelineField(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { sales_pipeline_id, ...rest } = payload;
   return rest;
 }
 
@@ -299,6 +334,44 @@ export async function resolveImportFinanceProductId(
   return createImportFinanceProduct(productName, baseCustomsReferenceUsd);
 }
 
+function stripSnapshotFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { pricing_record_id, snapshot_pms_price, ...rest } = payload;
+  return rest;
+}
+
+async function fetchCurrentPmsSnapshot(chemicalTypeId: string): Promise<{
+  id: string;
+  price: number;
+} | null> {
+  const db = importFinanceDb();
+  let { data, error } = await db
+    .from("pricing_records")
+    .select("id, price_amount, cost_amount")
+    .eq("pms_product_id", chemicalTypeId)
+    .eq("is_current", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    const retry = await db
+      .from("pricing_records")
+      .select("id, price_amount, cost_amount")
+      .eq("pms_product_id", chemicalTypeId)
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error || !data) return null;
+  const price = Number(data.price_amount ?? data.cost_amount ?? 0);
+  return { id: String(data.id), price };
+}
+
 export async function saveImportShipmentDraft(
   productId: string,
   inputs: ImportFinanceInputs,
@@ -322,7 +395,15 @@ export async function saveImportShipmentDraft(
     constants,
     resultOverride ?? calculateImportFinance(inputs, constants),
     clientContext,
-  );
+  ) as Record<string, unknown>;
+
+  if (clientContext?.chemicalTypeId) {
+    const snap = await fetchCurrentPmsSnapshot(clientContext.chemicalTypeId);
+    if (snap) {
+      payload.pricing_record_id = snap.id;
+      payload.snapshot_pms_price = snap.price;
+    }
+  }
 
   let { data, error } = await importFinanceDb()
     .from(TABLES.shipments)
@@ -330,10 +411,23 @@ export async function saveImportShipmentDraft(
     .select("*")
     .single();
 
-  if (error && isMissingPipelineDomainColumn(error)) {
+  if (error && (isMissingPipelineDomainColumn(error) || isMissingPricingSnapshotColumn(error))) {
+    const retryPayload = isMissingPricingSnapshotColumn(error)
+      ? stripSnapshotFields(stripDomainFields(payload))
+      : stripDomainFields(payload);
     const retry = await importFinanceDb()
       .from(TABLES.shipments)
-      .insert(stripDomainFields(payload as Record<string, unknown>))
+      .insert(retryPayload)
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error && isDeletedSalesPipelineReference(error)) {
+    const retry = await importFinanceDb()
+      .from(TABLES.shipments)
+      .insert(stripSalesPipelineField(payload))
       .select("*")
       .single();
     data = retry.data;
@@ -379,6 +473,44 @@ export async function fetchRecentImportShipments(
   if (error) throw error;
   const rows = (data ?? []) as ImportShipmentRow[];
   return domain ? filterShipmentsByDomain(rows, domain).slice(0, limit) : rows;
+}
+
+export async function fetchTradeTransitForDeal(params: {
+  salesPipelineId: string;
+  chemicalTypeId?: string | null;
+  customerId?: string | null;
+}): Promise<ImportShipmentRow | null> {
+  const db = importFinanceDb();
+  const linked = await db
+    .from(TABLES.shipments)
+    .select("*")
+    .eq("sales_pipeline_id", params.salesPipelineId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!linked.error && linked.data) {
+    return linked.data as ImportShipmentRow;
+  }
+
+  if (params.chemicalTypeId) {
+    let query = db
+      .from(TABLES.shipments)
+      .select("*")
+      .eq("chemical_type_id", params.chemicalTypeId)
+      .eq("pipeline_domain", PROCUREMENT_PIPELINE_DOMAIN)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (params.customerId) {
+      query = query.eq("customer_id", params.customerId);
+    }
+    const byProduct = await query.maybeSingle();
+    if (!byProduct.error && byProduct.data) {
+      return byProduct.data as ImportShipmentRow;
+    }
+  }
+
+  return null;
 }
 
 /** Search saved import pipelines by client company and/or contact person. */
@@ -515,4 +647,12 @@ export async function deleteImportPipelineShipments(
 
   if (error) throw error;
   return ids.length;
+}
+
+export async function markImportShipmentReceived(shipmentId: string): Promise<void> {
+  const { error } = await importFinanceDb()
+    .from(TABLES.shipments)
+    .update({ status: "received" })
+    .eq("id", shipmentId);
+  if (error) throw error;
 }

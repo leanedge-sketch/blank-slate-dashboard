@@ -26,6 +26,9 @@ from app.models.crm import (
     CustomerProfileUpdate,
     CustomerProfileFeedback,
     CustomerProfileFeedbackCreate,
+    Colleague,
+    CustomerMergeRequest,
+    CustomerMergeResponse,
 )
 from app.services.crm_service import (
     get_all_customers,
@@ -53,13 +56,14 @@ from app.services.crm_service import (
     update_customer_profile_text,
     add_customer_profile_feedback,
     list_customer_profile_feedback,
+    merge_customers,
 )
 from app.services.crm_report_service import build_crm_report_pdf
 from app.services.pipeline_crm_sync import (
     backfill_all_customers_pipelines,
     sync_customer_pipelines_from_crm,
 )
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_employee_admin
 
 # Create a router for CRM endpoints
 # This groups all CRM-related routes together
@@ -168,6 +172,7 @@ async def ensure_quote_pipeline_endpoint(body: QuoteEnsurePipelineRequest):
             customer_id=str(body.customer_id) if body.customer_id else None,
             customer_name=body.customer_name,
             chemical_type_id=body.chemical_type_id,
+            force_new=bool(body.force_new),
         )
         pipeline = result["pipeline"]
         return QuoteEnsurePipelineResponse(
@@ -217,6 +222,11 @@ async def generate_quote_endpoint(body: QuoteDraftRequest):
 
         pipeline_id = None
         if body.persist_to_pipeline:
+            if not body.pipeline_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Select an open sales deal or create a new deal before generating a quote.",
+                )
             try:
                 from app.services.pipeline_crm_sync import (
                     ensure_quote_draft_pipeline,
@@ -505,6 +515,60 @@ async def update_customer_endpoint(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating customer: {str(e)}")
+
+
+@router.get("/colleagues", response_model=List[Colleague])
+async def list_colleagues():
+    """Employees available for @ mentions in CRM interactions."""
+    from app.database.connection import get_supabase_service_client
+
+    try:
+        rows = (
+            get_supabase_service_client()
+            .table("employees")
+            .select("email, name, role")
+            .limit(500)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        logging.warning("Colleague list failed: %s", exc)
+        rows = []
+    colleagues: List[Colleague] = []
+    for row in rows:
+        email = str(row.get("email") or "").strip()
+        name = str(row.get("name") or "").strip() or email
+        if not email and not name:
+            continue
+        colleagues.append(
+            Colleague(id=email or name, name=name, email=email or None)
+        )
+    return colleagues
+
+
+@router.post("/customers/merge", response_model=CustomerMergeResponse)
+async def merge_customers_endpoint(
+    body: CustomerMergeRequest,
+    _admin: dict = Depends(require_employee_admin),
+):
+    """Admin-only: reassign related records from source customer onto target, then delete source."""
+    try:
+        choices = body.fields.model_dump(exclude_none=True) if body.fields else {}
+        result = merge_customers(
+            str(body.source_customer_id),
+            str(body.target_customer_id),
+            field_choices=choices,
+        )
+        return CustomerMergeResponse(
+            target=result["target"],
+            reassigned=result["reassigned"],
+            deleted_source_id=result["deleted_source_id"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error merging customers: {str(e)}")
 
 
 @router.delete("/customers/{customer_id}", status_code=204)

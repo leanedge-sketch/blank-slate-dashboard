@@ -30,6 +30,10 @@ import {
 import { ChevronDown, ChevronUp, ChevronRight, Edit2, Trash2, X, Save, Calendar, Paperclip, TrendingUp, Plus, Package } from "lucide-react";
 import { formatPipelineQuantity } from "../../utils/pipelineProduct";
 import { CustomerTradeTransitPanel } from "../../components/crm/CustomerTradeTransitPanel";
+import { InteractionInput, interactionHasText } from "../../components/crm/InteractionInput";
+import { CRMQuoteModal } from "../../components/crm/CRMQuoteModal";
+import { isLikelyHtml, sanitizeInteractionHtml, stripHtml } from "../../utils/htmlPreview";
+import { trackRecentRecord } from "../../hooks/useRecentlyAccessed";
 
 export function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
@@ -66,6 +70,7 @@ export function CustomerDetailPage() {
   const { chemicals: chemicalFullData, chemicalTypes } = useProductCatalog();
   const [selectedDealId, setSelectedDealId] = useState<string>("");
   const [pipelineDealMode, setPipelineDealMode] = useState<DealLinkMode>("existing");
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const navigate = useNavigate();
 
   const productLabelOptions = {
@@ -150,9 +155,20 @@ export function CustomerDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, startDate, endDate]);
 
+  useEffect(() => {
+    if (!customer) return;
+    trackRecentRecord({
+      id: customer.customer_id,
+      title: customer.customer_name,
+      subtitle: "CRM customer",
+      module: "crm",
+      url: `/crm/customers/${customer.customer_id}`,
+    });
+  }, [customer]);
+
   async function handleChatSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!customerId || !chatInput.trim()) return;
+    if (!customerId || !interactionHasText(chatInput)) return;
 
     try {
       setChatLoading(true);
@@ -288,8 +304,9 @@ export function CustomerDetailPage() {
 
   function getPreview(text: string | null | undefined, maxLength: number = 150): string {
     if (!text) return "";
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + "...";
+    const plain = isLikelyHtml(text) ? stripHtml(text) : text;
+    if (plain.length <= maxLength) return plain;
+    return plain.substring(0, maxLength) + "...";
   }
 
   function getTdsName(tdsId: string | null | undefined): string {
@@ -390,6 +407,13 @@ export function CustomerDetailPage() {
                 View AI Profile
               </Link>
             )}
+            <button
+              type="button"
+              onClick={() => setQuoteModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-amber-500/30 hover:bg-amber-400 transition-colors"
+            >
+              Create Quote
+            </button>
             <Link
               to="/crm/customers/new"
               className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 transition-colors"
@@ -453,12 +477,10 @@ export function CustomerDetailPage() {
                   </p>
                 </div>
                 <div className="relative">
-          <textarea
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Ask the assistant to suggest next steps, qualify the opportunity, or propose a product mix..."
-                    rows={4}
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70 resize-y"
+                  <InteractionInput
+                    value={chatInput}
+                    onChange={setChatInput}
+                    placeholder="Ask the assistant… Type @ to tag a colleague or # to tag a product."
                   />
                 </div>
                 
@@ -515,7 +537,7 @@ export function CustomerDetailPage() {
                   </button>
             <button
               type="submit"
-              disabled={chatLoading || !chatInput.trim()}
+              disabled={chatLoading || !interactionHasText(chatInput)}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                   >
                     {uploadingFile ? "Uploading & Analyzing..." : chatLoading ? "Thinking..." : "Send to AI"}
@@ -722,8 +744,17 @@ export function CustomerDetailPage() {
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                                   Your Question / Input
                                 </div>
-                                <div className="rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2.5 text-xs sm:text-sm text-slate-100 whitespace-pre-wrap">
-                                  {it.input_text}
+                                <div className="rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2.5 text-xs sm:text-sm text-slate-100">
+                                  {isLikelyHtml(it.input_text) ? (
+                                    <div
+                                      className="interaction-html"
+                                      dangerouslySetInnerHTML={{
+                                        __html: sanitizeInteractionHtml(it.input_text),
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="whitespace-pre-wrap">{it.input_text}</div>
+                                  )}
                                 </div>
                   </div>
                 )}
@@ -747,11 +778,10 @@ export function CustomerDetailPage() {
                               <label className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                                 Your Input
                               </label>
-                              <textarea
+                              <InteractionInput
                                 value={editInput}
-                                onChange={(e) => setEditInput(e.target.value)}
-                                className="w-full min-h-[90px] rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs sm:text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                                placeholder="Enter your question or input..."
+                                onChange={setEditInput}
+                                placeholder="Enter your question or input… @ colleague, # product"
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -980,6 +1010,12 @@ export function CustomerDetailPage() {
           </section>
         ) : null}
       </main>
+      <CRMQuoteModal
+        open={quoteModalOpen}
+        onClose={() => setQuoteModalOpen(false)}
+        customerId={customerId}
+        customerName={customer.customer_name}
+      />
     </div>
   );
 }

@@ -217,6 +217,7 @@ class QuoteEnsurePipelineRequest(BaseModel):
     customer_id: Optional[UUID] = None
     customer_name: Optional[str] = None
     chemical_type_id: Optional[str] = None
+    force_new: bool = False
 
 
 class QuoteEnsurePipelineResponse(BaseModel):
@@ -283,5 +284,37 @@ class CustomerProfileFeedback(BaseModel):
     comment: Optional[str] = None
     user_id: Optional[UUID] = None
     created_at: Optional[datetime] = None
+
+
+class Colleague(BaseModel):
+    id: str
+    name: str
+    email: Optional[str] = None
+
+
+class CustomerMergeFieldChoice(BaseModel):
+    """Which record wins when source and target differ. Default is target."""
+
+    customer_name: Optional[str] = None
+    display_id: Optional[str] = None
+    website_url: Optional[str] = None
+    linkedin_company_url: Optional[str] = None
+    primary_contact_name: Optional[str] = None
+    primary_contact_email: Optional[str] = None
+    primary_contact_phone: Optional[str] = None
+    sales_stage: Optional[str] = None
+    latest_profile_text: Optional[str] = None
+
+
+class CustomerMergeRequest(BaseModel):
+    source_customer_id: UUID
+    target_customer_id: UUID
+    fields: Optional[CustomerMergeFieldChoice] = None
+
+
+class CustomerMergeResponse(BaseModel):
+    target: Customer
+    reassigned: Dict[str, int]
+    deleted_source_id: UUID
 
 

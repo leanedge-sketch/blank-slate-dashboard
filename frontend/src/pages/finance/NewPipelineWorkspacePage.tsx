@@ -14,9 +14,9 @@ export function NewPipelineWorkspacePage() {
   const { beginNewPipelineSession } = useTradeTransitRequest();
 
   useEffect(() => {
-    if (searchParams.get("fresh") === "0") return;
+    if (searchParams.get("fresh") !== "1") return;
     beginNewPipelineSession();
-    // Reset only when this tab/window first opens.
+    // Reset only when the route explicitly requests a blank session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

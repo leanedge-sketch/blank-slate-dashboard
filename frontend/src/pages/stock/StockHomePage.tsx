@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ReceiveTransitShipment } from "../../components/stock/ReceiveTransitShipment";
 import { ArrowRight, Package, Sparkles, Warehouse } from "lucide-react";
 
 const modules = [
@@ -117,6 +118,10 @@ export function StockHomePage() {
                   </div>
                 );
               })}
+            </div>
+
+            <div className="mt-10">
+              <ReceiveTransitShipment />
             </div>
           </div>
         </div>

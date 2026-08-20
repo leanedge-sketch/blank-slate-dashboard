@@ -3,10 +3,7 @@ import {
   AlertTriangle,
   Building2,
   MapPin,
-  MoreHorizontal,
-  Pencil,
   Plus,
-  Trash2,
 } from "lucide-react";
 import type {
   CRMPartner,
@@ -16,9 +13,10 @@ import type {
   PricingRecord,
   PricingRecordInput,
 } from "./types";
-import { CurrencyBadge } from "./CurrencyBadge";
 import { CurrencyConverterWidget } from "./CurrencyConverterWidget";
 import { PricingEntryDrawer } from "./PricingEntryDrawer";
+import { PricingVirtualGrid, type BulkPricingChange } from "./PricingVirtualGrid";
+import { CSVUploader } from "../CSVUploader";
 import {
   computeMargin,
   formatAmount,
@@ -35,11 +33,7 @@ type PricingDetailsMatrixProps = {
   locations: PricingLocation[];
   onAddLocation: (location: PricingLocationInput) => Promise<string>;
   onAddRecord: (input: PricingRecordInput) => void | Promise<void>;
-  onUpdatePricing: (
-    sourceRecordId: string,
-    input: PricingRecordInput,
-    options?: { offerUpdateOpenDeals?: boolean },
-  ) => void | Promise<void>;
+  onBulkSave: (changes: BulkPricingChange[]) => void | Promise<void>;
   onDeleteRecord: (recordId: string) => void | Promise<void>;
   readOnly?: boolean;
 };
@@ -164,7 +158,7 @@ export function PricingDetailsMatrix({
   locations,
   onAddLocation,
   onAddRecord,
-  onUpdatePricing,
+  onBulkSave,
   onDeleteRecord,
   readOnly = false,
 }: PricingDetailsMatrixProps) {
@@ -175,15 +169,7 @@ export function PricingDetailsMatrix({
   const [liveRate, setLiveRate] = useState<number | null>(129.5);
   const [activeLocationId, setActiveLocationId] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerMode, setDrawerMode] = useState<"add" | "update">("add");
   const [sourceRecord, setSourceRecord] = useState<PricingRecord | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-
-  const productById = useMemo(() => {
-    const map = new Map<string, PMSProduct>();
-    for (const p of pmsProducts) map.set(p.id, p);
-    return map;
-  }, [pmsProducts]);
 
   const locationById = useMemo(() => {
     const map = new Map<string, PricingLocation>();
@@ -193,7 +179,9 @@ export function PricingDetailsMatrix({
 
   const visibleRecords = useMemo(
     () =>
-      showHistorical ? records : records.filter((r) => r.status === "active"),
+      showHistorical
+        ? records
+        : records.filter((r) => r.status === "active" || r.isCurrent !== false),
     [records, showHistorical],
   );
 
@@ -243,46 +231,17 @@ export function PricingDetailsMatrix({
   }
 
   function openAdd() {
-    setDrawerMode("add");
     setSourceRecord(null);
     setDrawerOpen(true);
   }
 
-  function openUpdate(record: PricingRecord) {
-    setDrawerMode("update");
-    setSourceRecord(record);
-    setDrawerOpen(true);
-    setOpenMenuId(null);
-  }
-
-  async function handleSave(
-    input: PricingRecordInput,
-    options?: { applyPolicy?: import("./PricingEntryDrawer").PricingApplyPolicy },
-  ) {
+  async function handleSave(input: PricingRecordInput) {
     try {
-      if (drawerMode === "update" && sourceRecord) {
-        await onUpdatePricing(sourceRecord.id, input, {
-          offerUpdateOpenDeals: options?.applyPolicy === "offer_update_open_deals",
-        });
-      } else {
-        await onAddRecord(input);
-        setActiveLocationId(input.locationId);
-      }
+      await onAddRecord(input);
+      setActiveLocationId(input.locationId);
     } catch {
       // Parent surfaces error banner; keep drawer open.
     }
-  }
-
-  function locationLabel(locationId: string): string {
-    const loc = locationById.get(locationId);
-    if (!loc) return locationId;
-    return [loc.country, loc.city, loc.port].filter(Boolean).join(" · ");
-  }
-
-  function productLabel(productId: string): string {
-    const product = productById.get(productId);
-    if (!product) return "Unknown product";
-    return `${product.sku} — ${product.name}`;
   }
 
   return (
@@ -295,15 +254,28 @@ export function PricingDetailsMatrix({
               {partnerTypeLabel(partner.type)} · CRM ↔ PMS pricing junction
             </p>
           </div>
-          <button
-            type="button"
-            onClick={openAdd}
-            disabled={readOnly}
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-shadow disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            Add pricing entry
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <CSVUploader
+              partner={partner}
+              pmsProducts={pmsProducts}
+              locations={locations}
+              defaultLocationId={effectiveTab || locations[0]?.id}
+              onImport={async (inputs) => {
+                for (const input of inputs) {
+                  await onAddRecord(input);
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={openAdd}
+              disabled={readOnly}
+              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-shadow disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Add pricing entry
+            </button>
+          </div>
         </div>
       </header>
 
@@ -409,138 +381,31 @@ export function PricingDetailsMatrix({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto bg-white p-4 sm:p-6">
+          <div className="min-h-0 flex-1 overflow-hidden bg-white p-4 sm:p-6">
             {activeGroup && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full min-w-[880px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="whitespace-nowrap px-4 py-3">Product</th>
-                      <th className="whitespace-nowrap px-4 py-3">Incoterm</th>
-                      <th className="whitespace-nowrap px-4 py-3">Cost</th>
-                      <th className="whitespace-nowrap px-4 py-3">Price</th>
-                      <th className="whitespace-nowrap px-4 py-3">Margin</th>
-                      <th className="whitespace-nowrap px-4 py-3">Status</th>
-                      <th className="sticky right-0 z-10 w-16 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeGroup.records.map((record) => {
-                      const isHistorical = record.status === "historical";
-                      return (
-                        <tr
-                          key={record.id}
-                          className={`group transition-colors hover:bg-slate-50/80 ${
-                            isHistorical ? "text-slate-500" : ""
-                          }`}
-                        >
-                          <td className="px-4 py-3">
-                            <p
-                              className={`font-medium ${isHistorical ? "text-slate-500" : "text-slate-900"}`}
-                            >
-                              {productById.get(record.pmsProductId)?.sku ?? "—"}
-                            </p>
-                            <p className="text-xs text-slate-500 line-clamp-1">
-                              {productById.get(record.pmsProductId)?.name ?? record.pmsProductId}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3 font-medium">{record.incoterm}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <CurrencyBadge currency={record.costCurrency} variant="cost" />
-                              <span className="tabular-nums">
-                                {formatAmount(record.costAmount)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <CurrencyBadge currency={record.priceCurrency} variant="price" />
-                              <span className="tabular-nums">
-                                {formatAmount(record.priceAmount)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <MarginCell record={record} marginOptions={marginOptions} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={record.status} />
-                            {record.validFrom && (
-                              <p className="mt-0.5 text-[10px] text-slate-400">
-                                {record.validFrom}
-                                {record.validTo ? ` → ${record.validTo}` : " → present"}
-                              </p>
-                            )}
-                          </td>
-                          <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-4 py-3 text-right group-hover:bg-slate-50/80">
-                            <div className="relative inline-flex opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenMenuId((id) =>
-                                    id === record.id ? null : record.id,
-                                  )
-                                }
-                                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                                aria-label="Row actions"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </button>
-                              {openMenuId === record.id && (
-                                <>
-                                  <div
-                                    className="fixed inset-0 z-10"
-                                    onClick={() => setOpenMenuId(null)}
-                                    aria-hidden
-                                  />
-                                  <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                                    {record.status === "active" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openUpdate(record)}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                        Update pricing
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        void (async () => {
-                                          if (
-                                            window.confirm(
-                                              `Delete ${productLabel(record.pmsProductId)} @ ${locationLabel(record.locationId)}?`,
-                                            )
-                                          ) {
-                                            try {
-                                              await onDeleteRecord(record.id);
-                                            } catch {
-                                              // error shown by parent
-                                            }
-                                          }
-                                          setOpenMenuId(null);
-                                        })();
-                                      }}
-                                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Delete
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <PricingVirtualGrid
+                records={activeGroup.records}
+                pmsProducts={pmsProducts}
+                readOnly={readOnly}
+                marginCell={(record) => (
+                  <MarginCell record={record} marginOptions={marginOptions} />
+                )}
+                statusCell={(record) => (
+                  <div>
+                    <StatusBadge status={record.status} />
+                    <p className="mt-0.5 text-[10px] text-slate-400">
+                      {record.validFrom}
+                      {record.validTo ? ` → ${record.validTo}` : " → present"}
+                    </p>
+                  </div>
+                )}
+                onSavePending={async (changes) => {
+                  await onBulkSave(changes);
+                }}
+                onDelete={async (recordId) => {
+                  await onDeleteRecord(recordId);
+                }}
+              />
             )}
           </div>
         </>
@@ -548,7 +413,7 @@ export function PricingDetailsMatrix({
 
       <PricingEntryDrawer
         open={drawerOpen}
-        mode={drawerMode}
+        mode="add"
         sourceRecord={sourceRecord}
         defaultPartnerId={partner.id}
         defaultLocationId={effectiveTab || locations[0]?.id}

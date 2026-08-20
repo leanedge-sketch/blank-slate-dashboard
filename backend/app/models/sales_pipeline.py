@@ -84,6 +84,7 @@ class SalesPipelineBase(BaseModel):
     chemical_type_id: Optional[UUID] = None
     stage: str
     amount: Optional[float] = Field(None, ge=0, description="Amount")
+    target_amount: Optional[float] = Field(None, ge=0, description="Accepted quote commercial total")
     expected_close_date: Optional[date] = None
     close_reason: Optional[str] = None
     lead_source: Optional[str] = None
@@ -95,6 +96,8 @@ class SalesPipelineBase(BaseModel):
     forex: Optional[str] = Field(None, description="Forex risk bearer: LeanChems or Client")
     business_unit: Optional[str] = Field(None, description="Business Unit: Hayat, Alhadi, Bet-chem, Barracoda, or Nyumb-Chem")
     incoterm: Optional[str] = Field(None, description="Incoterm: Import of Record, Agency, Direct Import, or Stock – Addis Ababa")
+    pricing_record_id: Optional[UUID] = None
+    snapshot_unit_price: Optional[float] = None
     metadata: Optional[Dict[str, Any]] = None
 
     @field_validator("chemical_type_id", mode="before")
@@ -250,6 +253,7 @@ class SalesPipelineUpdate(BaseModel):
     chemical_type_id: Optional[UUID] = None
     stage: Optional[str] = None
     amount: Optional[float] = Field(None, ge=0)
+    target_amount: Optional[float] = Field(None, ge=0)
     currency: Optional[str] = None
     expected_close_date: Optional[date] = None
     close_reason: Optional[str] = None
@@ -261,6 +265,8 @@ class SalesPipelineUpdate(BaseModel):
     forex: Optional[str] = None
     business_unit: Optional[str] = None
     incoterm: Optional[str] = None
+    pricing_record_id: Optional[UUID] = None
+    snapshot_unit_price: Optional[float] = None
     metadata: Optional[Dict[str, Any]] = None
     ai_interactions: Optional[List[Dict[str, Any]]] = None
     reason_for_stage_change: Optional[str] = Field(None, description="Required when stage changes")
@@ -370,4 +376,30 @@ class PipelineInsights(BaseModel):
     sample_effectiveness: float
     product_demand: Dict[str, int]
     insights_summary: str
+
+
+class SalesQuotationBase(BaseModel):
+    pipeline_id: UUID
+    version: int = 1
+    target_amount: float
+    currency: str = "USD"
+    file_url: Optional[str] = None
+    is_accepted: bool = False
+    created_by: Optional[UUID] = None
+
+
+class SalesQuotationCreate(BaseModel):
+    target_amount: float
+    currency: str = "USD"
+    file_url: Optional[str] = None
+
+
+class SalesQuotation(SalesQuotationBase):
+    id: UUID
+    created_at: Optional[datetime] = None
+
+
+class SalesQuotationListResponse(BaseModel):
+    quotations: List[SalesQuotation]
+    total: int
 

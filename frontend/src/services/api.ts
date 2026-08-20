@@ -205,6 +205,7 @@ export async function ensureQuotePipeline(body: {
   customer_id?: string | null;
   customer_name?: string | null;
   chemical_type_id?: string | null;
+  force_new?: boolean;
 }): Promise<QuoteEnsurePipelineResponse> {
   const res = await api.post<QuoteEnsurePipelineResponse>(
     "/crm/quotes/ensure-pipeline",
@@ -1116,6 +1117,7 @@ export interface SalesPipeline {
   chemical_type_id?: string | null;
   stage: PipelineStage;
   amount?: number | null;
+  target_amount?: number | null;
   currency?: Currency | null;
   expected_close_date?: string | null; // ISO date string
   close_reason?: string | null;
@@ -1173,6 +1175,7 @@ export interface SalesPipelineUpdate {
   chemical_type_id?: string | null;
   stage?: PipelineStage | null;
   amount?: number | null;
+  target_amount?: number | null;
   currency?: Currency | null;
   expected_close_date?: string | null;
   close_reason?: string | null;
@@ -1441,6 +1444,66 @@ export async function deleteSalesPipeline(id: string) {
   await api.delete(`/sales-pipeline/${id}`);
 }
 
+export interface SalesQuotation {
+  id: string;
+  pipeline_id: string;
+  version: number;
+  target_amount: number;
+  currency: string;
+  file_url?: string | null;
+  is_accepted: boolean;
+  created_at?: string | null;
+  created_by?: string | null;
+}
+
+export async function fetchSalesQuotations(pipelineId: string): Promise<SalesQuotation[]> {
+  const res = await api.get<{ quotations: SalesQuotation[]; total: number }>(
+    `/sales-pipeline/${pipelineId}/quotations`,
+  );
+  return res.data.quotations ?? [];
+}
+
+export async function createSalesQuotation(
+  pipelineId: string,
+  data: { target_amount: number; currency?: string; file_url?: string | null },
+): Promise<SalesQuotation> {
+  const res = await api.post<SalesQuotation>(
+    `/sales-pipeline/${pipelineId}/quotations`,
+    data,
+  );
+  return res.data;
+}
+
+export async function acceptSalesQuotation(
+  pipelineId: string,
+  quotationId: string,
+): Promise<SalesQuotation> {
+  const res = await api.post<SalesQuotation>(
+    `/sales-pipeline/${pipelineId}/quotations/${quotationId}/accept`,
+  );
+  return res.data;
+}
+
+export type ExtractedQuoteFields = {
+  product_name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  target_amount: number | null;
+  currency: string | null;
+  incoterm: string | null;
+};
+
+export async function extractQuotePdf(file: File): Promise<{
+  fields: ExtractedQuoteFields;
+  provider_used?: string;
+  is_fallback?: boolean;
+}> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post("/sales/extract-pdf", form);
+  return res.data;
+}
+
 export async function advancePipelineStage(
   id: string,
   newStage: PipelineStage,
@@ -1623,6 +1686,47 @@ export interface IntegratedReportSnapshot {
   product_demand_top: Array<{ product_key: string; quote_count: number }>;
 }
 
+export interface ExecutiveSalesSummaryRow {
+  stage: string;
+  currency?: string | null;
+  total_deals: number;
+  pipeline_value_usd: number;
+}
+
+export interface ExecutiveTransitSummaryRow {
+  status: string;
+  active_shipments: number;
+  total_transit_value: number;
+}
+
+export interface ExecutiveStockAlertRow {
+  product_id?: string | null;
+  product_name: string;
+  location: string;
+  available_kg: number;
+  minimum_stock_threshold: number;
+  deficit_kg: number;
+}
+
+export interface ExecutiveCrmActivityRow {
+  window_key: string;
+  new_customers_7d: number;
+  interactions_7d: number;
+  total_customers: number;
+  refreshed_at?: string | null;
+}
+
+export interface ExecutiveReportSnapshot {
+  financials?: {
+    sales_summary?: ExecutiveSalesSummaryRow[];
+    transit_summary?: ExecutiveTransitSummaryRow[];
+  };
+  sales_summary: ExecutiveSalesSummaryRow[];
+  transit_summary: ExecutiveTransitSummaryRow[];
+  stock_alerts?: ExecutiveStockAlertRow[];
+  crm_activity?: ExecutiveCrmActivityRow | null;
+}
+
 export async function fetchIntegratedReport(params?: { days_back?: number }) {
   const request = () =>
     api.get<IntegratedReportSnapshot>("/reports/integrated", {
@@ -1644,6 +1748,19 @@ export async function fetchIntegratedReport(params?: { days_back?: number }) {
   }
 }
 
+/** Canonical MV-backed executive summary (fast path). */
+export async function fetchExecutiveSummary() {
+  const res = await api.get<ExecutiveReportSnapshot>("/reports/executive-summary", {
+    timeout: 30_000,
+  });
+  return res.data;
+}
+
+/** Alias for older callers. */
+export async function fetchExecutiveReportSnapshot() {
+  return fetchExecutiveSummary();
+}
+
 // =============================
 // STOCK MANAGEMENT
 // =============================
@@ -1659,6 +1776,7 @@ export interface Product {
   tds_id?: string | null;
   catalog_uuid_id?: string | null;
   tds_link?: string | null;
+  minimum_stock_threshold?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
   total_stock_addis_ababa: number;
@@ -1697,6 +1815,7 @@ export interface ProductUpdate {
   tds_id?: string | null;
   catalog_uuid_id?: string | null;
   tds_link?: string | null;
+  minimum_stock_threshold?: number | null;
 }
 
 export interface StockMovement {
@@ -1727,6 +1846,8 @@ export interface StockMovement {
   reference?: string | null;
   remark?: string | null;
   warehouse?: string | null;
+  batch_id?: string | null;
+  expiry_date?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -1757,6 +1878,8 @@ export interface StockMovementCreate {
   reference?: string | null;
   remark?: string | null;
   warehouse?: string | null;
+  batch_id?: string | null;
+  expiry_date?: string | null;
 }
 
 export interface StockMovementUpdate {
@@ -1783,6 +1906,8 @@ export interface StockMovementUpdate {
   reference?: string | null;
   remark?: string | null;
   warehouse?: string | null;
+  batch_id?: string | null;
+  expiry_date?: string | null;
 }
 
 export interface ProductListResponse {
@@ -1816,6 +1941,8 @@ export interface StockAvailabilitySummary {
   sez_kenya_available: number;
   nairobi_partner_available: number;
   total_available: number;
+  minimum_stock_threshold?: number;
+  is_low_stock?: boolean;
 }
 
 export interface StockCatalogAvailability {
@@ -1909,6 +2036,19 @@ export async function fetchStockMovementById(movementId: string): Promise<StockM
 
 export async function createStockMovement(movement: StockMovementCreate): Promise<StockMovement> {
   const response = await api.post<StockMovement>("/stock/movements", movement);
+  return response.data;
+}
+
+export async function createAtomicStockTransfer(body: {
+  product_id: string;
+  source_location: "addis_ababa" | "sez_kenya" | "nairobi_partner";
+  dest_location: "addis_ababa" | "sez_kenya" | "nairobi_partner";
+  quantity: number;
+  batch_id?: string | null;
+  expiry_date?: string | null;
+  notes?: string;
+}): Promise<StockMovement> {
+  const response = await api.post<StockMovement>("/stock/transfers", body);
   return response.data;
 }
 

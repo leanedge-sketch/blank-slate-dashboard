@@ -7,14 +7,15 @@ import {
   CustomerProfileUpdate,
   CustomerProfileFeedbackCreate,
   InteractionListResponse,
-  buildCustomerProfile,
 } from "../../services/api";
 import { ProfileICPLayout } from "../../components/ProfileICPLayout";
 import { ProfileResearchContext } from "../../components/ProfileResearchContext";
 import { fetchAllCustomerInteractions } from "../../utils/interactions";
 import type { Interaction } from "../../services/api";
 import { mergeStrategicFitItems } from "../../utils/profileText";
-import { Edit2, Save, X, Eye, Download, Star, RefreshCw } from "lucide-react";
+import { Edit2, Save, X, Eye, Download, Star, RefreshCw, FileText } from "lucide-react";
+import { CRMQuoteModal } from "../../components/crm/CRMQuoteModal";
+import { AIProfileGenerator } from "../../components/crm/AIProfileGenerator";
 import "./profile-icp.css";
 
 export function CustomerProfilePage() {
@@ -30,47 +31,27 @@ export function CustomerProfilePage() {
   const [comment, setComment] = useState<string>("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [creatingICP, setCreatingICP] = useState(false);
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [latestInteraction, setLatestInteraction] = useState<string | null>(null);
   const [mergedInteractions, setMergedInteractions] = useState<Interaction[]>([]);
   const [interactionTotal, setInteractionTotal] = useState<number>(0);
 
   async function handleGenerateICP() {
     if (!customerId) return;
-    try {
-      setCreatingICP(true);
-      console.log("Generating ICP for customer:", customerId);
-      const data = await buildCustomerProfile(customerId);
-      console.log("ICP creation response:", data);
-
-      // Always re-fetch the customer after build-profile so the UI reflects the latest DB state.
-      const refreshed = await api.get<Customer>(`/crm/customers/${customerId}`);
-      console.log("Customer after ICP refresh:", refreshed.data);
-
-      setCustomer(refreshed.data);
-      setEditedProfile(refreshed.data.latest_profile_text || "");
-      setLatestInteraction(null);
-      try {
-        const bundle = await fetchAllCustomerInteractions(customerId);
-        setInteractionTotal(bundle.total);
-        setMergedInteractions(bundle.interactions);
-      } catch {
-        /* keep prior live history */
-      }
-    } catch (err: unknown) {
-      console.error("Failed to create/regenerate ICP profile:", err);
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to create/regenerate ICP profile";
-      console.error("Error details:", errorMsg);
-      alert(errorMsg);
-    } finally {
-      setCreatingICP(false);
-    }
+    setCreatingICP(true);
   }
 
-  async function fetchCustomerAndProfile() {
+  async function handleStreamComplete() {
+    setCreatingICP(false);
+    await fetchCustomerAndProfile({ silent: true });
+  }
+
+  async function fetchCustomerAndProfile(opts?: { silent?: boolean }) {
     if (!customerId) return;
     try {
-      setLoading(true);
+      if (!opts?.silent) {
+        setLoading(true);
+      }
       setError(null);
 
       const customerRes = await api.get<Customer>(`/crm/customers/${customerId}`);
@@ -280,7 +261,7 @@ export function CustomerProfilePage() {
                 cursor: creatingICP ? "not-allowed" : "pointer",
               }}
             >
-              {creatingICP ? "Creating ICP..." : "Create ICP"}
+              {creatingICP ? "Writing ICP…" : "Create ICP"}
             </button>
             <Link
               to="/crm/customers"
@@ -300,6 +281,19 @@ export function CustomerProfilePage() {
             </Link>
           </div>
         </section>
+        {customerId ? (
+          <div style={{ marginTop: "1.5rem" }}>
+            <AIProfileGenerator
+              customerId={customerId}
+              active={creatingICP}
+              onComplete={handleStreamComplete}
+              onError={(msg) => {
+                setCreatingICP(false);
+                alert(msg);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -351,7 +345,26 @@ export function CustomerProfilePage() {
                 }}
               >
                 <RefreshCw size={18} />
-                {creatingICP ? "Regenerating..." : "Regenerate ICP"}
+                {creatingICP ? "Writing…" : "Regenerate ICP"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuoteModalOpen(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  padding: "0.75rem 1.5rem",
+                  backgroundColor: "#d97706",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "0.5rem",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                <FileText size={18} />
+                Create Quote
               </button>
               <button
                 type="button"
@@ -434,6 +447,20 @@ export function CustomerProfilePage() {
           )}
         </div>
       </div>
+
+      {customerId ? (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <AIProfileGenerator
+            customerId={customerId}
+            active={creatingICP}
+            onComplete={handleStreamComplete}
+            onError={(msg) => {
+              setCreatingICP(false);
+              alert(msg);
+            }}
+          />
+        </div>
+      ) : null}
 
       {isEditing ? (
         <section className="card" style={{ position: "relative" }}>
@@ -661,6 +688,12 @@ export function CustomerProfilePage() {
           )}
         </div>
       </section>
+      <CRMQuoteModal
+        open={quoteModalOpen}
+        onClose={() => setQuoteModalOpen(false)}
+        customerId={customerId}
+        customerName={customer.customer_name}
+      />
     </div>
   );
 }

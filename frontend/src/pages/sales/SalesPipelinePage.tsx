@@ -25,6 +25,7 @@ import {
   fetchPartnerChemicals,
   syncAllCustomerPipelines,
   acceptQuoteOnPipeline,
+  createSalesQuotation,
 } from "../../services/api";
 import {
   TrendingUp,
@@ -1497,6 +1498,28 @@ export function SalesPipelinePage() {
     navigate(`/sales/pipeline/${pipelineId}`);
   }
 
+  async function handleKanbanStageChange(payload: {
+    pipelineId: string;
+    fromStage: PipelineStage;
+    toStage: PipelineStage;
+    reason: string;
+    closeReason?: string;
+  }) {
+    const updateData: SalesPipelineUpdate = {
+      stage: payload.toStage,
+      reason_for_stage_change: payload.reason,
+    };
+    if (payload.toStage === "Closed" && payload.closeReason) {
+      updateData.close_reason = payload.closeReason;
+    }
+    try {
+      await updateSalesPipeline(payload.pipelineId, updateData);
+      await loadPipelines();
+    } catch (err) {
+      throw new Error(formatApiErrorDetail(err, "Failed to update stage"));
+    }
+  }
+
   function handleOpenQuotationForm(pipelineId: string) {
     setQuotationPipelineId(pipelineId);
     setShowQuotationForm(true);
@@ -1522,6 +1545,14 @@ export function SalesPipelinePage() {
           },
         };
         await updateSalesPipeline(quotationPipelineId, updateData);
+        try {
+          await createSalesQuotation(quotationPipelineId, {
+            target_amount: Number(data.total_amount) || 0,
+            currency: pipeline.currency || "USD",
+          });
+        } catch {
+          // Table may be missing until 006 is applied; metadata draft still saved.
+        }
         alert("Quotation draft saved on this deal.");
         handleCloseQuotationForm();
         await loadPipelines();
@@ -2645,6 +2676,7 @@ export function SalesPipelinePage() {
             getCustomerName={getCustomerName}
             getProductName={getChemicalTypeName}
             onSelect={handlePipelineClick}
+            onStageChangeWithReason={handleKanbanStageChange}
           />
         )}
 

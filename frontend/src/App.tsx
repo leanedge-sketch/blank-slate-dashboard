@@ -8,6 +8,7 @@ import { CustomerListPage } from "./pages/crm/CustomerListPage";
 import { CustomerDetailPage } from "./pages/crm/CustomerDetailPage";
 import { CustomerProfilePage } from "./pages/crm/CustomerProfilePage";
 import { ManageCustomersPage } from "./pages/crm/ManageCustomersPage";
+import { CustomerMergePage } from "./pages/crm/CustomerMerge";
 import { AddCustomerPage } from "./pages/crm/AddCustomerPage";
 import { CreateQuotePage } from "./pages/crm/CreateQuotePage";
 import { CRMDashboardPage } from "./pages/crm/CRMDashboardPage";
@@ -28,6 +29,7 @@ import { ProductCostingWorkspacePage } from "./pages/finance/ProductCostingWorks
 import { SalesCostingWorkspacePage } from "./pages/finance/SalesCostingWorkspacePage";
 import { TransitSummaryWorkspacePage } from "./pages/finance/TransitSummaryWorkspacePage";
 import { NewPipelineWorkspacePage } from "./pages/finance/NewPipelineWorkspacePage";
+import { ExecutiveDashboardPage } from "./pages/reports/ExecutiveDashboardPage";
 import { ExecutiveReportWorkspacePage } from "./pages/finance/ExecutiveReportWorkspacePage";
 import { SalesPipelinePage } from "./pages/sales/SalesPipelinePage";
 import { PipelineDetailPage } from "./pages/sales/PipelineDetailPage";
@@ -39,11 +41,13 @@ import { GeneralStockAvailabilityPage } from "./pages/stock/GeneralStockAvailabi
 import { ProductDetailPage } from "./pages/stock/ProductDetailPage";
 import { ProductLabelStockPage } from "./pages/stock/ProductLabelStockPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { CommandPaletteModal } from "./components/common/CommandPaletteModal";
 
 export default function App() {
   return (
     <div className="app-root">
       <AppShell />
+      <CommandPaletteModal />
 
       <main className="app-main">
         <Routes>
@@ -91,6 +95,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ManageCustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/crm/customers/merge"
+            element={
+              <ProtectedRoute>
+                <CustomerMergePage />
               </ProtectedRoute>
             }
           />
@@ -165,7 +177,24 @@ export default function App() {
             path="/reports/executive"
             element={
               <ProtectedRoute>
+                <ExecutiveDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Legacy Stage-4 BI deck (kept under a secondary path) */}
+          <Route
+            path="/reports/executive/bi"
+            element={
+              <ProtectedRoute>
                 <ExecutiveReportWorkspacePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/executive-report"
+            element={
+              <ProtectedRoute>
+                <Navigate to="/reports/executive" replace />
               </ProtectedRoute>
             }
           />
@@ -282,14 +311,6 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SalesCostingWorkspacePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/finance/executive-report"
-            element={
-              <ProtectedRoute>
-                <ExecutiveReportWorkspacePage />
               </ProtectedRoute>
             }
           />

@@ -1,15 +1,14 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, BarChart3, FileText, LayoutDashboard, Sparkles } from "lucide-react";
-import { TRADE_TRANSIT_ROUTES } from "../../contexts/TradeTransitRequestContext";
 
 const modules = [
   {
     icon: LayoutDashboard,
     title: "Executive Report Dashboard",
-    subtitle: "Stage 4 · Cross-filter BI · PDF export",
+    subtitle: "Materialized views · Financials · Stock · CRM",
     description:
-      "Interactive cost structure, revenue trajectory, and customer efficiency charts with product/customer cross-filtering and AI cognitive summaries.",
-    href: TRADE_TRANSIT_ROUTES.executiveReport,
+      "Canonical leadership dashboard: sales/transit financials, Addis & SEZ stock alerts, and CRM activity — served from fast materialized-view APIs.",
+    href: "/reports/executive",
     cta: "Open executive dashboard",
     accent: "from-violet-600 via-purple-500 to-fuchsia-500",
     accentHover: "group-hover:shadow-violet-500/40",

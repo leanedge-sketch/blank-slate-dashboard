@@ -23,6 +23,9 @@ from app.models.sales_pipeline import (
     SalesPipelineCreate,
     SalesPipelineUpdate,
     SalesPipelineListResponse,
+    SalesQuotation,
+    SalesQuotationCreate,
+    SalesQuotationListResponse,
     PipelineForecast,
     PipelineInsights,
     CURRENCIES,
@@ -43,6 +46,9 @@ from app.services.sales_pipeline_service import (
     get_pipeline_forecast,
     chat_with_pipeline,
     get_pipeline_versions,
+    list_sales_quotations,
+    create_sales_quotation,
+    accept_sales_quotation,
 )
 from app.dependencies import get_current_user
 
@@ -179,6 +185,56 @@ async def list_pipelines(
         return SalesPipelineListResponse(pipelines=pipelines, total=total)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching pipelines: {str(e)}")
+
+
+@router.get(
+    "/sales-pipeline/{pipeline_id}/quotations",
+    response_model=SalesQuotationListResponse,
+)
+async def list_pipeline_quotations(pipeline_id: str):
+    pipeline = get_sales_pipeline_by_id(pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Sales pipeline record not found")
+    try:
+        rows = list_sales_quotations(pipeline_id)
+        return SalesQuotationListResponse(quotations=rows, total=len(rows))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching quotations. Run migrations/006_sales_quotations.sql. {e}",
+        ) from e
+
+
+@router.post(
+    "/sales-pipeline/{pipeline_id}/quotations",
+    response_model=SalesQuotation,
+    status_code=201,
+)
+async def create_pipeline_quotation(pipeline_id: str, body: SalesQuotationCreate):
+    try:
+        return create_sales_quotation(
+            pipeline_id,
+            target_amount=body.target_amount,
+            currency=body.currency,
+            file_url=body.file_url,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating quotation: {e}") from e
+
+
+@router.post(
+    "/sales-pipeline/{pipeline_id}/quotations/{quotation_id}/accept",
+    response_model=SalesQuotation,
+)
+async def accept_pipeline_quotation(pipeline_id: str, quotation_id: str):
+    try:
+        return accept_sales_quotation(pipeline_id, quotation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error accepting quotation: {e}") from e
 
 
 @router.get("/sales-pipeline/{pipeline_id}", response_model=SalesPipeline)

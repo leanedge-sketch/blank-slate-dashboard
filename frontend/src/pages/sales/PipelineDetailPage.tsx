@@ -55,9 +55,12 @@ import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { PipelinePricingUpdateBanner } from "../../components/sales/PipelinePricingUpdateBanner";
 import { PipelineEditModal } from "../../components/sales/PipelineEditModal";
 import { StockIntegrationPanel } from "../../components/sales/StockIntegrationPanel";
+import { DealQuotationsTab } from "../../components/sales/DealQuotationsTab";
+import { TradeTransitSyncPanel } from "../../components/sales/TradeTransitSyncPanel";
 import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
+import { trackRecentRecord } from "../../hooks/useRecentlyAccessed";
 import {
   amountChangeReasonRequired,
   stageChangeReasonRequired,
@@ -126,6 +129,7 @@ export function PipelineDetailPage() {
   // Update Pipeline form state
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [dealTab, setDealTab] = useState<"overview" | "quotations">("overview");
   const [updateFormData, setUpdateFormData] = useState<{
     stage?: PipelineStage;
     amount?: number | null;
@@ -148,6 +152,18 @@ export function PipelineDetailPage() {
     () => pipelineVersions.find((v) => v.is_current_version) ?? selectedPipeline,
     [pipelineVersions, selectedPipeline],
   );
+
+  useEffect(() => {
+    if (!selectedPipeline?.id) return;
+    const customer = customers.find((c) => c.customer_id === selectedPipeline.customer_id);
+    trackRecentRecord({
+      id: selectedPipeline.id,
+      title: customer?.customer_name || "Sales deal",
+      subtitle: selectedPipeline.stage || "Pipeline",
+      module: "sales",
+      url: `/sales/pipeline/${selectedPipeline.id}`,
+    });
+  }, [selectedPipeline, customers]);
 
   useEffect(() => {
     api
@@ -861,6 +877,48 @@ export function PipelineDetailPage() {
           <StockIntegrationPanel
             pipelineId={pipelineId}
             catalogUuidId={currentPipeline.chemical_type_id}
+            customerId={currentPipeline.customer_id}
+          />
+        ) : null}
+
+        <div className="mb-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setDealTab("overview")}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
+              dealTab === "overview"
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => setDealTab("quotations")}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
+              dealTab === "quotations"
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            Quotations
+          </button>
+        </div>
+
+        {dealTab === "quotations" && pipelineId ? (
+          <div className="mb-8">
+            <DealQuotationsTab
+              pipelineId={pipelineId}
+              onAccepted={() => void loadPipelineDetails({ silent: true })}
+            />
+          </div>
+        ) : null}
+
+        {dealTab === "overview" && pipelineId && currentPipeline ? (
+          <TradeTransitSyncPanel
+            salesPipelineId={pipelineId}
+            chemicalTypeId={currentPipeline.chemical_type_id}
             customerId={currentPipeline.customer_id}
           />
         ) : null}

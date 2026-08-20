@@ -1167,6 +1167,7 @@ def ensure_quote_draft_pipeline(
     customer_id: Optional[str] = None,
     customer_name: Optional[str] = None,
     chemical_type_id: Optional[str] = None,
+    force_new: bool = False,
 ) -> Dict[str, Any]:
     """
     Bind a quote to a sales_pipeline deal: reuse an open deal when possible,
@@ -1188,18 +1189,29 @@ def ensure_quote_draft_pipeline(
     cid = str(customer.customer_id)
     chem = _resolved_catalog_product_ref(chemical_type_id)
 
-    deals = list_sales_pipelines(
-        limit=100,
-        offset=0,
-        customer_id=cid,
-        latest_per_deal=True,
-    )
-    open_deals = [d for d in deals if d.stage not in _CLOSED_DEAL_STAGES]
+    if not force_new:
+        deals = list_sales_pipelines(
+            limit=100,
+            offset=0,
+            customer_id=cid,
+            latest_per_deal=True,
+        )
+        open_deals = [d for d in deals if d.stage not in _CLOSED_DEAL_STAGES]
 
-    if chem:
+        if chem:
+            for pipeline in open_deals:
+                pipe_chem = _resolved_catalog_product_ref(pipeline.chemical_type_id)
+                if pipe_chem and pipe_chem == chem:
+                    return {
+                        "pipeline": pipeline,
+                        "created": False,
+                        "reused": True,
+                        "customer_id": cid,
+                    }
+
         for pipeline in open_deals:
-            pipe_chem = _resolved_catalog_product_ref(pipeline.chemical_type_id)
-            if pipe_chem and pipe_chem == chem:
+            meta = pipeline.metadata if isinstance(pipeline.metadata, dict) else {}
+            if meta.get("quotation") or meta.get("source") in ("crm_quote", "sales_quote"):
                 return {
                     "pipeline": pipeline,
                     "created": False,
@@ -1207,32 +1219,22 @@ def ensure_quote_draft_pipeline(
                     "customer_id": cid,
                 }
 
-    for pipeline in open_deals:
-        meta = pipeline.metadata if isinstance(pipeline.metadata, dict) else {}
-        if meta.get("quotation") or meta.get("source") in ("crm_quote", "sales_quote"):
+        for pipeline in open_deals:
+            if not pipeline.chemical_type_id and not pipeline.tds_id:
+                return {
+                    "pipeline": pipeline,
+                    "created": False,
+                    "reused": True,
+                    "customer_id": cid,
+                }
+
+        if open_deals:
             return {
-                "pipeline": pipeline,
+                "pipeline": open_deals[0],
                 "created": False,
                 "reused": True,
                 "customer_id": cid,
             }
-
-    for pipeline in open_deals:
-        if not pipeline.chemical_type_id and not pipeline.tds_id:
-            return {
-                "pipeline": pipeline,
-                "created": False,
-                "reused": True,
-                "customer_id": cid,
-            }
-
-    if open_deals:
-        return {
-            "pipeline": open_deals[0],
-            "created": False,
-            "reused": True,
-            "customer_id": cid,
-        }
 
     pipeline = create_sales_pipeline(
         _pipeline_create_body(
@@ -1273,12 +1275,26 @@ def persist_quotation_on_pipeline(
     now = datetime.utcnow().isoformat()
     quote.setdefault("created_at", now)
     quote["updated_at"] = now
+    from app.services.pms_service import freeze_quotation_product_prices
+
+    quote = freeze_quotation_product_prices(quote)
     meta["quotation"] = quote
     meta["quotation_created_at"] = meta.get("quotation_created_at") or quote["created_at"]
     meta["source"] = meta.get("source") or "crm_quote"
+    update_kwargs: Dict[str, Any] = {"metadata": meta}
+    first = (quote.get("products") or [{}])[0]
+    if first.get("pricing_record_id"):
+        update_kwargs["pricing_record_id"] = first["pricing_record_id"]
+    snap_price = first.get("snapshot_unit_price")
+    if snap_price is None:
+        snap_price = first.get("unit_price")
+    if snap_price is not None:
+        update_kwargs["snapshot_unit_price"] = snap_price
+        if pipeline.unit_price is None:
+            update_kwargs["unit_price"] = snap_price
     return update_sales_pipeline(
         str(pipeline.id),
-        SalesPipelineUpdate(metadata=meta),
+        SalesPipelineUpdate(**update_kwargs),
     )
 
 
@@ -1317,10 +1333,14 @@ def accept_quotation_on_pipeline(
         update["unit"] = unit
     if unit_price is not None:
         update["unit_price"] = unit_price
+        update.setdefault("snapshot_unit_price", unit_price)
     if currency in ("ETB", "KES", "USD", "EUR"):
         update["currency"] = currency
     if chem and not pipeline.chemical_type_id:
         update["chemical_type_id"] = chem
+    first = (quote.get("products") or [{}])[0]
+    if first.get("pricing_record_id") and not pipeline.pricing_record_id:
+        update["pricing_record_id"] = first["pricing_record_id"]
 
     return update_sales_pipeline(str(pipeline.id), SalesPipelineUpdate(**update))
 

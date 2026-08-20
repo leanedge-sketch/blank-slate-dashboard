@@ -16,7 +16,7 @@ from collections import defaultdict
 
 from supabase import Client
 
-from app.database.connection import get_supabase_client
+from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.models.stock import (
     Product,
     ProductCreate,
@@ -473,6 +473,66 @@ def get_stock_movement_by_id(movement_id: str) -> Optional[StockMovement]:
     return StockMovement(**response.data)
 
 
+def atomic_stock_transfer(
+    *,
+    product_id: str,
+    source_location: str,
+    dest_location: str,
+    quantity: float,
+    batch_id: Optional[str] = None,
+    expiry_date: Optional[date] = None,
+    notes: str = "Internal Transfer",
+) -> StockMovement:
+    """Warehouse-to-warehouse transfer as one Postgres transaction (paired ledger rows)."""
+    if quantity <= 0:
+        raise ValueError("Transfer quantity must be greater than 0")
+    src = (source_location or "").strip().lower()
+    dst = (dest_location or "").strip().lower()
+    if src == dst:
+        raise ValueError("Source and destination warehouses must differ")
+    if src not in LOCATIONS or dst not in LOCATIONS:
+        raise ValueError("Unknown warehouse location")
+
+    product = get_product_by_id(product_id)
+    if not product:
+        raise ValueError("Product not found")
+
+    try:
+        supabase: Client = get_supabase_service_client()
+        supabase.rpc(
+            "atomic_stock_transfer",
+            {
+                "p_product_id": product_id,
+                "p_source_location": src,
+                "p_dest_location": dst,
+                "p_quantity": quantity,
+                "p_batch_id": batch_id,
+                "p_expiry_date": expiry_date.isoformat() if expiry_date else None,
+                "p_notes": notes or "Internal Transfer",
+            },
+        ).execute()
+    except Exception as exc:
+        raise RuntimeError(
+            "Atomic transfer RPC failed. Run migrations/007_stock_management.sql. "
+            f"{exc}"
+        ) from exc
+
+    _recalculate_balances(product_id, src)
+    _recalculate_balances(product_id, dst)
+    movements = list_stock_movements(product_id=product_id, location=src, limit=20)
+    for movement in movements:
+        if (
+            movement.transaction_type == "Inter-company transfer"
+            and (movement.transfer_to_location or "").lower() == dst
+            and abs(float(movement.inter_company_transfer_kg or 0) - float(quantity)) < 1e-9
+        ):
+            return movement
+    found = get_stock_movement_by_id(str(movements[0].id)) if movements else None
+    if not found:
+        raise RuntimeError("Transfer wrote no source movement")
+    return found
+
+
 def create_stock_movement(body: StockMovementCreate) -> StockMovement:
     """
     Create a new stock movement with business logic validation.
@@ -490,6 +550,22 @@ def create_stock_movement(body: StockMovementCreate) -> StockMovement:
     product = get_product_by_id(str(body.product_id))
     if not product:
         raise ValueError("Product not found")
+
+    if (
+        body.transaction_type == "Inter-company transfer"
+        and body.transfer_to_location
+        and body.inter_company_transfer_kg
+        and body.inter_company_transfer_kg > 0
+    ):
+        return atomic_stock_transfer(
+            product_id=str(body.product_id),
+            source_location=body.location,
+            dest_location=body.transfer_to_location,
+            quantity=float(body.inter_company_transfer_kg),
+            batch_id=body.batch_id,
+            expiry_date=body.expiry_date,
+            notes=(body.remark or body.reference or "Internal Transfer"),
+        )
     
     # Validate transaction type for location
     if body.location == "nairobi_partner" and body.transaction_type != "Stock Availability":
@@ -910,6 +986,10 @@ def get_stock_availability_summary(
             sez_kenya_available=product.available_stock_sez_kenya,
             nairobi_partner_available=product.available_stock_nairobi_partner,
             total_available=product.total_available_stock,
+            minimum_stock_threshold=float(product.minimum_stock_threshold or 0),
+            is_low_stock=float(product.total_available_stock or 0)
+            <= float(product.minimum_stock_threshold or 0)
+            and float(product.minimum_stock_threshold or 0) > 0,
         )
         summaries.append(summary)
     
