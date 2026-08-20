@@ -14,14 +14,14 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   getLoopASupabase,
   isLoopASupabaseConfigured,
-} from "../lib/loopASupabase";
-import { getApiOrigin } from "../lib/api-base";
+} from "../../lib/loopASupabase";
+import { getApiOrigin } from "../../lib/api-base";
 import {
   formatRfqStatusLabel,
   normalizeRfqStatus,
   type RfqCartItem,
   type RfqRow,
-} from "../types/rfq";
+} from "../../types/rfq";
 
 const STATUS_ACTIONS: { status: string; label: string }[] = [
   { status: "under_review", label: "Mark Under Review" },

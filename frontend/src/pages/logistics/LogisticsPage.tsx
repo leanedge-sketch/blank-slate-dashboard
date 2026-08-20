@@ -10,13 +10,13 @@ import {
 import {
   getLoopASupabase,
   isLoopASupabaseConfigured,
-} from "../lib/loopASupabase";
-import { getApiOrigin } from "../lib/api-base";
+} from "../../lib/loopASupabase";
+import { getApiOrigin } from "../../lib/api-base";
 import {
   formatPoId,
   LOGISTICS_STAGES,
   type PurchaseOrderRow,
-} from "../types/purchaseOrder";
+} from "../../types/purchaseOrder";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";

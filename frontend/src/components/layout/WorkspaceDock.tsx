@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useCanView } from "../hooks/usePermissions";
+import { useCanView } from "../../hooks/usePermissions";
 
 const dockItems: {
   label: string;
