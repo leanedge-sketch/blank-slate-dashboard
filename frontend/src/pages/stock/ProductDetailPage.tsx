@@ -25,6 +25,7 @@ import {
   StockMovementCreate,
 } from "../../services/api";
 import { trackRecentRecord } from "../../hooks/useRecentlyAccessed";
+import { getOrGenerateProductMetadata } from "../../lib/services/gemini";
 
 export function ProductDetailPage() {
   const { productId } = useParams<{ productId: string }>();
@@ -37,6 +38,11 @@ export function ProductDetailPage() {
   const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
   const [activeLocationTab, setActiveLocationTab] = useState<string>("addis_ababa");
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<string>("all");
+  const [metadata, setMetadata] = useState<{
+    seo_description: string | null;
+    technical_summary: string | null;
+    cached: boolean;
+  } | null>(null);
   const [formData, setFormData] = useState<StockMovementCreate>({
     product_id: productId || "",
     tds_id: null,
@@ -95,6 +101,23 @@ export function ProductDetailPage() {
 
       setProduct(productData);
       setMovements(sortedMovements);
+      getOrGenerateProductMetadata(productData.id, {
+        chemical: productData.chemical,
+        chemical_type: productData.chemical_type,
+        brand: productData.brand,
+        packaging: productData.packaging,
+        use_case: productData.use_case,
+      })
+        .then((meta) => {
+          if (meta.seo_description || meta.technical_summary) {
+            setMetadata({
+              seo_description: meta.seo_description,
+              technical_summary: meta.technical_summary,
+              cached: meta.cached,
+            });
+          }
+        })
+        .catch(() => undefined);
       trackRecentRecord({
         id: productData.id,
         title: productData.chemical,
@@ -302,6 +325,19 @@ export function ProductDetailPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {metadata && (metadata.seo_description || metadata.technical_summary) ? (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              Product copy {metadata.cached ? "(cached)" : "(generated once)"}
+            </p>
+            {metadata.seo_description ? (
+              <p className="text-slate-800 mb-3">{metadata.seo_description}</p>
+            ) : null}
+            {metadata.technical_summary ? (
+              <p className="text-sm text-slate-600">{metadata.technical_summary}</p>
+            ) : null}
+          </div>
+        ) : null}
         {/* Product Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

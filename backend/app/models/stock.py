@@ -38,6 +38,8 @@ class ProductBase(BaseModel):
     catalog_uuid_id: Optional[UUID] = Field(None, description="Link to PMS catalog uuid_id")
     tds_link: Optional[str] = None
     minimum_stock_threshold: float = Field(default=0.0, ge=0)
+    seo_description: Optional[str] = None
+    technical_summary: Optional[str] = None
 
 
 class ProductCreate(ProductBase):

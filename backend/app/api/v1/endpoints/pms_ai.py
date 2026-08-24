@@ -122,3 +122,29 @@ async def predict_csv_mapping(
 
 
 # Mapping uses task_type="extraction" → TaskComplexity.HIGH_VOLUME_FAST (OpenAI gpt-4o-mini failover).
+
+
+class ProductMetadataRequest(BaseModel):
+    raw_product_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProductMetadataResponse(BaseModel):
+    seo_description: Optional[str] = None
+    technical_summary: Optional[str] = None
+    cached: bool = False
+    generated: bool = False
+    error: Optional[str] = None
+
+
+@router.post("/products/{product_id}/metadata", response_model=ProductMetadataResponse)
+async def get_or_generate_product_metadata_endpoint(
+    product_id: str,
+    body: ProductMetadataRequest | None = None,
+    _user: dict = Depends(get_current_user),
+):
+    """Cache-first Gemini Flash SEO/technical copy. Never crashes the caller."""
+    from app.services.product_metadata_service import get_or_generate_product_metadata
+
+    payload = (body.raw_product_data if body else {}) or {}
+    result = await get_or_generate_product_metadata(product_id, payload)
+    return ProductMetadataResponse(**result)

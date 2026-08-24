@@ -1777,6 +1777,8 @@ export interface Product {
   catalog_uuid_id?: string | null;
   tds_link?: string | null;
   minimum_stock_threshold?: number | null;
+  seo_description?: string | null;
+  technical_summary?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   total_stock_addis_ababa: number;
