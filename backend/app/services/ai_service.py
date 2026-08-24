@@ -190,23 +190,27 @@ def _configure_gemini_legacy() -> None:
 
 
 def _extract_gemini_text(response: Any) -> str:
-    text = getattr(response, "text", None)
-    if text and str(text).strip():
-        return str(text).strip()
+    """Read visible text without using response.text first (raises on thought-only parts)."""
+    chunks: List[str] = []
     candidates = getattr(response, "candidates", None) or []
     for candidate in candidates:
         content = getattr(candidate, "content", None)
         parts = getattr(content, "parts", None) if content else None
         if not parts:
             continue
-        chunks = []
         for part in parts:
+            if getattr(part, "thought", False):
+                continue
             part_text = getattr(part, "text", None)
             if part_text:
                 chunks.append(str(part_text))
-        if chunks:
-            return "\n".join(chunks).strip()
-    return ""
+    if chunks:
+        return "\n".join(chunks).strip()
+    try:
+        text = response.text
+    except Exception:
+        return ""
+    return str(text).strip() if text else ""
 
 
 def _usage_from_gemini(response: Any) -> Tuple[int, int]:
@@ -443,14 +447,6 @@ class AIService:
                     config_kwargs["max_output_tokens"] = max_tokens
                 if system_instruction:
                     config_kwargs["system_instruction"] = system_instruction
-                # Paid Pro models spend a long time in "thinking"; cap so ICP finishes in-window.
-                if "pro" in gemini_model.lower():
-                    try:
-                        config_kwargs["thinking_config"] = types.ThinkingConfig(
-                            thinking_budget=2048
-                        )
-                    except Exception:
-                        pass
                 response = self._google_genai_client.models.generate_content(
                     model=gemini_model,
                     contents=prompt,
@@ -458,7 +454,14 @@ class AIService:
                 )
                 text = _extract_gemini_text(response)
                 inp, out = _usage_from_gemini(response)
-                return text, inp, out
+                if (text or "").strip():
+                    return text, inp, out
+                if max_tokens is not None:
+                    logger.info("Gemini returned empty text with max_tokens=%s; retrying uncapped", max_tokens)
+                    return self._gemini_generate_sync(
+                        prompt, system_instruction, None, json_mode, gemini_model
+                    )
+                logger.info("google.genai returned no visible text; trying generativeai")
             except Exception as exc:
                 logger.info("google.genai generate_content failed; trying generativeai: %s", exc)
 
@@ -677,7 +680,16 @@ class AIService:
             logger.warning("Gemini stream failed (%s); failing over to OpenAI", exc)
 
         try:
-            await ai_config.send_telegram_alert(FAILOVER_TELEGRAM_MESSAGE)
+            is_timeout = isinstance(gemini_error, asyncio.TimeoutError)
+            await ai_config.send_telegram_alert(
+                FAILOVER_TELEGRAM_MESSAGE
+                if is_timeout
+                else (
+                    "⚠️ AI Failover triggered. Gemini stream error "
+                    f"({type(gemini_error).__name__}: {str(gemini_error)[:180]}). "
+                    "Falling back to OpenAI."
+                )
+            )
         except Exception:
             pass
 
@@ -810,7 +822,55 @@ class AIService:
             gemini_error = exc
             logger.warning("Gemini generation failed (%s); failing over to OpenAI", exc)
 
-        await ai_config.send_telegram_alert(FAILOVER_TELEGRAM_MESSAGE)
+        flash_model = "gemini-2.5-flash"
+        try:
+            flash_content, inp, out = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._gemini_generate_sync,
+                    prompt,
+                    system_instruction,
+                    None,
+                    json_mode,
+                    flash_model,
+                ),
+                timeout=25.0,
+            )
+            if (flash_content or "").strip():
+                inp = inp or _estimate_tokens(system_instruction + prompt)
+                out = out or _estimate_tokens(flash_content)
+                cost = ai_config.estimate_cost_usd(flash_model, inp, out)
+                latency = int((time.perf_counter() - started) * 1000)
+                await self._log_usage(
+                    provider="gemini",
+                    model=flash_model,
+                    task_type=task_type,
+                    input_tokens=inp,
+                    output_tokens=out,
+                    estimated_cost_usd=cost,
+                    status="success",
+                    latency_ms=latency,
+                )
+                await self._bump_spend_and_alert(cost, flags)
+                return {
+                    "content": flash_content,
+                    "provider_used": "gemini",
+                    "is_fallback": False,
+                    "model_used": flash_model,
+                }
+        except Exception as flash_exc:
+            logger.warning("Gemini Flash retry failed: %s", flash_exc)
+
+        is_timeout = isinstance(gemini_error, asyncio.TimeoutError)
+        alert = (
+            FAILOVER_TELEGRAM_MESSAGE
+            if is_timeout
+            else (
+                "⚠️ AI Failover triggered. Gemini error "
+                f"({type(gemini_error).__name__}: {str(gemini_error)[:180]}). "
+                "Falling back to OpenAI."
+            )
+        )
+        await ai_config.send_telegram_alert(alert)
 
         last_openai_error: Optional[BaseException] = None
         models_to_try = [openai_model]
