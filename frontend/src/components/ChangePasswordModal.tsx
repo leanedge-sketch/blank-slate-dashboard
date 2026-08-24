@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Eye, EyeOff, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import {
   confirmPasswordChange,
@@ -10,6 +10,49 @@ type Step = "form" | "verify" | "done";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
+}
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+  minLength,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  minLength?: number;
+  required?: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="modal-field">
+      <span>{label}</span>
+      <div className="modal-password-wrap">
+        <input
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          minLength={minLength}
+          required={required}
+        />
+        <button
+          type="button"
+          className="modal-password-toggle"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+          title={visible ? "Hide password" : "Show password"}
+        >
+          {visible ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+        </button>
+      </div>
+    </label>
+  );
 }
 
 export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
@@ -195,38 +238,29 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
               We will email a verification code to your account. After you enter
               the code, your new password is saved and you can sign in with it.
             </p>
-            <label className="modal-field">
-              <span>Current password</span>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            <label className="modal-field">
-              <span>New password</span>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                autoComplete="new-password"
-                minLength={8}
-                required
-              />
-            </label>
-            <label className="modal-field">
-              <span>Confirm new password</span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                minLength={8}
-                required
-              />
-            </label>
+            <PasswordField
+              label="Current password"
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              autoComplete="current-password"
+              required
+            />
+            <PasswordField
+              label="New password"
+              value={newPassword}
+              onChange={setNewPassword}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+            <PasswordField
+              label="Confirm new password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
             {error && <p className="modal-error">{error}</p>}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={onClose}>

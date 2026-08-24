@@ -104,12 +104,15 @@ export function SetPasswordPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  title={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-lg p-2 text-slate-300 hover:bg-slate-700/60 hover:text-white transition-colors"
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="w-5 h-5" aria-hidden />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="w-5 h-5" aria-hidden />
                   )}
                 </button>
               </div>
@@ -138,12 +141,15 @@ export function SetPasswordPage() {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showConfirmPassword}
+                  title={showConfirmPassword ? "Hide password" : "Show password"}
+                  className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-lg p-2 text-slate-300 hover:bg-slate-700/60 hover:text-white transition-colors"
                 >
                   {showConfirmPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="w-5 h-5" aria-hidden />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="w-5 h-5" aria-hidden />
                   )}
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, FileText, LayoutDashboard, Sparkles } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, LayoutDashboard, LineChart, Sparkles } from "lucide-react";
 
 const modules = [
   {
@@ -12,6 +12,17 @@ const modules = [
     cta: "Open executive dashboard",
     accent: "from-violet-600 via-purple-500 to-fuchsia-500",
     accentHover: "group-hover:shadow-violet-500/40",
+  },
+  {
+    icon: LineChart,
+    title: "Executive BI & Charts",
+    subtitle: "Revenue · Margin · FX · Product & customer decks",
+    description:
+      "Full procurement and import-finance analysis: revenue/margin trends, cost structure, FX spread, product and customer ledgers, AI summary, and PDF export.",
+    href: "/reports/executive/bi",
+    cta: "Open BI & charts",
+    accent: "from-amber-600 via-orange-500 to-rose-500",
+    accentHover: "group-hover:shadow-amber-500/40",
   },
   {
     icon: FileText,
