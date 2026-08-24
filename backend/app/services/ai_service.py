@@ -5,7 +5,7 @@ AI Service — Gemini primary, OpenAI failover, RAG helpers
 All generative chat flows through AIService.generate_text:
 
   1. emergency_ai_killswitch (app_settings)
-  2. Google Gemini (GEMINI_CHAT_MODEL, default gemini-2.5-flash)
+  2. Google Gemini (GEMINI_CHAT_MODEL, default gemini-3.1-pro-preview)
   3. On timeout / 504 / 429 / API error → OpenAI (MODEL_CHOICE / gpt-4o, then gpt-4o-mini)
 
 Embeddings remain OpenAI-only (ai_embed / gemini_embed).
@@ -47,7 +47,7 @@ EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
 PRIMARY_OPENAI_MODEL = "gpt-4o"
 FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
 
 FAILOVER_TELEGRAM_MESSAGE = (
     "⚠️ AI Failover triggered. Gemini timed out. Falling back to OpenAI."
@@ -337,8 +337,9 @@ class AIService:
                 data.get("enable_ai_summaries"), True
             ),
             "enable_ai_icp": ai_config.setting_as_bool(data.get("enable_ai_icp"), True),
-            "monthly_budget_cap_usd": ai_config.setting_as_float(
-                data.get("monthly_budget_cap_usd"), 50.0
+            "monthly_budget_cap_usd": (
+                float(getattr(settings, "GEMINI_MONTHLY_BUDGET_USD", 0) or 0)
+                or ai_config.setting_as_float(data.get("monthly_budget_cap_usd"), 50.0)
             ),
             "current_month_spend_usd": ai_config.setting_as_float(
                 data.get("current_month_spend_usd"), 0.0
@@ -826,7 +827,6 @@ class AIService:
                     status="fallback_success",
                     latency_ms=latency,
                 )
-                await self._bump_spend_and_alert(cost, flags)
                 return {
                     "content": content,
                     "provider_used": "openai",

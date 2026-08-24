@@ -26,7 +26,8 @@ GPT4O_MINI_OUTPUT_PER_M = 0.60
 GPT4O_INPUT_PER_M = 2.50
 GPT4O_OUTPUT_PER_M = 10.00
 
-BUDGET_WARN_RATIO = 0.85
+BUDGET_WARN_RATIO = 0.75
+BUDGET_HIGH_RATIO = 0.90
 BUDGET_CAP_RATIO = 1.0
 
 
@@ -39,7 +40,7 @@ def openai_api_key() -> str:
 
 
 def gemini_chat_model() -> str:
-    return (settings.GEMINI_CHAT_MODEL or "gemini-2.5-flash").strip()
+    return (settings.GEMINI_CHAT_MODEL or "gemini-3.1-pro-preview").strip()
 
 
 def openai_chat_model() -> str:
@@ -57,11 +58,12 @@ def telegram_bot_token() -> str:
 
 
 def telegram_chat_ids() -> list[str]:
-    return [
-        c.strip()
-        for c in (settings.TELEGRAM_CHAT_ID or "").split(",")
-        if c.strip()
-    ]
+    return [c.strip() for c in (settings.TELEGRAM_CHAT_ID or "").split(",") if c.strip()]
+
+
+# Gemini 3.1 Pro preview (paid) — USD per 1M tokens, prompts ≤ 200k
+GEMINI_PRO_INPUT_PER_M = 2.00
+GEMINI_PRO_OUTPUT_PER_M = 12.00
 
 
 def _rates_for_model(model: str) -> tuple[float, float]:
@@ -70,6 +72,8 @@ def _rates_for_model(model: str) -> tuple[float, float]:
         return GPT4O_MINI_INPUT_PER_M, GPT4O_MINI_OUTPUT_PER_M
     if "gpt-4o" in name:
         return GPT4O_INPUT_PER_M, GPT4O_OUTPUT_PER_M
+    if "gemini" in name and "pro" in name:
+        return GEMINI_PRO_INPUT_PER_M, GEMINI_PRO_OUTPUT_PER_M
     if "gemini" in name:
         return GEMINI_FLASH_INPUT_PER_M, GEMINI_FLASH_OUTPUT_PER_M
     return GEMINI_FLASH_INPUT_PER_M, GEMINI_FLASH_OUTPUT_PER_M
@@ -122,15 +126,16 @@ def setting_as_float(raw: Any, default: float = 0.0) -> float:
 
 async def send_telegram_alert(message: str) -> bool:
     """
-    POST to Telegram Bot API when NOTIFICATION_ENABLED is true.
+    POST to Telegram Bot API when a bot token and chat id are configured.
     Never raises; failures are logged.
     """
-    if not notifications_enabled():
-        return False
     token = telegram_bot_token()
     chat_ids = telegram_chat_ids()
     if not token or not chat_ids:
         logger.debug("Telegram alert skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
+        return False
+    if not notifications_enabled():
+        logger.debug("Telegram alert skipped: NOTIFICATION_ENABLED is false")
         return False
 
     url = TELEGRAM_SEND_URL.format(token=token)
@@ -163,14 +168,16 @@ async def send_telegram_alert(message: str) -> bool:
 
 
 def budget_alert_level(spend: float, cap: float) -> int:
-    """0 = under warn, 85 = at/over 85%, 100 = at/over cap."""
+    """0 = under warn, 75 = at/over 75%, 90 = at/over 90%, 100 = at/over 100%."""
     if cap <= 0:
         return 0
     ratio = spend / cap
     if ratio >= BUDGET_CAP_RATIO:
         return 100
+    if ratio >= BUDGET_HIGH_RATIO:
+        return 90
     if ratio >= BUDGET_WARN_RATIO:
-        return 85
+        return 75
     return 0
 
 
@@ -180,7 +187,7 @@ async def check_budget_and_alert(
     last_alert_level: int = 0,
 ) -> int:
     """
-    Fire Telegram alerts at 85% and 100% of monthly cap.
+    Fire Telegram alerts at 75% and 90% of the Gemini monthly cap.
     Returns the highest level that has been alerted (for persistence).
     """
     level = budget_alert_level(current_month_spend_usd, monthly_budget_cap_usd)
@@ -191,13 +198,19 @@ async def check_budget_and_alert(
     spend = current_month_spend_usd
     pct = (spend / cap * 100.0) if cap > 0 else 0.0
 
-    if level >= 100 and last_alert_level < 100:
+    if last_alert_level < 100 <= level:
         await send_telegram_alert(
-            f"🚨 AI monthly budget cap reached. Spend ${spend:.2f} / ${cap:.2f} "
-            f"({pct:.0f}%). New generative calls may still run until the killswitch is enabled."
+            f"🚨 Gemini monthly budget cap reached. Spend ${spend:.2f} / ${cap:.2f} "
+            f"({pct:.0f}%)."
         )
-    elif level >= 85 and last_alert_level < 85:
+    if last_alert_level < 75 <= level:
         await send_telegram_alert(
-            f"⚠️ AI spend at {pct:.0f}% of monthly cap (${spend:.2f} / ${cap:.2f})."
+            f"⚠️ Gemini spend at {pct:.0f}% of monthly budget "
+            f"(${spend:.2f} / ${cap:.2f}). Alert threshold: 75%."
+        )
+    if last_alert_level < 90 <= level:
+        await send_telegram_alert(
+            f"🚨 Gemini spend at {pct:.0f}% of monthly budget "
+            f"(${spend:.2f} / ${cap:.2f}). Alert threshold: 90%."
         )
     return max(last_alert_level, level)

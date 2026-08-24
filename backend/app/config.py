@@ -45,8 +45,10 @@ class Settings(BaseSettings):
     OPENAI_EMBED_DIM: int = 768  # Match existing pgvector(768) schema
     # Gemini — primary chat engine; OpenAI is failover (see app.services.ai_service)
     GEMINI_API_KEY: str = ""
-    GEMINI_CHAT_MODEL: str = "gemini-2.5-flash"
+    GEMINI_CHAT_MODEL: str = "gemini-3.1-pro-preview"
     GEMINI_EMBED_MODEL: str = "text-embedding-004"
+    # Estimated monthly Gemini spend cap used for Telegram 75%/90% alerts (USD)
+    GEMINI_MONTHLY_BUDGET_USD: float = 50.0
     GROQ_API_KEY: str = ""
     
     # Notifications — WhatsApp (default) and/or Telegram celebrations
