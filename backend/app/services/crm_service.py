@@ -711,7 +711,9 @@ Use the exact category names as keys (lowercase, underscores for spaces)."""
     
     # Step 8: Get AI response (Gemini primary, OpenAI failover in ai_service)
     try:
-        profile_text = gemini_chat(messages, max_tokens=8192, task_type="icp")
+        profile_text = gemini_chat(
+            messages, max_tokens=8192, task_type="icp", timeout_seconds=90.0
+        )
         if not profile_text or not profile_text.strip():
             raise RuntimeError("AI service returned empty response. Please check OPENAI_API_KEY configuration.")
     except Exception as e:

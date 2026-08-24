@@ -244,7 +244,7 @@ export async function buildCustomerProfile(
       {},
       {
         params: { quick: options?.quick ?? false },
-        timeout: 55_000,
+        timeout: 180_000,
       },
     );
     return res.data;

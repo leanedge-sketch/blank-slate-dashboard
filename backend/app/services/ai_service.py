@@ -249,7 +249,8 @@ def _complexity_for_task(task_type: str) -> TaskComplexity:
 def _default_timeout_for_task(task_type: str) -> float:
     kind = (task_type or "general").strip().lower()
     if kind in DEEP_REASONING_TASK_TYPES:
-        return 60.0 if kind == "executive_briefing" else 45.0
+        # Gemini 3.1 Pro thinks before it writes — 45s was aborting paid-tier calls.
+        return 90.0
     if kind in SUMMARY_TASK_TYPES or kind in ("extraction", "tds_extract"):
         return 25.0
     if kind == "login_support":
@@ -442,6 +443,14 @@ class AIService:
                     config_kwargs["max_output_tokens"] = max_tokens
                 if system_instruction:
                     config_kwargs["system_instruction"] = system_instruction
+                # Paid Pro models spend a long time in "thinking"; cap so ICP finishes in-window.
+                if "pro" in gemini_model.lower():
+                    try:
+                        config_kwargs["thinking_config"] = types.ThinkingConfig(
+                            thinking_budget=2048
+                        )
+                    except Exception:
+                        pass
                 response = self._google_genai_client.models.generate_content(
                     model=gemini_model,
                     contents=prompt,
@@ -718,7 +727,7 @@ class AIService:
         prompt: str,
         system_instruction: str = "",
         task_type: str = "general",
-        timeout_seconds: float = 4.0,
+        timeout_seconds: Optional[float] = None,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
         gemini_model: Optional[str] = None,
@@ -728,6 +737,8 @@ class AIService:
         """
         started = time.perf_counter()
         flags = await self.read_guardrails()
+        if timeout_seconds is None:
+            timeout_seconds = _default_timeout_for_task(task_type)
         active_gemini_model = (
             (gemini_model or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
         )
