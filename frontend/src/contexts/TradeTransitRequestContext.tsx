@@ -53,6 +53,8 @@ interface TradeTransitRequestContextValue {
   autosaveRestored: boolean;
   restoreAutosaveDraft: () => void;
   clearAutosave: () => void;
+  /** Wipe draft storage + in-memory wizard state (Discard button). */
+  discardAutosaveDraft: () => void;
   setAutosaveEnabled: (enabled: boolean) => void;
 }
 
@@ -162,13 +164,56 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
   const clearAutosave = useCallback(() => {
     clearTradeTransitAutosave();
     setAutosaveSavedAt(null);
-    setAutosaveRestored(false);
+    // Mark handled so the Resume/Discard prompt does not reopen.
+    setAutosaveRestored(true);
+  }, []);
+
+  const discardAutosaveDraft = useCallback(() => {
+    clearTradeTransitAutosave();
+    setAutosaveSavedAt(null);
+    setAutosaveRestored(true);
+
+    const exchangeRate = DEFAULT_TRADE_PARAMETERS.exchangeRate;
+    setParametersState(
+      normalizeTradeParameters({
+        customerId: "",
+        clientName: "",
+        contactPerson: "",
+        requestDate: "",
+        requestRef: "",
+        validityDate: createDefaultValidityDate(),
+        exchangeRate,
+      }),
+    );
+    const line = createBlankTradeTransitLine("", {
+      ...customsRatesFromConstants(DEFAULT_FINANCE_CONSTANTS),
+      capitalParallelRate: exchangeRate,
+    });
+    setRequest(createTradeTransitRequest("", [line]));
   }, []);
 
   useEffect(() => {
     if (!autosaveEnabled) return;
 
     const timer = window.setTimeout(() => {
+      const hasMeaningfulDraft =
+        Boolean(parameters.clientName?.trim()) ||
+        Boolean(parameters.requestRef?.trim()) ||
+        Boolean(parameters.contactPerson?.trim()) ||
+        request.lines.some(
+          (line) =>
+            Boolean(line.productName?.trim()) ||
+            Number(line.inputs?.supplierBasePriceUsd || 0) > 0,
+        );
+
+      // After Discard we reset to a blank session — do not immediately rewrite
+      // localStorage or the "unsaved draft" prompt will return.
+      if (!hasMeaningfulDraft) {
+        clearTradeTransitAutosave();
+        setAutosaveSavedAt(null);
+        return;
+      }
+
       const saved = saveTradeTransitAutosave({
         tradeParameters: parameters,
         productLines: request.lines,
@@ -204,6 +249,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       autosaveRestored,
       restoreAutosaveDraft,
       clearAutosave,
+      discardAutosaveDraft,
       setAutosaveEnabled: setAutosaveEnabledState,
     }),
     [
@@ -218,6 +264,7 @@ export function TradeTransitRequestProvider({ children }: { children: ReactNode 
       autosaveRestored,
       restoreAutosaveDraft,
       clearAutosave,
+      discardAutosaveDraft,
       setAutosaveEnabledState,
     ],
   );

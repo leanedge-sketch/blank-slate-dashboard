@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
+import time
 
 import httpx
 
@@ -17,6 +18,8 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 TELEGRAM_SEND_URL = "https://api.telegram.org/bot{token}/sendMessage"
+_FAILOVER_ALERT_COOLDOWN_SEC = 300.0
+_last_failover_alert_at = 0.0
 
 # USD per 1M tokens
 GEMINI_FLASH_INPUT_PER_M = 0.30
@@ -40,7 +43,11 @@ def openai_api_key() -> str:
 
 
 def gemini_chat_model() -> str:
-    return (settings.GEMINI_CHAT_MODEL or "gemini-3.1-pro-preview").strip()
+    return (settings.GEMINI_CHAT_MODEL or "gemini-2.5-flash").strip()
+
+
+def gemini_pro_model() -> str:
+    return (settings.GEMINI_PRO_MODEL or "gemini-3.1-pro-preview").strip()
 
 
 def openai_chat_model() -> str:
@@ -165,6 +172,17 @@ async def send_telegram_alert(message: str) -> bool:
     except Exception as exc:
         logger.warning("Telegram alert client error: %s", exc)
     return ok_any
+
+
+async def send_failover_telegram_alert(message: str) -> bool:
+    """Rate-limit failover spam so Telegram is not flooded on overload bursts."""
+    global _last_failover_alert_at
+    now = time.monotonic()
+    if now - _last_failover_alert_at < _FAILOVER_ALERT_COOLDOWN_SEC:
+        logger.info("Failover Telegram alert suppressed (cooldown)")
+        return False
+    _last_failover_alert_at = now
+    return await send_telegram_alert(message)
 
 
 def budget_alert_level(spend: float, cap: float) -> int:

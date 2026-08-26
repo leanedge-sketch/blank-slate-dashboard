@@ -43,9 +43,10 @@ class Settings(BaseSettings):
     MODEL_CHOICE: str = ""  # Legacy alias; maps to OPENAI_CHAT_MODEL when set
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBED_DIM: int = 768  # Match existing pgvector(768) schema
-    # Gemini — primary chat engine; OpenAI is failover (see app.services.ai_service)
+    # Gemini — Flash for everyday + ICP; Pro only for Monday executive briefings
     GEMINI_API_KEY: str = ""
-    GEMINI_CHAT_MODEL: str = "gemini-3.1-pro-preview"
+    GEMINI_CHAT_MODEL: str = "gemini-2.5-flash"
+    GEMINI_PRO_MODEL: str = "gemini-3.1-pro-preview"
     GEMINI_EMBED_MODEL: str = "text-embedding-004"
     # Estimated monthly Gemini spend cap used for Telegram 75%/90% alerts (USD)
     GEMINI_MONTHLY_BUDGET_USD: float = 50.0

@@ -5,8 +5,8 @@ AI Service — Gemini primary, OpenAI failover, RAG helpers
 All generative chat flows through AIService.generate_text:
 
   1. emergency_ai_killswitch (app_settings)
-  2. Google Gemini (GEMINI_CHAT_MODEL, default gemini-3.1-pro-preview)
-  3. On timeout / 504 / 429 / API error → OpenAI (MODEL_CHOICE / gpt-4o, then gpt-4o-mini)
+  2. Google Gemini (Flash for everyday + ICP; Pro for executive briefing)
+  3. On timeout / 504 / 429 / API error → Flash retry (if Pro was primary) → OpenAI failover
 
 Embeddings remain OpenAI-only (ai_embed / gemini_embed).
 
@@ -47,10 +47,12 @@ EMBED_DIM = settings.OPENAI_EMBED_DIM or 768
 
 PRIMARY_OPENAI_MODEL = "gpt-4o"
 FALLBACK_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
+FLASH_MODEL = "gemini-2.5-flash"
 
 FAILOVER_TELEGRAM_MESSAGE = (
-    "⚠️ AI Failover triggered. Gemini timed out. Falling back to OpenAI."
+    "⚠️ AI Failover triggered. Gemini timed out / overloaded. Falling back to OpenAI."
 )
 
 ICP_TASK_TYPES = frozenset({"icp", "profile", "crm_profile"})
@@ -91,6 +93,41 @@ def _gemini_api_key() -> str:
 
 def _gemini_model_name() -> str:
     return ai_config.gemini_chat_model() or DEFAULT_GEMINI_MODEL
+
+
+def _gemini_pro_model_name() -> str:
+    return ai_config.gemini_pro_model() or DEFAULT_GEMINI_PRO_MODEL
+
+
+def _gemini_model_for_task(task_type: str, explicit: Optional[str] = None) -> str:
+    """
+    Flash for everyday + ICP (must finish inside Vercel’s ~60s window).
+    Pro only for executive_briefing (Monday worker can wait longer).
+    """
+    if explicit and explicit.strip():
+        return explicit.strip()
+    kind = (task_type or "").strip().lower()
+    if kind == "executive_briefing":
+        return _gemini_pro_model_name()
+    return _gemini_model_name()
+
+
+def _is_gemini_overload_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "429",
+            "resource_exhausted",
+            "quota",
+            "rate limit",
+            "rate_limit",
+            "overload",
+            "unavailable",
+            "503",
+            "high demand",
+        )
+    )
 
 
 def _get_openai_client() -> OpenAI:
@@ -252,14 +289,17 @@ def _complexity_for_task(task_type: str) -> TaskComplexity:
 
 def _default_timeout_for_task(task_type: str) -> float:
     kind = (task_type or "general").strip().lower()
-    if kind in DEEP_REASONING_TASK_TYPES:
-        # Gemini 3.1 Pro thinks before it writes — 45s was aborting paid-tier calls.
+    if kind == "executive_briefing":
+        # Worker / long-running path — Pro may think for a while.
         return 90.0
+    if kind in ICP_TASK_TYPES:
+        # Flash ICP must finish with headroom under Vercel Hobby (~60s).
+        return 40.0
     if kind in SUMMARY_TASK_TYPES or kind in ("extraction", "tds_extract"):
         return 25.0
     if kind == "login_support":
         return 8.0
-    return 12.0
+    return 15.0
 
 
 def _run_coro_sync(coro):
@@ -436,6 +476,38 @@ class AIService:
         model_name: Optional[str] = None,
     ) -> Tuple[str, int, int]:
         gemini_model = (model_name or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
+        last_error: Optional[BaseException] = None
+        # Keep retries short — sleeping on Pro burns the Vercel time budget.
+        max_attempts = 2 if "pro" in gemini_model.lower() else 3
+        for attempt in range(max_attempts):
+            try:
+                return self._gemini_generate_once(
+                    prompt, system_instruction, max_tokens, json_mode, gemini_model
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt < max_attempts - 1 and _is_gemini_overload_error(exc):
+                    delay = 0.8 * (attempt + 1)
+                    logger.warning(
+                        "Gemini overload (%s); retry %s in %.1fs",
+                        exc,
+                        attempt + 1,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise
+        raise last_error or AIServiceError("Gemini generation failed")
+
+    def _gemini_generate_once(
+        self,
+        prompt: str,
+        system_instruction: str,
+        max_tokens: Optional[int],
+        json_mode: bool = False,
+        model_name: Optional[str] = None,
+    ) -> Tuple[str, int, int]:
+        gemini_model = (model_name or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
         if self._google_genai_client is not None:
             try:
                 from google.genai import types
@@ -447,6 +519,14 @@ class AIService:
                     config_kwargs["max_output_tokens"] = max_tokens
                 if system_instruction:
                     config_kwargs["system_instruction"] = system_instruction
+                # Cap Pro thinking so briefings don't burn the whole output budget.
+                if "pro" in gemini_model.lower():
+                    try:
+                        config_kwargs["thinking_config"] = types.ThinkingConfig(
+                            thinking_budget=512
+                        )
+                    except Exception:
+                        pass
                 response = self._google_genai_client.models.generate_content(
                     model=gemini_model,
                     contents=prompt,
@@ -458,11 +538,13 @@ class AIService:
                     return text, inp, out
                 if max_tokens is not None:
                     logger.info("Gemini returned empty text with max_tokens=%s; retrying uncapped", max_tokens)
-                    return self._gemini_generate_sync(
+                    return self._gemini_generate_once(
                         prompt, system_instruction, None, json_mode, gemini_model
                     )
                 logger.info("google.genai returned no visible text; trying generativeai")
             except Exception as exc:
+                if _is_gemini_overload_error(exc):
+                    raise
                 logger.info("google.genai generate_content failed; trying generativeai: %s", exc)
 
         import google.generativeai as genai
@@ -681,9 +763,10 @@ class AIService:
 
         try:
             is_timeout = isinstance(gemini_error, asyncio.TimeoutError)
-            await ai_config.send_telegram_alert(
+            is_overload = gemini_error is not None and _is_gemini_overload_error(gemini_error)
+            await ai_config.send_failover_telegram_alert(
                 FAILOVER_TELEGRAM_MESSAGE
-                if is_timeout
+                if is_timeout or is_overload
                 else (
                     "⚠️ AI Failover triggered. Gemini stream error "
                     f"({type(gemini_error).__name__}: {str(gemini_error)[:180]}). "
@@ -751,9 +834,7 @@ class AIService:
         flags = await self.read_guardrails()
         if timeout_seconds is None:
             timeout_seconds = _default_timeout_for_task(task_type)
-        active_gemini_model = (
-            (gemini_model or self.default_gemini_model or DEFAULT_GEMINI_MODEL).strip()
-        )
+        active_gemini_model = _gemini_model_for_task(task_type, gemini_model)
 
         if flags.get("emergency_ai_killswitch"):
             latency = int((time.perf_counter() - started) * 1000)
@@ -822,55 +903,60 @@ class AIService:
             gemini_error = exc
             logger.warning("Gemini generation failed (%s); failing over to OpenAI", exc)
 
-        flash_model = "gemini-2.5-flash"
-        try:
-            flash_content, inp, out = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self._gemini_generate_sync,
-                    prompt,
-                    system_instruction,
-                    None,
-                    json_mode,
-                    flash_model,
-                ),
-                timeout=25.0,
-            )
-            if (flash_content or "").strip():
-                inp = inp or _estimate_tokens(system_instruction + prompt)
-                out = out or _estimate_tokens(flash_content)
-                cost = ai_config.estimate_cost_usd(flash_model, inp, out)
-                latency = int((time.perf_counter() - started) * 1000)
-                await self._log_usage(
-                    provider="gemini",
-                    model=flash_model,
-                    task_type=task_type,
-                    input_tokens=inp,
-                    output_tokens=out,
-                    estimated_cost_usd=cost,
-                    status="success",
-                    latency_ms=latency,
+        flash_model = FLASH_MODEL
+        # Skip Flash retry if we already used Flash as the primary model.
+        if "flash" not in (active_gemini_model or "").lower():
+            elapsed = time.perf_counter() - started
+            # Leave a few seconds for OpenAI + response under a ~60s serverless cap.
+            flash_timeout = max(8.0, min(22.0, 54.0 - elapsed))
+            try:
+                flash_content, inp, out = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._gemini_generate_sync,
+                        prompt,
+                        system_instruction,
+                        None,
+                        json_mode,
+                        flash_model,
+                    ),
+                    timeout=flash_timeout,
                 )
-                await self._bump_spend_and_alert(cost, flags)
-                return {
-                    "content": flash_content,
-                    "provider_used": "gemini",
-                    "is_fallback": False,
-                    "model_used": flash_model,
-                }
-        except Exception as flash_exc:
-            logger.warning("Gemini Flash retry failed: %s", flash_exc)
+                if (flash_content or "").strip():
+                    inp = inp or _estimate_tokens(system_instruction + prompt)
+                    out = out or _estimate_tokens(flash_content)
+                    cost = ai_config.estimate_cost_usd(flash_model, inp, out)
+                    latency = int((time.perf_counter() - started) * 1000)
+                    await self._log_usage(
+                        provider="gemini",
+                        model=flash_model,
+                        task_type=task_type,
+                        input_tokens=inp,
+                        output_tokens=out,
+                        estimated_cost_usd=cost,
+                        status="success",
+                        latency_ms=latency,
+                    )
+                    await self._bump_spend_and_alert(cost, flags)
+                    return {
+                        "content": flash_content,
+                        "provider_used": "gemini",
+                        "is_fallback": False,
+                        "model_used": flash_model,
+                    }
+            except Exception as flash_exc:
+                logger.warning("Gemini Flash retry failed: %s", flash_exc)
 
         is_timeout = isinstance(gemini_error, asyncio.TimeoutError)
-        alert = (
-            FAILOVER_TELEGRAM_MESSAGE
-            if is_timeout
-            else (
+        is_overload = gemini_error is not None and _is_gemini_overload_error(gemini_error)
+        if is_timeout or is_overload:
+            alert = FAILOVER_TELEGRAM_MESSAGE
+        else:
+            alert = (
                 "⚠️ AI Failover triggered. Gemini error "
                 f"({type(gemini_error).__name__}: {str(gemini_error)[:180]}). "
                 "Falling back to OpenAI."
             )
-        )
-        await ai_config.send_telegram_alert(alert)
+        await ai_config.send_failover_telegram_alert(alert)
 
         last_openai_error: Optional[BaseException] = None
         models_to_try = [openai_model]

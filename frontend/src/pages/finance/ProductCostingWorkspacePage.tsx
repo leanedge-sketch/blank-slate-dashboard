@@ -30,7 +30,7 @@ export function ProductCostingWorkspacePage() {
     autosaveSavedAt,
     autosaveRestored,
     restoreAutosaveDraft,
-    clearAutosave,
+    discardAutosaveDraft,
     setAutosaveEnabled,
   } = useTradeTransitRequest();
 
@@ -124,7 +124,7 @@ export function ProductCostingWorkspacePage() {
               <button
                 type="button"
                 onClick={() => {
-                  clearAutosave();
+                  discardAutosaveDraft();
                   setDraftPromptOpen(false);
                   setAutosaveEnabled(true);
                 }}
