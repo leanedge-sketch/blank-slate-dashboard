@@ -54,7 +54,22 @@ from app.services.profile_research_service import (
 )
 from app.services.telegram_service import notify_interaction_saved
 
-# Sales stage definitions (Brian Tracy 7-stage process)
+# CRM chat context limits — large histories blow Vercel timeouts and trigger failovers.
+CRM_CHAT_HISTORY_ROWS = 18
+CRM_CHAT_TEXT_MAX_CHARS = 500
+
+
+def _plain_crm_text(text: str, max_len: int = CRM_CHAT_TEXT_MAX_CHARS) -> str:
+    """Strip TipTap/HTML markup and cap length for AI prompts."""
+    if not text:
+        return ""
+    plain = re.sub(r"<[^>]+>", " ", str(text))
+    plain = re.sub(r"\s+", " ", plain).strip()
+    if len(plain) > max_len:
+        return plain[:max_len] + "…"
+    return plain
+
+
 SALES_STAGES = {
     "1": "Prospecting",
     "2": "Rapport",
@@ -1388,7 +1403,7 @@ def create_interaction(
     try:
         from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
 
-        pipeline_id = sync_interaction_to_sales_pipeline(created, use_ai=True)
+        pipeline_id = sync_interaction_to_sales_pipeline(created, use_ai=False)
         if pipeline_id and not created.pipeline_id:
             linked = get_interaction_by_id(str(created.id))
             if linked:
@@ -1565,7 +1580,7 @@ def update_interaction(
             from app.services.pipeline_crm_sync import sync_interaction_to_sales_pipeline
 
             pipeline_id = sync_interaction_to_sales_pipeline(
-                updated, use_ai=True, append_snapshot=True
+                updated, use_ai=False, append_snapshot=True
             )
             if pipeline_id and str(updated.pipeline_id or "") != str(pipeline_id):
                 refreshed = get_interaction_by_id(interaction_id)
@@ -1975,15 +1990,15 @@ def chat_with_customer(
 
     # 2) Fetch recent interactions to give the AI richer CRM context
     recent_interactions, _, _, _, _ = merge_customer_interaction_history(
-        customer_id, max_rows=100
+        customer_id, max_rows=CRM_CHAT_HISTORY_ROWS
     )
     # Oldest first in the prompt so the story reads naturally
     recent_interactions = list(reversed(recent_interactions))
 
     history_lines: list[str] = []
     for i, it in enumerate(recent_interactions, start=1):
-        user_part = (it.input_text or "").strip()
-        ai_part = (it.ai_response or "").strip()
+        user_part = _plain_crm_text(it.input_text or "")
+        ai_part = _plain_crm_text(it.ai_response or "")
         if not user_part and not ai_part:
             continue
         history_lines.append(
@@ -2054,9 +2069,10 @@ User Memories:
 """
 
     # 3.5) Add file content to context if provided
-    user_content = input_text
+    plain_input = _plain_crm_text(input_text, max_len=4000)
+    user_content = plain_input
     if file_content:
-        user_content = f"{input_text}\n\n--- Attached File Content ---\n{file_content}"
+        user_content = f"{plain_input}\n\n--- Attached File Content ---\n{file_content[:8000]}"
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -2066,8 +2082,12 @@ User Memories:
         },
     ]
 
-    # 4) Call Gemini
-    ai_response = gemini_chat(messages, task_type="general")
+    # 4) Call Gemini (Flash, dedicated timeout — no extra AI on this request path)
+    ai_response = gemini_chat(
+        messages,
+        task_type="crm_chat",
+        max_tokens=2048,
+    )
 
     # 5) Store in interactions table
     resolved_tds_id = tds_id
@@ -2106,25 +2126,6 @@ User Memories:
         log_conversation_to_rag(combined_text, embedding=embedding, metadata=metadata)
     except Exception:
         # Don't block the main interaction flow if RAG logging fails
-        pass
-
-    # 7) Analyze and update sales stage
-    try:
-        # Build context for stage analysis
-        stage_context = f"{customer_context}\n\nRecent Interactions:\n{memories_str}"
-        new_stage = analyze_sales_stage(
-            new_interaction=f"Q: {input_text}\nA: {ai_response}",
-            past_context=stage_context,
-            current_stage=customer.sales_stage,
-        )
-        
-        # Update customer's sales stage if it changed
-        if new_stage != customer.sales_stage:
-            supabase.table("customers").update({"sales_stage": new_stage}).eq(
-                "customer_id", customer_id
-            ).execute()
-    except Exception:
-        # Don't block the main interaction flow if stage analysis fails
         pass
 
     return interaction

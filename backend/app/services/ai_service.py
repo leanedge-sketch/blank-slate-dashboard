@@ -56,6 +56,7 @@ FAILOVER_TELEGRAM_MESSAGE = (
 )
 
 ICP_TASK_TYPES = frozenset({"icp", "profile", "crm_profile"})
+CRM_CHAT_TASK_TYPES = frozenset({"crm_chat", "interaction", "crm_interaction"})
 # Deep-reasoning tasks (Gemini Pro preferred; OpenAI gpt-4o failover).
 DEEP_REASONING_TASK_TYPES = frozenset(
     {"icp", "profile", "crm_profile", "executive_briefing"}
@@ -295,6 +296,9 @@ def _default_timeout_for_task(task_type: str) -> float:
     if kind in ICP_TASK_TYPES:
         # Flash ICP must finish with headroom under Vercel Hobby (~60s).
         return 40.0
+    if kind in CRM_CHAT_TASK_TYPES:
+        # CRM interaction registration — one Gemini call, must fit under ~60s total.
+        return 45.0
     if kind in SUMMARY_TASK_TYPES or kind in ("extraction", "tds_extract"):
         return 25.0
     if kind == "login_support":

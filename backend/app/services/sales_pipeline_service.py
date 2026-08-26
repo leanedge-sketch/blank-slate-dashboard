@@ -1649,7 +1649,7 @@ Respond in JSON only:
         ]
         
         # Call Gemini AI
-        response_text = gemini_chat(messages, task_type="general")
+        response_text = gemini_chat(messages, task_type="extraction", max_tokens=512)
         
         # Parse JSON response
         # Try to extract JSON from the response (AI might add extra text)
@@ -2176,7 +2176,9 @@ Guidelines:
     
     # 9) Call Gemini
     try:
-        ai_response = gemini_chat(messages, task_type="general")
+        ai_response = gemini_chat(
+            messages, task_type="crm_chat", max_tokens=2048
+        )
     except GeminiError as e:
         raise ValueError(f"AI service error: {str(e)}")
     
