@@ -13,10 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
-from app.services.executive_briefing_service import (
-    generate_weekly_executive_briefing,
-    parse_executive_recipients,
-)
+from app.services.executive_briefing_service import run_scheduled_executive_briefing
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +23,10 @@ _scheduler: Optional[AsyncIOScheduler] = None
 async def generate_weekly_executive_briefing_job() -> Optional[dict[str, Any]]:
     """APScheduler entrypoint with full try/catch so failures never crash the API."""
     try:
-        if not settings.EXECUTIVE_BRIEFING_ENABLED:
-            logger.info("Executive briefing worker disabled (EXECUTIVE_BRIEFING_ENABLED=false)")
-            return None
-        if not parse_executive_recipients():
-            logger.warning(
-                "Skipping Monday executive briefing: no EXECUTIVE_TEAM_EMAIL / "
-                "EXECUTIVE_REPORT_RECIPIENTS configured"
-            )
-            return None
-        result = await generate_weekly_executive_briefing(send=True)
+        result = await run_scheduled_executive_briefing()
+        if result.get("skipped"):
+            logger.info("Monday executive briefing skipped: %s", result.get("reason"))
+            return result
         logger.info(
             "Monday executive briefing complete: emailed=%s provider=%s status=%s",
             result.get("emailed"),

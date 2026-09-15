@@ -1,10 +1,14 @@
 """Unified reporting API — CRM, PMS, stock, sales pipeline, and executive views."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.dependencies import get_current_user
 from app.models.executive_report import ExecutiveReportSnapshot
 from app.models.integrated_report import IntegratedReportSnapshot
-from app.services.executive_briefing_service import run_executive_briefing
+from app.services.executive_briefing_service import (
+    get_briefing_delivery_status,
+    run_executive_briefing,
+)
 from app.services.executive_report_service import get_executive_report_snapshot
 from app.services.integrated_report_service import get_integrated_report_snapshot
 
@@ -27,12 +31,25 @@ async def get_executive_summary_endpoint():
         )
 
 
+@router.get("/reports/executive/briefing/status")
+async def executive_briefing_status_endpoint(_user: dict = Depends(get_current_user)):
+    """Last weekly briefing delivery attempt (no recipient addresses)."""
+    try:
+        return get_briefing_delivery_status()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error loading executive briefing status: {str(e)}",
+        )
+
+
 @router.post("/reports/executive/briefing/run")
 async def run_executive_briefing_endpoint(
     send: bool = Query(
         True,
         description="If true, email leadership. If false, generate AI narrative + PDF only.",
     ),
+    _user: dict = Depends(get_current_user),
 ):
     """
     Manual trigger for Module 8 Phase 2 Monday briefing pipeline.

@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     EXECUTIVE_BRIEFING_ENABLED: bool = True
     EXECUTIVE_BRIEFING_TIMEZONE: str = "Africa/Nairobi"
     EXECUTIVE_BRIEFING_GEMINI_MODEL: str = "gemini-3.1-pro-preview"
+    # Vercel Cron sends Authorization: Bearer <CRON_SECRET>
+    CRON_SECRET: str = ""
 
     # Loop A / Loop B — shared public-site Supabase (leanchemweb rfqs + suppliers)
     NEXT_PUBLIC_SUPABASE_URL: str = ""

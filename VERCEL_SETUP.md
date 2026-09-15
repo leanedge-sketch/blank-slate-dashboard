@@ -37,6 +37,27 @@ Set in Vercel → **Settings → Environment Variables** (Production + Preview):
 
 Optional: `RESEND_API_KEY` + `EMAIL_FROM` (or SMTP_*) — sends a **confirmation** email after password change (not required for the change to work).
 
+### Weekly Monday executive briefing email
+
+Production is Vercel serverless, so in-process APScheduler **cannot** send Monday emails. A Vercel Cron job calls `GET /api/cron/executive-briefing` at **05:00 UTC Mondays** (08:00 Africa/Nairobi).
+
+Set these on Vercel (Production) or the weekly email will not send:
+
+| Name | Description |
+|------|-------------|
+| `EXECUTIVE_TEAM_EMAIL` | Comma-separated leadership inboxes |
+| `EMAIL_FROM` | Sender, e.g. `LeanChem Connect <you@gmail.com>` |
+| `SMTP_HOST` | `smtp.gmail.com` (or set `RESEND_API_KEY` instead) |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASSWORD` | SMTP app password |
+| `SMTP_USE_TLS` | `true` |
+| `CRON_SECRET` | Random 32+ character secret. Vercel sends it as `Authorization: Bearer …` |
+| `EXECUTIVE_BRIEFING_ENABLED` | `true` |
+| `EXECUTIVE_BRIEFING_TIMEZONE` | `Africa/Nairobi` |
+
+After deploy, confirm **Settings → Cron Jobs** shows `/api/cron/executive-briefing`. You can also send immediately from **Reports → Executive Summary → Email this week's briefing**.
+
 ### Frontend (build)
 
 | Name | Value |

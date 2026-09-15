@@ -25,6 +25,7 @@ from app.config import settings
 from app.database.connection import get_supabase_client, get_supabase_service_client
 
 # Import API routers
+from app.api.cron import router as cron_router
 from app.api.v1 import crm, pms, sales_pipeline, stock, auth, integrations, catalog, reports, sourcing, purchase_orders, ai
 from app.api.v1.endpoints import auth_support, home_summary, crm_ai, pms_ai, sales_ai
 # from app.api.v1 import common  # We'll add this later
@@ -92,23 +93,30 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Failed to start ProfileUpdateWorker: {e}")
 
+    # Vercel serverless cannot keep APScheduler alive. Weekly briefing is
+    # triggered by GET /api/cron/executive-briefing (see vercel.json crons).
+    on_vercel = os.getenv("VERCEL") == "1"
+
     home_scheduler = None
-    try:
-        from app.workers.home_summary_worker import start_home_summary_scheduler
-
-        home_scheduler = start_home_summary_scheduler()
-        print("APScheduler started: home_summary_refresh every 15 minutes")
-    except Exception as e:
-        print(f"Failed to start home summary APScheduler: {e}")
-
     exec_scheduler = None
-    try:
-        from app.workers.executive_report_worker import start_executive_briefing_scheduler
+    if on_vercel:
+        print("Vercel runtime: skipping in-process APSchedulers (use Vercel Cron)")
+    else:
+        try:
+            from app.workers.home_summary_worker import start_home_summary_scheduler
 
-        exec_scheduler = start_executive_briefing_scheduler()
-        print("APScheduler started: generate_weekly_executive_briefing (Mon 08:00 Africa/Nairobi)")
-    except Exception as e:
-        print(f"Failed to start executive briefing APScheduler: {e}")
+            home_scheduler = start_home_summary_scheduler()
+            print("APScheduler started: home_summary_refresh every 15 minutes")
+        except Exception as e:
+            print(f"Failed to start home summary APScheduler: {e}")
+
+        try:
+            from app.workers.executive_report_worker import start_executive_briefing_scheduler
+
+            exec_scheduler = start_executive_briefing_scheduler()
+            print("APScheduler started: generate_weekly_executive_briefing (Mon 08:00 Africa/Nairobi)")
+        except Exception as e:
+            print(f"Failed to start executive briefing APScheduler: {e}")
     
     yield  # Server runs here
     
@@ -286,6 +294,7 @@ app.include_router(auth_support.router, prefix="/api/v1/ai", tags=["AI Support"]
 app.include_router(integrations.router, prefix="/api/v1")
 
 app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
+app.include_router(cron_router, prefix="/api", tags=["Cron"])
 
 app.include_router(home_summary.router, prefix="/api/v1/home", tags=["Home"])
 

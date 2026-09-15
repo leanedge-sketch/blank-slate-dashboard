@@ -52,6 +52,12 @@
       "permanent": true
     }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/executive-briefing",
+      "schedule": "0 5 * * 1"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

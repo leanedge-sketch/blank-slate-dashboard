@@ -4,13 +4,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   Loader2,
+  Mail,
   Package,
   RefreshCw,
   Ship,
   Users,
 } from "lucide-react";
 import {
+  fetchExecutiveBriefingStatus,
   fetchExecutiveSummary,
+  runExecutiveBriefing,
+  type ExecutiveBriefingStatus,
   type ExecutiveReportSnapshot,
 } from "../../services/api";
 
@@ -24,6 +28,16 @@ function locationLabel(location: string): string {
   return location;
 }
 
+function formatWhen(value?: string | null): string {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 /**
  * Canonical Module 8 executive dashboard.
  * Loads ONLY from /api/v1/reports/executive-summary (materialized views).
@@ -33,6 +47,21 @@ export function ExecutiveDashboardPage() {
   const [data, setData] = useState<ExecutiveReportSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [briefing, setBriefing] = useState<ExecutiveBriefingStatus | null>(null);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendNotice, setSendNotice] = useState<string | null>(null);
+
+  const loadBriefingStatus = useCallback(async () => {
+    try {
+      const status = await fetchExecutiveBriefingStatus();
+      setBriefing(status);
+      setBriefingError(null);
+    } catch (err) {
+      setBriefing(null);
+      setBriefingError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,9 +77,32 @@ export function ExecutiveDashboardPage() {
     }
   }, []);
 
+  const sendThisWeek = useCallback(async () => {
+    setSending(true);
+    setSendNotice(null);
+    setBriefingError(null);
+    try {
+      const result = await runExecutiveBriefing(true);
+      if (result.emailed) {
+        setSendNotice("Weekly briefing emailed to the leadership list.");
+      } else {
+        setSendNotice(
+          result.email_error ||
+            `Briefing did not send (${result.email_status || "unknown"}).`,
+        );
+      }
+      await loadBriefingStatus();
+    } catch (err) {
+      setBriefingError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
+  }, [loadBriefingStatus]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadBriefingStatus();
+  }, [load, loadBriefingStatus]);
 
   const sales = data?.sales_summary ?? [];
   const transit = data?.transit_summary ?? [];
@@ -78,19 +130,57 @@ export function ExecutiveDashboardPage() {
               materialized views (no live heavy aggregations).
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-200 hover:border-cyan-500/40 disabled:opacity-50"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void sendThisWeek()}
+              disabled={sending}
+              className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:border-cyan-400/60 disabled:opacity-50"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              Email this week's briefing
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void load();
+                void loadBriefingStatus();
+              }}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-200 hover:border-cyan-500/40 disabled:opacity-50"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
+          <p className="font-medium text-white">Weekly email briefing</p>
+          <p className="mt-1 text-slate-400">
+            Last send: {formatWhen(briefing?.last?.created_at)} · status{" "}
+            {briefing?.last?.email_status || "none"}
+            {briefing && !briefing.email_configured
+              ? " · email delivery is not configured in production"
+              : ""}
+            {briefing && !briefing.recipients_configured
+              ? " · no leadership recipients configured"
+              : ""}
+          </p>
+          {sendNotice ? (
+            <p className="mt-2 text-cyan-200">{sendNotice}</p>
+          ) : null}
+          {briefingError ? (
+            <p className="mt-2 text-rose-200">{briefingError}</p>
+          ) : null}
         </div>
 
         {error ? (

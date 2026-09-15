@@ -8,8 +8,9 @@ import html
 import json
 import logging
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fpdf import FPDF
 
@@ -17,7 +18,12 @@ from app.config import settings
 from app.database.connection import get_supabase_client, get_supabase_service_client
 from app.models.executive_report import ExecutiveReportSnapshot
 from app.services.ai_service import AIServiceError, get_ai_service
-from app.services.email_service import EmailAttachment, EmailNotConfiguredError, send_email
+from app.services.email_service import (
+    EmailAttachment,
+    EmailNotConfiguredError,
+    email_is_configured,
+    send_email,
+)
 from app.services.executive_report_service import get_executive_report_snapshot
 
 logger = logging.getLogger(__name__)
@@ -323,6 +329,121 @@ async def generate_executive_briefing_narrative(
         max_tokens=1200,
         gemini_model=settings.EXECUTIVE_BRIEFING_GEMINI_MODEL or "gemini-3.1-pro-preview",
     )
+    return result
+
+
+def briefing_timezone() -> ZoneInfo:
+    name = (settings.EXECUTIVE_BRIEFING_TIMEZONE or "Africa/Nairobi").strip()
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        logger.warning("Unknown timezone %s; falling back to UTC", name)
+        return ZoneInfo("UTC")
+
+
+def is_briefing_weekday(when: datetime | None = None) -> bool:
+    """Monday in EXECUTIVE_BRIEFING_TIMEZONE (default Africa/Nairobi)."""
+    now = when or datetime.now(briefing_timezone())
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=briefing_timezone())
+    else:
+        now = now.astimezone(briefing_timezone())
+    return now.weekday() == 0
+
+
+def briefing_week_start(when: datetime | None = None) -> datetime:
+    now = when or datetime.now(briefing_timezone())
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=briefing_timezone())
+    else:
+        now = now.astimezone(briefing_timezone())
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return monday
+
+
+def briefing_already_sent_this_week() -> bool:
+    week_start = briefing_week_start().astimezone(timezone.utc).isoformat()
+    try:
+        client = get_supabase_service_client()
+    except Exception:
+        client = get_supabase_client()
+    try:
+        response = (
+            client.table("executive_briefing_logs")
+            .select("id")
+            .eq("email_status", "sent")
+            .gte("created_at", week_start)
+            .limit(1)
+            .execute()
+        )
+        return bool(response.data)
+    except Exception as exc:
+        logger.warning("Could not check executive_briefing_logs for this week: %s", exc)
+        return False
+
+
+def get_briefing_delivery_status() -> dict[str, Any]:
+    recipients = parse_executive_recipients()
+    last: dict[str, Any] | None = None
+    try:
+        client = get_supabase_service_client()
+    except Exception:
+        client = get_supabase_client()
+    try:
+        response = (
+            client.table("executive_briefing_logs")
+            .select("created_at,email_status,email_error,provider_used,is_fallback,recipients")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            row = response.data[0]
+            last = {
+                "created_at": row.get("created_at"),
+                "email_status": row.get("email_status"),
+                "email_error": row.get("email_error"),
+                "provider_used": row.get("provider_used"),
+                "is_fallback": row.get("is_fallback"),
+                "recipient_count": len(row.get("recipients") or []),
+            }
+    except Exception as exc:
+        logger.warning("executive_briefing_logs status query failed: %s", exc)
+
+    return {
+        "briefing_enabled": bool(settings.EXECUTIVE_BRIEFING_ENABLED),
+        "timezone": (settings.EXECUTIVE_BRIEFING_TIMEZONE or "Africa/Nairobi").strip(),
+        "email_configured": email_is_configured(),
+        "recipients_configured": bool(recipients),
+        "recipient_count": len(recipients),
+        "already_sent_this_week": briefing_already_sent_this_week(),
+        "is_briefing_weekday": is_briefing_weekday(),
+        "last": last,
+    }
+
+
+async def run_scheduled_executive_briefing(*, force: bool = False) -> dict[str, Any]:
+    """
+    Cron/worker entry: skip quietly unless it is Monday (unless force=True).
+    Never raises for skip cases so Vercel Cron stays green on Tue–Sun.
+    """
+    if not settings.EXECUTIVE_BRIEFING_ENABLED:
+        return {"ok": True, "skipped": True, "reason": "disabled"}
+    if not force and not is_briefing_weekday():
+        return {"ok": True, "skipped": True, "reason": "not_monday"}
+    if not parse_executive_recipients():
+        logger.warning("Skipping executive briefing: no recipients configured")
+        return {"ok": False, "skipped": True, "reason": "no_recipients"}
+    if not email_is_configured():
+        logger.warning("Skipping executive briefing: email is not configured")
+        return {"ok": False, "skipped": True, "reason": "email_not_configured"}
+    if not force and briefing_already_sent_this_week():
+        return {"ok": True, "skipped": True, "reason": "already_sent"}
+    result = await run_executive_briefing(send=True)
+    result["skipped"] = False
+    result["reason"] = result.get("email_status")
     return result
 
 

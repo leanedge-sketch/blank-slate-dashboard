@@ -27,6 +27,10 @@ class EmailAttachment:
         self.content_type = content_type
 
 
+def email_is_configured() -> bool:
+    return _email_configured()
+
+
 def _email_configured() -> bool:
     if settings.RESEND_API_KEY and settings.EMAIL_FROM:
         return True

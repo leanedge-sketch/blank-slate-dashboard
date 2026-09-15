@@ -1761,6 +1761,54 @@ export async function fetchExecutiveReportSnapshot() {
   return fetchExecutiveSummary();
 }
 
+export interface ExecutiveBriefingStatus {
+  briefing_enabled: boolean;
+  timezone: string;
+  email_configured: boolean;
+  recipients_configured: boolean;
+  recipient_count: number;
+  already_sent_this_week: boolean;
+  is_briefing_weekday: boolean;
+  last: {
+    created_at?: string | null;
+    email_status?: string | null;
+    email_error?: string | null;
+    provider_used?: string | null;
+    is_fallback?: boolean;
+    recipient_count?: number;
+  } | null;
+}
+
+export async function fetchExecutiveBriefingStatus() {
+  const res = await api.get<ExecutiveBriefingStatus>("/reports/executive/briefing/status", {
+    timeout: 15_000,
+  });
+  return res.data;
+}
+
+export interface ExecutiveBriefingRunResult {
+  ok: boolean;
+  emailed?: boolean;
+  email_status?: string;
+  email_error?: string | null;
+  recipient_count?: number;
+  recipients?: string[];
+  provider_used?: string;
+  is_fallback?: boolean;
+}
+
+export async function runExecutiveBriefing(send = true) {
+  const res = await api.post<ExecutiveBriefingRunResult>(
+    "/reports/executive/briefing/run",
+    null,
+    {
+      params: { send },
+      timeout: 180_000,
+    },
+  );
+  return res.data;
+}
+
 // =============================
 // STOCK MANAGEMENT
 // =============================
