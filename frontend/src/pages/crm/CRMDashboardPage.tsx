@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { BarChart3, Users, MessageSquare, TrendingUp, CalendarDays, Loader2, Sparkles } from "lucide-react";
+import { DateRangeCalendarDropdown } from "../../components/DateRangeCalendarDropdown";
 import { api, DashboardMetrics } from "../../services/api";
-import { BarChart3, Users, MessageSquare, TrendingUp, CalendarDays, X, Loader2, Sparkles } from "lucide-react";
 
 const SALES_STAGES: { [key: string]: { name: string; color: string; bgColor: string; borderColor: string } } = {
   "1": { name: "Prospecting", color: "text-slate-700", bgColor: "bg-slate-100", borderColor: "border-slate-300" },
@@ -85,30 +86,15 @@ export function CRMDashboardPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
+                <DateRangeCalendarDropdown
+                  startDate={startDate}
+                  endDate={endDate}
+                  onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                    setStartDate(nextStart);
+                    setEndDate(nextEnd);
+                  }}
+                  onClear={clearDateFilter}
                 />
-                <span className="text-xs text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                />
-                {hasDateFilter && (
-                  <button
-                    type="button"
-                    onClick={clearDateFilter}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2 text-xs text-slate-300 hover:bg-slate-700/80 transition-colors"
-                    title="Clear filter and show all-time data"
-                  >
-                    <X size={14} />
-                    Clear Filter
-                  </button>
-                )}
               </div>
             </div>
           </div>

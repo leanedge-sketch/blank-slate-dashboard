@@ -1,4 +1,4 @@
-export type DateRangePreset = "ytd" | "last90" | "thisMonth";
+export type DateRangePreset = "all" | "ytd" | "last90" | "thisMonth" | "custom";
 
 export type ExecutiveDeck = "products" | "customers" | "fx";
 

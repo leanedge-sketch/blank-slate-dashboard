@@ -36,6 +36,7 @@ import {
 } from "./executiveReportFxData";
 import { buildCognitiveSummary } from "./executiveReportSummaries";
 import { exportExecutiveReportPdf } from "./executiveReportPdf";
+import { DateRangeCalendarDropdown } from "../DateRangeCalendarDropdown";
 import { PIPELINE_DELETED_EVENT, PIPELINE_SAVED_EVENT } from "../../lib/importFinanceEvents";
 import { PROCUREMENT_PIPELINE_DOMAIN } from "../../lib/pipelineDomains";
 import {
@@ -62,6 +63,7 @@ import type {
 } from "./executiveReportTypes";
 
 const RANGE_OPTIONS: { value: DateRangePreset; label: string }[] = [
+  { value: "all", label: "All time" },
   { value: "ytd", label: "YTD" },
   { value: "last90", label: "Last 90 days" },
   { value: "thisMonth", label: "This month" },
@@ -76,7 +78,10 @@ const DECK_OPTIONS: { value: ExecutiveDeck; label: string }[] = [
 export function ExecutiveReportDashboard() {
   const dashboardRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
-  const [dateRange, setDateRange] = useState<DateRangePreset>("last90");
+  const [dateRange, setDateRange] = useState<DateRangePreset>("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState<ExecutiveDeck>("products");
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity>(null);
   const [productSort, setProductSort] = useState<ProductSortMode>("frequency");
@@ -95,29 +100,46 @@ export function ExecutiveReportDashboard() {
     ReturnType<typeof fetchExecutiveReportSnapshot>
   > | null>(null);
 
+  const customRange = useMemo(
+    () => ({ startDate, endDate }),
+    [startDate, endDate],
+  );
+  const resolvedRange = useMemo(
+    () => resolveDateRange(dateRange, customRange),
+    [dateRange, customRange],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { start, end } = resolveDateRange(dateRange);
-      const [shipments, productRows, snapshot] = await Promise.all([
+      const [shipmentsResult, productsResult, snapshotResult] = await Promise.allSettled([
         fetchImportShipmentsForReport({
-          startIso: start.toISOString(),
-          endIso: end.toISOString(),
+          startIso: resolvedRange.start?.toISOString(),
+          endIso: resolvedRange.end?.toISOString(),
           pipelineDomain: PROCUREMENT_PIPELINE_DOMAIN,
+          limit: 2000,
         }),
         fetchImportFinanceProducts(),
-        fetchExecutiveReportSnapshot().catch(() => null),
+        fetchExecutiveReportSnapshot(),
       ]);
-      setRawShipments(shipments);
-      setProducts(productRows);
-      setExecSnapshot(snapshot);
+      if (shipmentsResult.status === "rejected") {
+        throw shipmentsResult.reason;
+      }
+      setRawShipments(shipmentsResult.value);
+      setProducts(productsResult.status === "fulfilled" ? productsResult.value : []);
+      setExecSnapshot(
+        snapshotResult.status === "fulfilled" ? snapshotResult.value : null,
+      );
+      if (productsResult.status === "rejected") {
+        console.warn("Executive BI product catalog failed", productsResult.reason);
+      }
     } catch (err) {
       setError(String((err as Error)?.message ?? err));
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [resolvedRange.end, resolvedRange.start]);
 
   useEffect(() => {
     void load();
@@ -136,8 +158,8 @@ export function ExecutiveReportDashboard() {
   }, [load]);
 
   const allEnriched = useMemo(
-    () => enrichShipments(rawShipments, products, dateRange),
-    [rawShipments, products, dateRange],
+    () => enrichShipments(rawShipments, products, resolvedRange),
+    [rawShipments, products, resolvedRange],
   );
 
   const chartShipments = useMemo(
@@ -222,7 +244,7 @@ export function ExecutiveReportDashboard() {
             activeDeck === "fx"
               ? "Stage 4 · Deck C Currency & FX"
               : "Stage 4 Executive Report",
-          rangeLabel: formatRangeLabel(dateRange),
+          rangeLabel: formatRangeLabel(dateRange, customRange),
           entityLabel,
         },
         mode,
@@ -241,6 +263,24 @@ export function ExecutiveReportDashboard() {
           ? "border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-slate-900/80"
           : "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-slate-900/80";
 
+  const rangeLabel = formatRangeLabel(dateRange, customRange);
+  const hasCustomDates = Boolean(startDate.trim() || endDate.trim());
+
+  function applyPreset(preset: DateRangePreset) {
+    setDateRange(preset);
+    setStartDate("");
+    setEndDate("");
+    setSelectedEntity(null);
+    setCustomOpen(false);
+  }
+
+  function applyCustomRange(next: { startDate: string; endDate: string }) {
+    setStartDate(next.startDate);
+    setEndDate(next.endDate);
+    setDateRange("custom");
+    setSelectedEntity(null);
+  }
+
   return (
     <div ref={dashboardRef} className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -256,19 +296,19 @@ export function ExecutiveReportDashboard() {
               ? "Currency risk & FX margin analytics — official vs parallel rate exposure."
               : "Cross-filtered pipeline BI — click a product or customer to drill down."}
           </p>
+          <p className="text-xs text-slate-500 mt-2">
+            {allEnriched.length} costing run{allEnriched.length === 1 ? "" : "s"} · {rangeLabel}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-white/10 bg-slate-900/80 p-0.5">
+          <div className="inline-flex flex-wrap rounded-lg border border-white/10 bg-slate-900/80 p-0.5">
             {RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => {
-                  setDateRange(opt.value);
-                  setSelectedEntity(null);
-                }}
+                onClick={() => applyPreset(opt.value)}
                 className={`rounded-md px-3 py-2 text-xs font-semibold transition ${
-                  dateRange === opt.value
+                  dateRange === opt.value && !hasCustomDates
                     ? "bg-violet-600 text-white shadow-lg shadow-violet-500/20"
                     : "text-slate-400 hover:text-white"
                 }`}
@@ -276,6 +316,18 @@ export function ExecutiveReportDashboard() {
                 {opt.label}
               </button>
             ))}
+            <DateRangeCalendarDropdown
+              startDate={startDate}
+              endDate={endDate}
+              anchorDate={allEnriched[0]?.createdAt}
+              open={customOpen}
+              onOpenChange={(next) => {
+                setCustomOpen(next);
+                if (next) setDateRange("custom");
+              }}
+              onChange={applyCustomRange}
+              onClear={() => applyPreset("all")}
+            />
           </div>
           <button
             type="button"
@@ -429,6 +481,13 @@ export function ExecutiveReportDashboard() {
         </p>
       ) : null}
 
+      {!loading && !error && allEnriched.length === 0 ? (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          No costing runs in {rangeLabel.toLowerCase()}. Try All time or pick a wider
+          custom calendar range.
+        </p>
+      ) : null}
+
       <div ref={exportRef} className="space-y-5">
         {activeDeck === "fx" ? (
           <>
@@ -513,7 +572,7 @@ export function ExecutiveReportDashboard() {
                       Revenue &amp; margin trajectory
                     </h3>
                     <p className="text-[11px] text-slate-500 mb-3">
-                      {formatRangeLabel(dateRange)} · monthly buckets
+                      {rangeLabel} · monthly buckets
                     </p>
                     <RevenueMarginChart data={revenueSeries} />
                   </section>
@@ -535,7 +594,7 @@ export function ExecutiveReportDashboard() {
                       Revenue &amp; margin trajectory
                     </h3>
                     <p className="text-[11px] text-slate-500 mb-3">
-                      {formatRangeLabel(dateRange)} · monthly buckets
+                      {rangeLabel} · monthly buckets
                     </p>
                     <RevenueMarginChart data={revenueSeries} />
                   </section>

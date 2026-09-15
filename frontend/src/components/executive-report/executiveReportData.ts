@@ -20,7 +20,38 @@ const COST_COLORS = {
   profit: "#34d399",
 };
 
-export function resolveDateRange(preset: DateRangePreset): { start: Date; end: Date } {
+export type CustomDateRange = {
+  startDate: string;
+  endDate: string;
+};
+
+export type ResolvedDateRange = {
+  start: Date | null;
+  end: Date | null;
+};
+
+function parseDayBoundary(isoDate: string, endOfDay: boolean): Date | null {
+  const raw = isoDate.trim();
+  if (!raw) return null;
+  const d = new Date(`${raw}T${endOfDay ? "23:59:59.999" : "00:00:00"}`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function resolveDateRange(
+  preset: DateRangePreset,
+  custom?: CustomDateRange,
+): ResolvedDateRange {
+  if (preset === "all") {
+    return { start: null, end: null };
+  }
+
+  if (preset === "custom") {
+    return {
+      start: parseDayBoundary(custom?.startDate ?? "", false),
+      end: parseDayBoundary(custom?.endDate ?? "", true),
+    };
+  }
+
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   const start = new Date(end);
@@ -39,10 +70,37 @@ export function resolveDateRange(preset: DateRangePreset): { start: Date; end: D
   return { start, end };
 }
 
-export function formatRangeLabel(preset: DateRangePreset): string {
+export function formatRangeLabel(
+  preset: DateRangePreset,
+  custom?: CustomDateRange,
+): string {
+  if (preset === "all") return "All time";
   if (preset === "ytd") return "Year to date";
   if (preset === "last90") return "Last 90 days";
-  return "This month";
+  if (preset === "thisMonth") return "This month";
+  const from = custom?.startDate?.trim() || "start";
+  const to = custom?.endDate?.trim() || "now";
+  return `${from} to ${to}`;
+}
+
+function shipmentTimestamp(row: ImportShipmentRow): Date | null {
+  if (row.request_date?.trim()) {
+    const fromRequest = new Date(`${row.request_date.trim()}T12:00:00`);
+    if (!Number.isNaN(fromRequest.getTime())) return fromRequest;
+  }
+  const fromCreated = new Date(row.created_at);
+  return Number.isNaN(fromCreated.getTime()) ? null : fromCreated;
+}
+
+export function shipmentInRange(
+  row: ImportShipmentRow,
+  range: ResolvedDateRange,
+): boolean {
+  const d = shipmentTimestamp(row);
+  if (!d) return false;
+  if (range.start && d < range.start) return false;
+  if (range.end && d > range.end) return false;
+  return true;
 }
 
 function customerKey(row: ImportShipmentRow): string {
@@ -63,16 +121,12 @@ export function normalizeCustomerCurrency(value: string | null | undefined): Cus
 export function enrichShipments(
   rows: ImportShipmentRow[],
   products: ImportFinanceProduct[],
-  range: DateRangePreset,
+  range: ResolvedDateRange,
 ): EnrichedShipment[] {
-  const { start, end } = resolveDateRange(range);
   const productMap = new Map(products.map((p) => [p.id, p.product_name]));
 
   return rows
-    .filter((row) => {
-      const d = new Date(row.created_at);
-      return d >= start && d <= end;
-    })
+    .filter((row) => shipmentInRange(row, range))
     .map((row) => {
       const qty = Number(row.quantity_kg) || 0;
       const profitPerKg = Number(row.profit_per_kg_etb) || 0;
@@ -87,12 +141,13 @@ export function enrichShipments(
       const currency = normalizeCustomerCurrency(row.snapshot_target_currency);
       const revenueUsd =
         parallelRate > 0 ? revenue / parallelRate : revenue / (officialRate || 1);
+      const productId = row.product_id || "unknown";
 
       return {
         id: row.id,
-        productId: row.product_id,
+        productId,
         productName:
-          productMap.get(row.product_id) ?? `Product ${row.product_id.slice(0, 8)}`,
+          productMap.get(productId) ?? `Product ${productId.slice(0, 8)}`,
         customerId: customerKey(row),
         customerName: customerLabel(row),
         quantityKg: qty,
