@@ -36,6 +36,8 @@ class CustomerCreate(CustomerBase):
     initial_pipeline_stage: Optional[str] = None
     # Optional business unit copied onto the auto-created sales pipeline.
     business_unit: Optional[str] = None
+    # Skip the similar-name guard after the user has reviewed matches.
+    force_create: Optional[bool] = False
 
 
 class CustomerUpdate(BaseModel):

@@ -325,6 +325,62 @@ def _generate_display_id() -> str:
     return f"LC-{year}-CUST-{new_num:04d}"
 
 
+_GENERIC_NAME_TOKENS = {
+    "and",
+    "chemical",
+    "chemicals",
+    "co",
+    "company",
+    "construction",
+    "ethiopia",
+    "export",
+    "import",
+    "inc",
+    "industries",
+    "industry",
+    "llc",
+    "ltd",
+    "plc",
+    "the",
+    "trading",
+}
+
+
+def _normalize_customer_name(name: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", (name or "").lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _significant_name_tokens(name: str) -> List[str]:
+    return [
+        token
+        for token in _normalize_customer_name(name).split()
+        if len(token) > 2 and token not in _GENERIC_NAME_TOKENS
+    ]
+
+
+def customer_names_are_duplicates(left: str, right: str, *, min_score: int = 90) -> bool:
+    """True only when two company names are really the same firm, not a shared word."""
+    a = _normalize_customer_name(left)
+    b = _normalize_customer_name(right)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if min(len(a), len(b)) < 5:
+        return False
+    a_tokens = _significant_name_tokens(a)
+    b_tokens = _significant_name_tokens(b)
+    if not a_tokens or not b_tokens:
+        return False
+    overlap = set(a_tokens) & set(b_tokens)
+    if not overlap:
+        return False
+    coverage = len(overlap) / min(len(set(a_tokens)), len(set(b_tokens)))
+    score = fuzz.token_set_ratio(a, b)
+    return coverage >= 0.7 and score >= min_score
+
+
 def create_customer(customer_in: CustomerCreate) -> Customer:
     """Create a new customer.
 
@@ -338,38 +394,40 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
     # Look for customers with similar names using a fuzzy match.
     # In the original Streamlit app this was a separate step in the UI;
     # here we surface it as a clear error so the frontend can warn the user.
-    existing_response = (
-        supabase.table("customers")
-        .select("customer_id, customer_name, display_id")
-        .ilike("customer_name", f"%{customer_in.customer_name}%")
-        .limit(20)
-        .execute()
-    )
-    similar_names: List[str] = []
-    for row in existing_response.data or []:
-        name = (row.get("customer_name") or "").strip()
-        if not name:
-            continue
-        score = fuzz.partial_ratio(
-            customer_in.customer_name.lower(),
-            name.lower(),
+    incoming_name = (customer_in.customer_name or "").strip()
+    if incoming_name and not customer_in.force_create:
+        tokens = _significant_name_tokens(incoming_name)
+        search_term = max(tokens, key=len) if tokens else incoming_name
+        existing_response = (
+            supabase.table("customers")
+            .select("customer_id, customer_name, display_id")
+            .ilike("customer_name", f"%{search_term}%")
+            .limit(50)
+            .execute()
         )
-        if score >= 85:
-            display_id = row.get("display_id") or "—"
-            similar_names.append(f"{name} (ID: {display_id}, score: {score})")
+        similar_names: List[str] = []
+        for row in existing_response.data or []:
+            name = (row.get("customer_name") or "").strip()
+            if not name:
+                continue
+            if customer_names_are_duplicates(incoming_name, name):
+                display_id = row.get("display_id") or "—"
+                similar_names.append(f"{name} (ID: {display_id})")
 
-    if similar_names:
-        # Let the API layer translate this into a 409 Conflict.
-        joined = "; ".join(similar_names[:3])
-        raise ValueError(
-            f"Similar customers already exist. Please review before creating a new one: {joined}"
-        )
+        if similar_names:
+            joined = "; ".join(similar_names[:3])
+            raise ValueError(
+                "Similar customers already exist. Open one of them, or create anyway: "
+                f"{joined}"
+            )
 
     # ---------------------------------------------
     # 2) Create the base customer row
     # ---------------------------------------------
-    # initial_pipeline_stage / business_unit are request-only (pipeline setup below).
-    data = customer_in.model_dump(exclude={"initial_pipeline_stage", "business_unit"})
+    # Request-only fields are used for pipeline setup below, not the customers table.
+    data = customer_in.model_dump(
+        exclude={"initial_pipeline_stage", "business_unit", "force_create"}
+    )
     if not data.get("display_id"):
         data["display_id"] = _generate_display_id()
 
@@ -455,13 +513,10 @@ def update_customer(customer_id: str, customer_update: CustomerUpdate) -> Custom
         for row in existing_response.data or []:
             if str(row.get("customer_id")) != customer_id:
                 name = (row.get("customer_name") or "").strip()
-                if name:
-                    score = fuzz.partial_ratio(
-                        update_data["customer_name"].lower(),
-                        name.lower(),
-                    )
-                    if score >= 85:
-                        raise ValueError(f"Similar customer already exists: {name}")
+                if name and customer_names_are_duplicates(
+                    update_data["customer_name"], name
+                ):
+                    raise ValueError(f"Similar customer already exists: {name}")
     
     # Update the customer
     response = (

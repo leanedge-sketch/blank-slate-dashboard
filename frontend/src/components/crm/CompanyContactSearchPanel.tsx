@@ -15,6 +15,7 @@ import {
 } from "../../services/companyContactSearch";
 import type { Customer } from "../../services/api";
 import type { ImportShipmentRow } from "../../services/importFinance";
+import { formatApiErrorDetail } from "../../utils/apiErrors";
 
 type CompanyContactSearchPanelProps = {
   variant?: "dark" | "light";
@@ -79,9 +80,7 @@ export function CompanyContactSearchPanel({
       setSearched(true);
       onSearchComplete?.(company, contact);
     } catch (err: unknown) {
-      setError(
-        String((err as { message?: string })?.message ?? "Search failed. Try again."),
-      );
+      setError(formatApiErrorDetail(err, "Search failed. Try again."));
       setResult(null);
       setSearched(true);
     } finally {

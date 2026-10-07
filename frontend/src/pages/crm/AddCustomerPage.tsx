@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { api, Customer, buildCustomerProfile } from "../../services/api";
+import { formatApiErrorDetail } from "../../utils/apiErrors";
 import { CompanyContactSearchPanel } from "../../components/crm/CompanyContactSearchPanel";
 import { BusinessUnitSelect } from "../../components/sales/BusinessUnitSelect";
 import {
@@ -30,6 +31,7 @@ export function AddCustomerPage() {
     useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [similarCustomersError, setSimilarCustomersError] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [createdCustomer, setCreatedCustomer] = useState<Customer | null>(null);
   const [buildingProfile, setBuildingProfile] = useState(false);
@@ -54,8 +56,8 @@ export function AddCustomerPage() {
     );
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(e?: FormEvent, forceCreate = false) {
+    e?.preventDefault();
     if (pipelineDealMode === "existing") {
       handleContinueExistingCustomer();
       return;
@@ -68,12 +70,14 @@ export function AddCustomerPage() {
     try {
       setLoading(true);
       setError(null);
+      setSimilarCustomersError(false);
       setSuccess(null);
 
-      const payload: CustomerFormState = {
+      const payload = {
         customer_name: form.customer_name.trim(),
         initial_pipeline_stage: form.initial_pipeline_stage,
-        business_unit: form.business_unit.trim(),
+        business_unit: form.business_unit.trim() || null,
+        force_create: forceCreate,
       };
 
       const res = await api.post<Customer>("/crm/customers", payload);
@@ -92,24 +96,11 @@ export function AddCustomerPage() {
         console.error("Auto-fill sales stage error:", stageErr);
         // Don't show error - customer was created
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      // Handle validation errors (422) from FastAPI
-      let errorMessage = "Failed to create customer.";
-      if (err?.response?.status === 422) {
-        const validationErrors = err?.response?.data?.detail;
-        if (Array.isArray(validationErrors)) {
-          errorMessage = validationErrors.map((e: any) => e.msg || e.message || String(e)).join(", ");
-        } else if (typeof validationErrors === "string") {
-          errorMessage = validationErrors;
-        } else if (validationErrors?.msg) {
-          errorMessage = validationErrors.msg;
-        } else {
-          errorMessage = "Validation error: Invalid request parameters";
-        }
-      } else {
-        errorMessage = err?.response?.data?.detail ?? err?.message ?? "Failed to create customer.";
-      }
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const errorMessage = formatApiErrorDetail(err, "Failed to create customer.");
+      setSimilarCustomersError(status === 409);
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -158,7 +149,21 @@ export function AddCustomerPage() {
         </div>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner">
+          <p>{error}</p>
+          {similarCustomersError ? (
+            <button
+              type="button"
+              className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-800"
+              onClick={() => void handleSubmit(undefined, true)}
+              disabled={loading}
+            >
+              {loading ? "Creating…" : "Create anyway"}
+            </button>
+          ) : null}
+        </div>
+      )}
       {success && <div className="info-banner">{success}</div>}
       {profileError && <div className="error-banner">{profileError}</div>}
 
