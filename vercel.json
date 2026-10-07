@@ -2,10 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.py": {
-      "maxDuration": 180
+      "maxDuration": 180,
+      "excludeFiles": "{frontend/**,docs/**,migrations/**,supabase/**,scripts/**,src/**,data/**,qoute_format/**,.lovable/**,.tanstack/**,backend/tests/**,node_modules/**,*.md,*.pdf,*.xlsx,*.docx,streamlit_app.py}"
     }
   },
-  "buildCommand": "cd frontend && npm ci && npm run build",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm ci",
   "framework": "vite",
