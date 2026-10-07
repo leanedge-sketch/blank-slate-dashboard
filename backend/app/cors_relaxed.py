@@ -19,13 +19,14 @@ class ReflectingWildcardCORSMiddleware(CORSMiddleware):
         message.setdefault("headers", [])
         headers = MutableHeaders(scope=message)
         headers.update(self.simple_headers)
-        origin = request_headers["Origin"]
-
-        if self.allow_all_origins and self.allow_credentials:
-            self.allow_explicit_origin(headers, origin)
-        elif self.allow_all_origins and "cookie" in request_headers:
-            self.allow_explicit_origin(headers, origin)
-        elif not self.allow_all_origins and self.is_allowed_origin(origin=origin):
-            self.allow_explicit_origin(headers, origin)
+        # Same-origin browser GETs often omit Origin. Never KeyError on that.
+        origin = request_headers.get("origin")
+        if origin:
+            if self.allow_all_origins and self.allow_credentials:
+                self.allow_explicit_origin(headers, origin)
+            elif self.allow_all_origins and "cookie" in request_headers:
+                self.allow_explicit_origin(headers, origin)
+            elif not self.allow_all_origins and self.is_allowed_origin(origin=origin):
+                self.allow_explicit_origin(headers, origin)
 
         await send(message)

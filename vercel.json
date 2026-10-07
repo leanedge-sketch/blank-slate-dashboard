@@ -3,7 +3,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 180,
-      "excludeFiles": "{../frontend/**,../docs/**,../node_modules/**,../src/**,../scripts/**,../supabase/**,../migrations/**,../data/**,../qoute_format/**,../backend/tests/**}"
+      "excludeFiles": "{frontend/**,docs/**,migrations/**,supabase/**,scripts/**,src/**,data/**,qoute_format/**,.lovable/**,.tanstack/**,backend/tests/**,node_modules/**,*.md,*.pdf,*.xlsx,*.docx,streamlit_app.py}"
     }
   },
   "buildCommand": "cd frontend && npm run build && rm -rf node_modules",
