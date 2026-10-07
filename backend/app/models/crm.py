@@ -34,6 +34,8 @@ class CustomerCreate(CustomerBase):
     """Model for creating a new customer"""
     # Optional first sales pipeline stage (defaults to Lead ID in CRM service).
     initial_pipeline_stage: Optional[str] = None
+    # Optional business unit copied onto the auto-created sales pipeline.
+    business_unit: Optional[str] = None
 
 
 class CustomerUpdate(BaseModel):

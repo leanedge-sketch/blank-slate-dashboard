@@ -1,6 +1,10 @@
 import axios from "axios";
 import { getAuthAccessToken } from "../lib/auth-session";
 import { getApiBaseUrl } from "../lib/api-base";
+import {
+  DEFAULT_BUSINESS_UNITS,
+  mergeBusinessUnitOptions,
+} from "../utils/businessUnits";
 const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
@@ -1106,8 +1110,13 @@ export type PipelineStage =
 
 export type Currency = "ETB" | "KES" | "USD" | "EUR";
 export type Forex = "LeanChems" | "Client";
-export type BusinessUnit = "Hayat" | "Alhadi" | "Bet-chem" | "Barracoda" | "Nyumb-Chem";
 export type Incoterm = "Import of Record" | "Agency" | "Direct Import" | "Stock – Addis Ababa";
+export {
+  DEFAULT_BUSINESS_UNITS,
+  mergeBusinessUnitOptions,
+  type BusinessUnit,
+  type DefaultBusinessUnit,
+} from "../utils/businessUnits";
 
 // Sales Pipeline Interfaces
 export interface SalesPipeline {
@@ -1558,6 +1567,32 @@ export async function fetchBusinessModels(): Promise<string[]> {
     console.warn("Failed to fetch business models from API:", error);
     return [];
   }
+}
+
+export async function fetchBusinessUnits(): Promise<string[]> {
+  try {
+    const res = await api.get<{ business_units: string[] }>(
+      "/sales-pipeline/business-units",
+    );
+    return mergeBusinessUnitOptions(res.data.business_units || []);
+  } catch (error) {
+    console.warn("Failed to fetch business units from API:", error);
+    return [...DEFAULT_BUSINESS_UNITS];
+  }
+}
+
+export async function createBusinessUnit(name: string): Promise<{
+  name: string;
+  business_units: string[];
+}> {
+  const res = await api.post<{ name: string; business_units?: string[] }>(
+    "/sales-pipeline/business-units",
+    { name },
+  );
+  return {
+    name: res.data.name,
+    business_units: mergeBusinessUnitOptions(res.data.business_units || [res.data.name]),
+  };
 }
 
 // Get supported currencies

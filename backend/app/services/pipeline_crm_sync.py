@@ -157,6 +157,7 @@ def _pipeline_create_body(
     chemical_type_id: Optional[Union[str, UUID]] = None,
     stage: str = "Lead ID",
     metadata: Optional[Dict[str, Any]] = None,
+    business_unit: Optional[str] = None,
 ) -> SalesPipelineCreate:
     """Build a pipeline row linked to CRM customer and optional PMS product."""
     cid = _coerce_uuid(customer_id)
@@ -180,6 +181,7 @@ def _pipeline_create_body(
 
     resolved_chemical_uuid = _resolved_catalog_product_ref(resolved_chemical)
 
+    unit = (business_unit or "").strip() or None
     return SalesPipelineCreate(
         customer_id=cid,
         tds_id=_coerce_uuid(resolved_tds) if resolved_tds else None,
@@ -187,6 +189,7 @@ def _pipeline_create_body(
             _coerce_uuid(resolved_chemical_uuid) if resolved_chemical_uuid else None
         ),
         stage=stage,
+        business_unit=unit,
         metadata=meta,
         reason_for_stage_change=(
             str(meta.get("reason_for_stage_change") or "").strip()
@@ -202,6 +205,7 @@ def ensure_lead_pipeline_for_product(
     chemical_type_id: Optional[Union[str, UUID]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     stage: str = "Lead ID",
+    business_unit: Optional[str] = None,
 ) -> Optional[SalesPipeline]:
     """
     Ensure one Lead ID deal exists for this company + product (or company umbrella when no product).
@@ -244,6 +248,7 @@ def ensure_lead_pipeline_for_product(
                 chemical_type_id=chemical_type_id,
                 stage=stage,
                 metadata=meta,
+                business_unit=business_unit,
             )
         )
         logger.info(

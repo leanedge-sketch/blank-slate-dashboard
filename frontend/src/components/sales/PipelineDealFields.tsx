@@ -7,6 +7,7 @@ import {
   fetchVendors,
 } from "../../services/api";
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
+import { BusinessUnitSelect } from "./BusinessUnitSelect";
 import { PipelinePricingSelect } from "./PipelinePricingSelect";
 import type { PipelineDealFormValues } from "../../utils/pipelineProduct";
 import { dealFormText } from "../../utils/pipelineProduct";
@@ -210,25 +211,14 @@ export function PipelineDealFields({
       )}
 
       {showAllFields && (
-      <div>
-        <label className={labelClass}>
-          Business unit
-          <RequiredMark show={reqFull} />
-        </label>
-        <select
-          value={form.business_unit}
-          onChange={(e) => onChange({ ...form, business_unit: e.target.value })}
-          className={inputClass}
-          required={reqFull}
-        >
-          <option value="">Select…</option>
-          <option value="Hayat">Hayat</option>
-          <option value="Alhadi">Alhadi</option>
-          <option value="Bet-chem">Bet-chem</option>
-          <option value="Barracoda">Barracoda</option>
-          <option value="Nyumb-Chem">Nyumb-Chem</option>
-        </select>
-      </div>
+      <BusinessUnitSelect
+        value={form.business_unit}
+        onChange={(business_unit) => onChange({ ...form, business_unit })}
+        className={inputClass}
+        labelClassName={labelClass}
+        required={reqFull}
+        requiredMark={reqFull}
+      />
       )}
 
       <div>

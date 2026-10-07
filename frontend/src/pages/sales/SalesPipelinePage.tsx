@@ -46,6 +46,7 @@ import { QuotationForm, QuotationFormData, QuotationFormType } from "../../compo
 import { useProductCatalog } from "../../contexts/ProductCatalogContext";
 import { ProductMultiSelect } from "../../components/sales/ProductMultiSelect";
 import { ProductDealSpecFields } from "../../components/sales/ProductDealSpecFields";
+import { BusinessUnitSelect } from "../../components/sales/BusinessUnitSelect";
 import {
   emptyProductDealSpec,
   isBlankProductDealSpec,
@@ -2409,29 +2410,19 @@ export function SalesPipelinePage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Business Unit
-                  </label>
-                  <select
+                  <BusinessUnitSelect
                     value={formData.business_unit || ""}
-                    onChange={(e) =>
+                    onChange={(business_unit) =>
                       setFormData({
                         ...formData,
-                        business_unit: (e.target.value as "Hayat" | "Alhadi" | "Bet-chem" | "Barracoda" | "Nyumb-Chem") || null,
+                        business_unit: business_unit || null,
                       })
                     }
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select business unit...</option>
-                    <option value="Hayat">Hayat</option>
-                    <option value="Alhadi">Alhadi</option>
-                    <option value="Bet-chem">Bet-chem</option>
-                    <option value="Barracoda">Barracoda</option>
-                    <option value="Nyumb-Chem">Nyumb-Chem</option>
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Internal entity responsible for executing the deal. Hayat/Alhadi/Bet-chem/Barracoda: Import of Record contracts and Stock sales. Nyumb-Chem: Agency models and Direct Import.
-                  </p>
+                    labelClassName="block text-sm font-medium text-slate-700 mb-1"
+                    label="Business Unit"
+                    helperText="Internal entity responsible for executing the deal. Hayat/Alhadi/Bet-chem/Barracoda/Synresins: Import of Record contracts and Stock sales. Nyumb-Chem: Agency models and Direct Import."
+                  />
                 </div>
 
                 <div>

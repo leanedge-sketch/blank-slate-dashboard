@@ -108,6 +108,7 @@ class BusinessUnit(_BaseStrEnum):
     BETCHEM   = "Bet-chem"
     BARRACODA = "Barracoda"
     NYUMBCHEM = "Nyumb-Chem"
+    SYNRESINS = "Synresins"
 
 
 class Incoterm(_BaseStrEnum):

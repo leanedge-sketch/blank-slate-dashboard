@@ -52,7 +52,7 @@ CHECK (forex IS NULL OR forex IN ('LeanChems','Client')) NOT VALID;
 ALTER TABLE public.sales_pipeline
 ADD CONSTRAINT sales_pipeline_business_unit_check
 CHECK (business_unit IS NULL OR business_unit IN (
-    'Hayat','Alhadi','Bet-chem','Barracoda','Nyumb-Chem'
+    'Hayat','Alhadi','Bet-chem','Barracoda','Nyumb-Chem','Synresins'
 )) NOT VALID;
 
 ALTER TABLE public.sales_pipeline

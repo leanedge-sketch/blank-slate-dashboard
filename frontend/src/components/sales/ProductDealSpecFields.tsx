@@ -1,5 +1,6 @@
-import type { BusinessUnit, Currency, Forex, Incoterm } from "../../services/api";
+import type { Currency, Forex, Incoterm } from "../../services/api";
 import type { ProductDealSpec } from "../../utils/pipelineProductDeals";
+import { BusinessUnitSelect } from "./BusinessUnitSelect";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500";
@@ -171,25 +172,14 @@ export function ProductDealSpecFields({
         </select>
       </div>
 
-      <div>
-        <label className={labelClass}>Business unit</label>
-        <select
-          value={spec.business_unit || ""}
-          onChange={(e) =>
-            onChange({
-              business_unit: (e.target.value as BusinessUnit) || null,
-            })
-          }
-          className={inputClass}
-        >
-          <option value="">Select…</option>
-          <option value="Hayat">Hayat</option>
-          <option value="Alhadi">Alhadi</option>
-          <option value="Bet-chem">Bet-chem</option>
-          <option value="Barracoda">Barracoda</option>
-          <option value="Nyumb-Chem">Nyumb-Chem</option>
-        </select>
-      </div>
+      <BusinessUnitSelect
+        value={spec.business_unit || ""}
+        onChange={(business_unit) =>
+          onChange({ business_unit: business_unit || null })
+        }
+        className={inputClass}
+        labelClassName={labelClass}
+      />
 
       <div>
         <label className={labelClass}>Unit</label>

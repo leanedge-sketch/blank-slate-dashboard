@@ -368,8 +368,8 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
     # ---------------------------------------------
     # 2) Create the base customer row
     # ---------------------------------------------
-    # initial_pipeline_stage is request-only (used below for pipeline setup).
-    data = customer_in.model_dump(exclude={"initial_pipeline_stage"})
+    # initial_pipeline_stage / business_unit are request-only (pipeline setup below).
+    data = customer_in.model_dump(exclude={"initial_pipeline_stage", "business_unit"})
     if not data.get("display_id"):
         data["display_id"] = _generate_display_id()
 
@@ -410,9 +410,11 @@ def create_customer(customer_in: CustomerCreate) -> Customer:
         if initial_stage not in allowed_stages:
             initial_stage = "Lead ID"
         # One company umbrella deal only — avoids duplicate rows when Sales adds products later.
+        business_unit = (customer_in.business_unit or "").strip() or None
         ensure_lead_pipeline_for_product(
             str(customer.customer_id),
             stage=initial_stage,
+            business_unit=business_unit,
         )
     except Exception as e:
         logging.warning(

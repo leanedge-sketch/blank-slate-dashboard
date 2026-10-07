@@ -66,8 +66,15 @@ CURRENCIES = ["ETB", "KES", "USD", "EUR"]
 # Forex options
 FOREX_OPTIONS = ["LeanChems", "Client"]
 
-# Business Unit options
-BUSINESS_UNIT_OPTIONS = ["Hayat", "Alhadi", "Bet-chem", "Barracoda", "Nyumb-Chem"]
+# Business Unit options (seeded defaults; extra names live in business_units)
+BUSINESS_UNIT_OPTIONS = [
+    "Hayat",
+    "Alhadi",
+    "Bet-chem",
+    "Barracoda",
+    "Nyumb-Chem",
+    "Synresins",
+]
 
 # Incoterm options
 INCOTERM_OPTIONS = ["Import of Record", "Agency", "Direct Import", "Stock – Addis Ababa"]
@@ -94,7 +101,10 @@ class SalesPipelineBase(BaseModel):
     unit_price: Optional[float] = Field(None, ge=0, description="Price per unit")
     currency: Optional[str] = Field(None, description="Currency code: ETB, KES, USD, EUR")
     forex: Optional[str] = Field(None, description="Forex risk bearer: LeanChems or Client")
-    business_unit: Optional[str] = Field(None, description="Business Unit: Hayat, Alhadi, Bet-chem, Barracoda, or Nyumb-Chem")
+    business_unit: Optional[str] = Field(
+        None,
+        description="Business Unit: Hayat, Alhadi, Bet-chem, Barracoda, Nyumb-Chem, Synresins, or a custom unit",
+    )
     incoterm: Optional[str] = Field(None, description="Incoterm: Import of Record, Agency, Direct Import, or Stock – Addis Ababa")
     pricing_record_id: Optional[UUID] = None
     snapshot_unit_price: Optional[float] = None
@@ -145,12 +155,11 @@ class SalesPipelineBase(BaseModel):
     @field_validator("business_unit")
     @classmethod
     def validate_business_unit(cls, v: Optional[str]) -> Optional[str]:
-        """Validate that business_unit is one of the allowed values."""
-        if v is not None and v not in BUSINESS_UNIT_OPTIONS:
-            raise ValueError(
-                f"Business Unit must be one of: {', '.join(BUSINESS_UNIT_OPTIONS)}"
-            )
-        return v
+        """Normalize blank values; allowed names are checked in the service layer."""
+        if v is None:
+            return None
+        stripped = str(v).strip()
+        return stripped or None
 
     @field_validator("incoterm")
     @classmethod
@@ -317,12 +326,11 @@ class SalesPipelineUpdate(BaseModel):
     @field_validator("business_unit")
     @classmethod
     def validate_business_unit(cls, v: Optional[str]) -> Optional[str]:
-        """Validate that business_unit is one of the allowed values."""
-        if v is not None and v not in BUSINESS_UNIT_OPTIONS:
-            raise ValueError(
-                f"Business Unit must be one of: {', '.join(BUSINESS_UNIT_OPTIONS)}"
-            )
-        return v
+        """Normalize blank values; allowed names are checked in the service layer."""
+        if v is None:
+            return None
+        stripped = str(v).strip()
+        return stripped or None
 
     @field_validator("incoterm")
     @classmethod

@@ -55,7 +55,6 @@ from uuid import UUID
 from backend.app.models.enums import (
     BusinessModel,
     StockBusinessModel,
-    BusinessUnit,
     Currency,
     ForexBearer,
     Incoterm,
@@ -179,7 +178,15 @@ def validate_sales_pipeline_row(row: Mapping[str, Any]) -> Dict[str, str]:
     _check_enum(errors, "stage",          row.get("stage"),          PipelineStage.values())
     _check_enum(errors, "currency",       row.get("currency"),       Currency.values(),     required=False)
     _check_enum(errors, "forex",          row.get("forex"),          ForexBearer.values(),  required=False)
-    _check_enum(errors, "business_unit",  row.get("business_unit"),  BusinessUnit.values(), required=False)
+    from app.services.business_unit_service import allowed_sales_pipeline_business_units
+
+    _check_enum(
+        errors,
+        "business_unit",
+        row.get("business_unit"),
+        allowed_sales_pipeline_business_units(),
+        required=False,
+    )
     _check_enum(errors, "incoterm",       row.get("incoterm"),       Incoterm.values(),     required=False)
     from app.services.business_model_service import allowed_sales_pipeline_business_models
 

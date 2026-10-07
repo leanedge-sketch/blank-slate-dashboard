@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { api, Customer, buildCustomerProfile } from "../../services/api";
 import { CompanyContactSearchPanel } from "../../components/crm/CompanyContactSearchPanel";
+import { BusinessUnitSelect } from "../../components/sales/BusinessUnitSelect";
 import {
   PipelineDealModeTabs,
   type DealLinkMode,
@@ -13,12 +14,14 @@ type InitialPipelineStage = "Lead ID" | "Discovery" | "Sample";
 interface CustomerFormState {
   customer_name: string;
   initial_pipeline_stage: InitialPipelineStage;
+  business_unit: string;
 }
 
 export function AddCustomerPage() {
   const [form, setForm] = useState<CustomerFormState>({
     customer_name: "",
     initial_pipeline_stage: "Lead ID",
+    business_unit: "",
   });
   const [pipelineDealMode, setPipelineDealMode] =
     useState<DealLinkMode>("new");
@@ -70,6 +73,7 @@ export function AddCustomerPage() {
       const payload: CustomerFormState = {
         customer_name: form.customer_name.trim(),
         initial_pipeline_stage: form.initial_pipeline_stage,
+        business_unit: form.business_unit.trim(),
       };
 
       const res = await api.post<Customer>("/crm/customers", payload);
@@ -255,6 +259,18 @@ export function AddCustomerPage() {
                 Creates one company pipeline at this stage. Product deals are added
                 separately in Sales — they will not duplicate this row.
               </p>
+            </div>
+
+            <div className="form-field">
+              <BusinessUnitSelect
+                id="business_unit"
+                value={form.business_unit}
+                onChange={(business_unit) =>
+                  setForm((prev) => ({ ...prev, business_unit }))
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                helperText="Internal entity for this customer's first pipeline. Includes Synresins, or add a new unit."
+              />
             </div>
 
             <div className="form-actions">

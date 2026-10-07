@@ -87,6 +87,54 @@ async def get_business_models_endpoint():
         return {"business_models": []}
 
 
+class BusinessUnitCreateBody(BaseModel):
+    name: str
+
+
+@router.get("/sales-pipeline/business-units")
+async def get_business_units_endpoint():
+    """Get list of business units (seeded defaults plus user-added names)."""
+    from app.services.business_unit_service import allowed_sales_pipeline_business_units
+
+    try:
+        return {"business_units": allowed_sales_pipeline_business_units()}
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).error(
+            "Error fetching business units: %s", e, exc_info=True
+        )
+        return {
+            "business_units": [
+                "Hayat",
+                "Alhadi",
+                "Bet-chem",
+                "Barracoda",
+                "Nyumb-Chem",
+                "Synresins",
+            ]
+        }
+
+
+@router.post("/sales-pipeline/business-units")
+async def create_business_unit_endpoint(body: BusinessUnitCreateBody):
+    """Add a new business unit so it appears in CRM and pipeline dropdowns."""
+    from app.services.business_unit_service import (
+        allowed_sales_pipeline_business_units,
+        create_business_unit,
+    )
+
+    try:
+        name = create_business_unit(body.name)
+        return {"name": name, "business_units": allowed_sales_pipeline_business_units()}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error creating business unit: {str(e)}"
+        )
+
+
 @router.get("/sales-pipeline/currencies")
 async def get_currencies_endpoint():
     """Get list of supported currencies."""

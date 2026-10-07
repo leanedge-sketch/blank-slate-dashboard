@@ -707,8 +707,10 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
         payload["unit"] = "kg"
 
     from app.services.business_model_service import validate_pipeline_business_model
+    from app.services.business_unit_service import validate_pipeline_business_unit
 
     validate_pipeline_business_model(payload.get("business_model"))
+    validate_pipeline_business_unit(payload.get("business_unit"))
 
     # Convert all UUIDs and dates to strings for JSON serialization
     payload = convert_uuids(payload)
@@ -1205,8 +1207,10 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             metadata=merged_metadata,
         )
         from app.services.business_model_service import validate_pipeline_business_model
+        from app.services.business_unit_service import validate_pipeline_business_unit
 
         validate_pipeline_business_model(merged_business_model)
+        validate_pipeline_business_unit(_coalesce("business_unit", base.business_unit))
 
         # Persist TBD quantity with a default unit when omitted
         if (
@@ -1240,6 +1244,9 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
             from app.services.business_model_service import validate_pipeline_business_model
 
             validate_pipeline_business_model(business_model)
+        from app.services.business_unit_service import validate_pipeline_business_unit
+
+        validate_pipeline_business_unit(merged.get("business_unit"))
     
     # Validate amount change reason if amount changed (optional at Discovery/Sample or when 0)
     if amount_changed:

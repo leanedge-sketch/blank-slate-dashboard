@@ -1341,7 +1341,8 @@ export function PipelineDetailPage() {
                           {(selectedPipeline.business_unit === "Hayat" || 
                             selectedPipeline.business_unit === "Alhadi" || 
                             selectedPipeline.business_unit === "Bet-chem" || 
-                            selectedPipeline.business_unit === "Barracoda") && (
+                            selectedPipeline.business_unit === "Barracoda" ||
+                            selectedPipeline.business_unit === "Synresins") && (
                             <p className="text-xs text-slate-500 mt-1">Import of Record contracts, Stock sales</p>
                           )}
                           {selectedPipeline.business_unit === "Nyumb-Chem" && (
