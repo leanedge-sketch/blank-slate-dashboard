@@ -19,6 +19,7 @@ import {
   formatPipelineQuantity,
   getPipelineProductLabel,
 } from "../../utils/pipelineProduct";
+import { getSampleOutcome, sampleOutcomeLabel } from "../../utils/sampleOutcome";
 
 const ROWS_PER_PAGE = 25;
 const CUSTOMERS_PER_PAGE = 10;
@@ -396,6 +397,17 @@ export function PipelineRecordsList({
                     >
                       {pipeline.stage}
                     </span>
+                    {getSampleOutcome(pipeline) && (
+                      <span
+                        className={`ml-1 inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                          getSampleOutcome(pipeline) === "pass"
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-red-100 text-red-800 border-red-300"
+                        }`}
+                      >
+                        {sampleOutcomeLabel(getSampleOutcome(pipeline))}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-800">
                     {formatPipelineQuantity(pipeline.amount, pipeline.unit)}
@@ -495,6 +507,17 @@ export function PipelineRecordsList({
                               >
                                 {pipeline.stage}
                               </span>
+                              {getSampleOutcome(pipeline) && (
+                                <span
+                                  className={`ml-1 inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    getSampleOutcome(pipeline) === "pass"
+                                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                      : "bg-red-100 text-red-800 border-red-300"
+                                  }`}
+                                >
+                                  {sampleOutcomeLabel(getSampleOutcome(pipeline))}
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                               {formatPipelineQuantity(pipeline.amount, pipeline.unit)}

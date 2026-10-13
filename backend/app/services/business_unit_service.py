@@ -50,9 +50,10 @@ def _client():
 
 
 def list_sales_pipeline_business_units() -> List[str]:
-    """Fetch business unit names from the lookup table, else the seeded fallback."""
+    """Fetch business unit names from every known lookup table, else the seeded fallback."""
     from app.database.connection import get_supabase_client
 
+    units: List[str] = []
     try:
         supabase = get_supabase_client()
         table_variations = [
@@ -63,14 +64,11 @@ def list_sales_pipeline_business_units() -> List[str]:
         for table_name, column_name in table_variations:
             try:
                 response = supabase.table(table_name).select(column_name).execute()
-                units: List[str] = []
                 for row in response.data or []:
                     value = row.get("Name") or row.get(column_name) or row.get("name")
                     normalized = normalize_business_unit_name(value)
                     if normalized:
                         units.append(normalized)
-                if units:
-                    return _dedupe_preserve_order(units)
             except Exception as exc:
                 logger.debug(
                     "business_units probe failed for %s.%s: %s",
@@ -82,6 +80,8 @@ def list_sales_pipeline_business_units() -> List[str]:
     except Exception as exc:
         logger.warning("Could not load business_units table: %s", exc)
 
+    if units:
+        return _dedupe_preserve_order(units)
     return list(FALLBACK_BUSINESS_UNITS)
 
 
@@ -92,17 +92,25 @@ def allowed_sales_pipeline_business_units() -> List[str]:
     return list(FALLBACK_BUSINESS_UNITS)
 
 
+def ensure_business_unit(name: str) -> str:
+    """Insert ``name`` into the lookup so pipeline CHECK constraints can accept it."""
+    return create_business_unit(name)
+
+
 def validate_pipeline_business_unit(value: Optional[str]) -> None:
-    """Raise ValueError when business_unit is not in the lookup / fallback list."""
+    """Persist unknown units into the lookup instead of blocking the dropdown value."""
     normalized = normalize_business_unit_name(value)
     if not normalized:
         return
     allowed = {u.casefold(): u for u in allowed_sales_pipeline_business_units()}
-    if normalized.casefold() not in allowed:
-        raise ValueError(
-            "Invalid business unit "
-            f"'{normalized}'. Choose one of: {', '.join(allowed.values())}."
-        )
+    if normalized.casefold() in allowed:
+        return
+    try:
+        ensure_business_unit(normalized)
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.warning("Could not persist business unit %r: %s", normalized, exc)
 
 
 def create_business_unit(name: str) -> str:

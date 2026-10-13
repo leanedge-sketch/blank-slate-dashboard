@@ -1225,6 +1225,9 @@ export interface PipelineInsights {
     customer_id: string;
   }>;
   sample_effectiveness: number;
+  sample_pass_count?: number;
+  sample_fail_count?: number;
+  sample_pending_count?: number;
   product_demand: Record<string, number>;
   insights_summary: string;
 }

@@ -655,6 +655,10 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
         )
     payload["reason_for_stage_change"] = creation_reason
 
+    from app.services.sample_outcome import apply_sample_outcome
+
+    payload = apply_sample_outcome(payload)
+
     # Merge list fields from metadata into primary columns when present
     meta = payload.get("metadata") or {}
     if isinstance(meta, dict):
@@ -735,6 +739,9 @@ def create_sales_pipeline(body: SalesPipelineCreate) -> SalesPipeline:
     try:
         response = supabase.table("sales_pipeline").insert(db_payload).execute()
     except Exception as e:
+        mapped = _pipeline_db_error_message(e)
+        if mapped:
+            raise ValueError(mapped) from e
         # If it fails because column doesn't exist, try mapping 'amount' to 'deal_value' or 'deal_value_usd'
         error_str = str(e).lower()
         if "pricing_record" in error_str or "snapshot_unit_price" in error_str:
@@ -800,6 +807,14 @@ def _pipeline_db_error_message(exc: Exception) -> Optional[str]:
         return (
             "Business model is not allowed by the database. "
             "Run docs/0012_sales_pipeline_business_model.sql in Supabase, then retry."
+        )
+    if "sales_pipeline_business_unit_check" in msg or (
+        "business_unit" in low and "check constraint" in low
+    ):
+        return (
+            "This business unit is not allowed by the database yet. "
+            "Paste migrations/012_allow_custom_business_units.sql into the "
+            "Supabase SQL Editor, then save the deal again."
         )
     return None
 
@@ -1114,6 +1129,14 @@ def update_sales_pipeline(pipeline_id: str, body: SalesPipelineUpdate) -> SalesP
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
         return base
+
+    if "metadata" in update_data and isinstance(update_data.get("metadata"), dict):
+        existing_meta = dict(base.metadata or {}) if isinstance(base.metadata, dict) else {}
+        update_data["metadata"] = {**existing_meta, **update_data["metadata"]}
+
+    from app.services.sample_outcome import apply_sample_outcome
+
+    update_data = apply_sample_outcome(update_data, current_stage=base.stage)
 
     # Explicit nulls from empty form inputs mean "leave unchanged", not "clear".
     _NULL_MEANS_UNSET = {
@@ -1879,10 +1902,22 @@ def generate_pipeline_insights(
                     "customer_id": str(p.customer_id),
                 })
 
-    sample_pipelines = [p for p in recent_pipelines if p.stage == "Sample"]
-    closed_won = [p for p in recent_pipelines if p.stage == "Closed"]
+    from app.services.sample_outcome import classify_sample_result
+
+    sample_pass_count = 0
+    sample_fail_count = 0
+    sample_pending_count = 0
+    for p in recent_pipelines:
+        result = classify_sample_result(p.stage, p.metadata)
+        if result == "pass":
+            sample_pass_count += 1
+        elif result == "fail":
+            sample_fail_count += 1
+        elif result == "pending":
+            sample_pending_count += 1
+    sample_decided = sample_pass_count + sample_fail_count
     sample_effectiveness = (
-        (len(closed_won) / len(sample_pipelines) * 100) if sample_pipelines else 0.0
+        (sample_pass_count / sample_decided * 100) if sample_decided else 0.0
     )
 
     quote_stages = {"Proposal", "Confirmation", "Validation"}
@@ -1913,6 +1948,9 @@ def generate_pipeline_insights(
         stage_distribution=stage_counts,
         churn_risk_pipelines=churn_risk_pipelines,
         sample_effectiveness=sample_effectiveness,
+        sample_pass_count=sample_pass_count,
+        sample_fail_count=sample_fail_count,
+        sample_pending_count=sample_pending_count,
         product_demand=quote_sent_by_product,
         insights_summary=insights_summary,
     )

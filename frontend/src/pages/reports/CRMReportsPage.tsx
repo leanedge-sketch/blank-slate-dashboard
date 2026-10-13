@@ -185,7 +185,10 @@ export function CRMReportsPage() {
         ["Pipeline opportunities (last " + daysBack + " days)"],
         ["Open pipeline value", String(insights.total_pipeline_value)],
         ["Forecast value (Proposal+)", String(insights.forecast_value)],
-        ["Sample effectiveness %", String(insights.sample_effectiveness.toFixed(1))],
+        ["Sample success rate %", String(insights.sample_effectiveness.toFixed(1))],
+        ["Sample pass", String(insights.sample_pass_count ?? 0)],
+        ["Sample fail", String(insights.sample_fail_count ?? 0)],
+        ["Sample pending", String(insights.sample_pending_count ?? 0)],
         ["Churn risk count", String(insights.churn_risk_pipelines.length)],
         [],
         ["Pipeline by stage"],
@@ -751,6 +754,24 @@ export function CRMReportsPage() {
                   ))}
                 </div>
               </section>
+
+              {insights && (
+                <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold mb-1">Sample success rate</h3>
+                  <p className="text-xs text-slate-600 mb-4">
+                    Cold-call samples with a Pass or Fail result ({daysBack}d)
+                  </p>
+                  <p className="text-3xl font-bold text-amber-950">
+                    {insights.sample_effectiveness.toFixed(0)}%
+                  </p>
+                  <p className="text-sm text-slate-600 mt-2">
+                    {insights.sample_pass_count ?? 0} pass · {insights.sample_fail_count ?? 0} fail
+                    {(insights.sample_pending_count ?? 0) > 0
+                      ? ` · ${insights.sample_pending_count} pending`
+                      : ""}
+                  </p>
+                </section>
+              )}
 
               {insights && (
                 <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

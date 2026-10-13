@@ -60,6 +60,12 @@ import { TradeTransitSyncPanel } from "../../components/sales/TradeTransitSyncPa
 import { PipelineDealFields } from "../../components/sales/PipelineDealFields";
 import { PipelineStageUpdateList } from "../../components/sales/PipelineStageUpdateList";
 import { formatApiErrorDetail } from "../../utils/apiErrors";
+import { SampleOutcomeSelect } from "../../components/sales/SampleOutcomeSelect";
+import {
+  getSampleOutcome,
+  sampleOutcomeLabel,
+  type SampleOutcome,
+} from "../../utils/sampleOutcome";
 import { trackRecentRecord } from "../../hooks/useRecentlyAccessed";
 import {
   amountChangeReasonRequired,
@@ -136,6 +142,7 @@ export function PipelineDetailPage() {
     close_reason?: string | null;
     reason_for_stage_change?: string;
     reason_for_amount_change?: string;
+    sample_outcome?: SampleOutcome | "";
   }>({});
   const [updateDealForm, setUpdateDealForm] = useState<PipelineDealFormValues | null>(
     null,
@@ -475,9 +482,20 @@ export function PipelineDetailPage() {
     let targetStage =
       (updateFormData.stage as PipelineStage | undefined) ??
       currentPipeline.stage;
+    const sampleOutcome = updateFormData.sample_outcome || getSampleOutcome(currentPipeline);
+    const currentSampleOutcome = getSampleOutcome(currentPipeline);
+    const outcomeChanged = Boolean(
+      updateFormData.sample_outcome &&
+        updateFormData.sample_outcome !== currentSampleOutcome,
+    );
 
-    // Default: advance to the next sequential stage when still on current
-    if (targetStage === currentPipeline.stage) {
+    if (sampleOutcome === "fail" && currentPipeline.stage === "Sample") {
+      targetStage = "Lost";
+    } else if (
+      targetStage === currentPipeline.stage &&
+      currentPipeline.stage !== "Sample"
+    ) {
+      // Default: advance to the next sequential stage when still on current
       const next = getNextPipelineStage(currentPipeline.stage);
       if (next) {
         targetStage = next;
@@ -504,7 +522,12 @@ export function PipelineDetailPage() {
     const needsStageReason =
       stageChanged &&
       stageChangeReasonRequired(currentPipeline.stage, targetStage);
-    if (needsStageReason && !updateFormData.reason_for_stage_change?.trim()) {
+    const failReason = sampleOutcome === "fail" ? "Sample failed" : "";
+    if (
+      needsStageReason &&
+      !updateFormData.reason_for_stage_change?.trim() &&
+      !failReason
+    ) {
       alert("A reason is required for this stage change (skip, move back, close, or mark lost).");
       return;
     }
@@ -524,16 +547,19 @@ export function PipelineDetailPage() {
       stageChanged &&
       targetStage === "Lost" &&
       !updateFormData.close_reason?.trim() &&
-      !updateFormData.reason_for_stage_change?.trim()
+      !updateFormData.reason_for_stage_change?.trim() &&
+      !failReason
     ) {
       alert("A reason is required when marking the deal as Lost.");
       return;
     }
 
-    if (!stageChanged && !effectiveAmountChanged) {
+    if (!stageChanged && !effectiveAmountChanged && !outcomeChanged) {
       const next = getNextPipelineStage(currentPipeline.stage);
       alert(
-        next
+        currentPipeline.stage === "Sample"
+          ? "Choose Pass or Fail for this sample, or move the deal to Validation when an order arrives."
+          : next
           ? "Select the next stage or change the amount to update this pipeline."
           : "This deal is already at the final stage. Change the amount to update, or mark as Lost.",
       );
@@ -590,6 +616,15 @@ export function PipelineDetailPage() {
             ) as SalesPipelineUpdate)
           : {};
 
+      const sampleMeta =
+        sampleOutcome || targetStage === "Validation"
+          ? {
+              sample_outcome:
+                sampleOutcome ||
+                (targetStage === "Validation" ? "pass" : undefined),
+              sample_outcome_at: new Date().toISOString(),
+            }
+          : {};
       const updateData: SalesPipelineUpdate = {
         ...(stageChanged ? { stage: targetStage } : {}),
         ...(effectiveAmountChanged && !showProductAmount && !showCommercial
@@ -597,15 +632,24 @@ export function PipelineDetailPage() {
           : {}),
         ...productAmountPayload,
         ...commercialPayload,
+        metadata: {
+          ...((currentPipeline.metadata || {}) as Record<string, unknown>),
+          ...((commercialPayload as { metadata?: Record<string, unknown> }).metadata ||
+            {}),
+          ...sampleMeta,
+        },
         close_reason:
           stageChanged && (targetStage === "Closed" || targetStage === "Lost")
             ? updateFormData.close_reason?.trim() ||
               updateFormData.reason_for_stage_change?.trim() ||
-              null
+              (sampleOutcome === "fail" ? "Sample failed" : null)
             : undefined,
         reason_for_stage_change: needsStageReason
-          ? updateFormData.reason_for_stage_change
-          : undefined,
+          ? updateFormData.reason_for_stage_change ||
+            (sampleOutcome === "fail" ? "Sample failed" : undefined)
+          : sampleOutcome === "fail"
+            ? "Sample failed"
+            : undefined,
         reason_for_amount_change: effectiveAmountChanged
           ? updateFormData.reason_for_amount_change
           : undefined,
@@ -810,6 +854,17 @@ export function PipelineDetailPage() {
                   >
                     {selectedPipeline.stage}
                   </span>
+                  {getSampleOutcome(selectedPipeline) && (
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${
+                        getSampleOutcome(selectedPipeline) === "pass"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : "bg-red-100 text-red-800 border-red-300"
+                      }`}
+                    >
+                      Sample {sampleOutcomeLabel(getSampleOutcome(selectedPipeline))}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -846,10 +901,13 @@ export function PipelineDetailPage() {
                   const head = currentPipeline ?? selectedPipeline;
                   const next = getNextPipelineStage(head.stage);
                   setUpdateFormData({
-                    stage: (next ?? head.stage) as PipelineStage,
+                    stage: (head.stage === "Sample"
+                      ? head.stage
+                      : (next ?? head.stage)) as PipelineStage,
                     amount: head.amount ?? null,
                     reason_for_stage_change: "",
                     reason_for_amount_change: "",
+                    sample_outcome: getSampleOutcome(head) || "",
                   });
                   setUpdateDealForm(pipelineToDealFormValues(head, chemicalFullData));
                   setShowUpdateForm(true);
@@ -1772,13 +1830,22 @@ export function PipelineDetailPage() {
             </div>
             <form onSubmit={handleUpdatePipeline} className="p-6 space-y-6">
               {(() => {
-                const targetStageForForm = getEffectiveTargetStage(
-                  currentPipeline.stage,
-                  updateFormData.stage,
+                const targetStageForForm = (
+                  currentPipeline.stage === "Sample" &&
+                  (!updateFormData.stage || updateFormData.stage === "Sample")
+                    ? updateFormData.sample_outcome === "fail"
+                      ? "Lost"
+                      : "Sample"
+                    : getEffectiveTargetStage(
+                        currentPipeline.stage,
+                        updateFormData.stage,
+                      )
                 ) as PipelineStage;
                 const willAdvanceStage =
                   targetStageForForm !== currentPipeline.stage;
-                const movingToSample = targetStageForForm === "Sample";
+                const movingToSample =
+                  targetStageForForm === "Sample" ||
+                  currentPipeline.stage === "Sample";
                 const amountValue = formatPipelineAmountInput(
                   updateFormData.amount,
                   currentPipeline.amount,
@@ -1936,6 +2003,34 @@ export function PipelineDetailPage() {
                       </option>
                     ))}
                 </select>
+                {movingToSample && (
+                  <div className="mt-4">
+                    <SampleOutcomeSelect
+                      value={updateFormData.sample_outcome || ""}
+                      onChange={(sample_outcome) =>
+                        setUpdateFormData({
+                          ...updateFormData,
+                          sample_outcome,
+                          stage:
+                            sample_outcome === "fail"
+                              ? "Lost"
+                              : sample_outcome === "pass"
+                                ? "Sample"
+                                : updateFormData.stage,
+                          close_reason:
+                            sample_outcome === "fail"
+                              ? updateFormData.close_reason || "Sample failed"
+                              : updateFormData.close_reason,
+                          reason_for_stage_change:
+                            sample_outcome === "fail"
+                              ? updateFormData.reason_for_stage_change ||
+                                "Sample failed"
+                              : updateFormData.reason_for_stage_change,
+                        })
+                      }
+                    />
+                  </div>
+                )}
                 <p className="text-xs text-slate-500 mt-2">
                   Updates advance the deal one stage at a time. The next stage is
                   pre-selected; you can also jump ahead, close, or mark{" "}

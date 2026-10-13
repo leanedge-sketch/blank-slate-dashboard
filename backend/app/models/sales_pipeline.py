@@ -382,6 +382,9 @@ class PipelineInsights(BaseModel):
     stage_distribution: Dict[str, int]
     churn_risk_pipelines: List[Dict[str, Any]]
     sample_effectiveness: float
+    sample_pass_count: int = 0
+    sample_fail_count: int = 0
+    sample_pending_count: int = 0
     product_demand: Dict[str, int]
     insights_summary: str
 

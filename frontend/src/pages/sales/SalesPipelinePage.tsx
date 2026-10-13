@@ -27,6 +27,8 @@ import {
   acceptQuoteOnPipeline,
   createSalesQuotation,
 } from "../../services/api";
+import { SampleOutcomeSelect } from "../../components/sales/SampleOutcomeSelect";
+import { getSampleOutcome, type SampleOutcome } from "../../utils/sampleOutcome";
 import {
   TrendingUp,
   Plus,
@@ -1238,7 +1240,11 @@ export function SalesPipelinePage() {
           return;
         }
 
-        const createStage: PipelineStage = formData.stage || "Lead ID";
+        const sampleOutcome = getSampleOutcome({ metadata: formData.metadata });
+        let createStage: PipelineStage = formData.stage || "Lead ID";
+        if (createStage === "Sample" && sampleOutcome === "fail") {
+          createStage = "Lost";
+        }
 
         // Client-side Discovery+ checks so save failures are clear before the API.
         if (pipelineStageRequiresProductAndAmount(createStage)) {
@@ -1343,6 +1349,10 @@ export function SalesPipelinePage() {
           const metadata: Record<string, unknown> = {
             ...(formData.metadata || {}),
           };
+          if (sampleOutcome) {
+            metadata.sample_outcome = sampleOutcome;
+            metadata.sample_outcome_at = new Date().toISOString();
+          }
           if (leadSources.length > 0) {
             metadata.lead_sources = leadSources;
           }
@@ -2034,7 +2044,34 @@ export function SalesPipelinePage() {
                       />
                     </div>
                   )}
-                  {formData.stage === "Lost" && (
+                  {(formData.stage === "Sample" ||
+                    getSampleOutcome({ metadata: formData.metadata })) && (
+                    <div className="mt-3">
+                      <SampleOutcomeSelect
+                        value={getSampleOutcome({ metadata: formData.metadata }) || ""}
+                        onChange={(sample_outcome: SampleOutcome | "") => {
+                          const metadata = {
+                            ...(formData.metadata || {}),
+                            sample_outcome: sample_outcome || undefined,
+                          };
+                          if (!sample_outcome) {
+                            delete metadata.sample_outcome;
+                          }
+                          setFormData({
+                            ...formData,
+                            metadata,
+                            close_reason:
+                              sample_outcome === "fail"
+                                ? formData.close_reason || "Sample failed"
+                                : formData.close_reason,
+                          });
+                        }}
+                      />
+                    </div>
+                  )}
+                  {(formData.stage === "Lost" ||
+                    getSampleOutcome({ metadata: formData.metadata }) ===
+                      "fail") && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">
                         Lost Reason <span className="text-red-500">*</span>
