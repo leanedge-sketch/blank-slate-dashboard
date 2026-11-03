@@ -18,10 +18,8 @@ from app.config import settings
 
 # File processing imports
 import PyPDF2
-import pdfplumber
 from docx import Document
 import openpyxl
-import pandas as pd
 
 
 def ensure_bucket_exists(bucket_name: str = "attached_FILES", is_public: bool = True) -> None:
@@ -232,16 +230,16 @@ def extract_text_from_file(file_content: bytes, filename: str, content_type: str
     
     try:
         if file_ext == ".pdf" or content_type == "application/pdf":
-            # Try pdfplumber first (better for complex PDFs)
+            # Try PyMuPDF (fitz) first, then fallback to PyPDF2
             try:
-                pdf_file = io.BytesIO(file_content)
-                with pdfplumber.open(pdf_file) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
+                import fitz
+
+                with fitz.open(stream=file_content, filetype="pdf") as pdf_doc:
+                    for page in pdf_doc:
+                        page_text = page.get_text("text")
+                        if page_text and page_text.strip():
                             text_parts.append(page_text)
             except Exception:
-                # Fallback to PyPDF2
                 pdf_file = io.BytesIO(file_content)
                 pdf_reader = PyPDF2.PdfReader(pdf_file)
                 for page in pdf_reader.pages:
@@ -275,11 +273,15 @@ def extract_text_from_file(file_content: bytes, filename: str, content_type: str
                         if row_text.strip():
                             text_parts.append(row_text)
             else:
-                # Use pandas for .xls
-                df = pd.read_excel(excel_file, sheet_name=None)
-                for sheet_name, sheet_df in df.items():
-                    text_parts.append(f"\n--- Sheet: {sheet_name} ---\n")
-                    text_parts.append(sheet_df.to_string())
+                try:
+                    import pandas as pd  # type: ignore[import-untyped]
+
+                    df = pd.read_excel(excel_file, sheet_name=None)
+                    for sheet_name, sheet_df in df.items():
+                        text_parts.append(f"\n--- Sheet: {sheet_name} ---\n")
+                        text_parts.append(sheet_df.to_string())
+                except ImportError:
+                    text_parts.append(f"[Legacy .xls format requires conversion to .xlsx: {filename}]")
         
         elif file_ext == ".txt" or content_type == "text/plain":
             text_parts.append(file_content.decode("utf-8", errors="ignore"))
