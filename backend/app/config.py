@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
+    SMTP_PASSWOR: str = ""  # Fallback for Vercel env var typo
     SMTP_USE_TLS: bool = True
 
     # Module 8 Phase 2 — Monday executive briefing email

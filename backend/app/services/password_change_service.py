@@ -275,6 +275,7 @@ def request_password_reset_link(
     )
 
     email_sent = False
+    telegram_sent = False
     last_error: Exception | None = None
     try:
         send_email(
@@ -301,10 +302,28 @@ def request_password_reset_link(
             if last_error is None:
                 last_error = supa_exc
 
-    if not email_sent and last_error is not None:
+    # Also deliver the reset link via Telegram (if configured) so the admin never misses it
+    try:
+        from app.services.telegram_service import send_telegram_message, telegram_configured
+
+        if telegram_configured():
+            tg_message = (
+                f"🔐 Password Reset / Assignment Request\n\n"
+                f"👤 Employee: {account_label}\n"
+                f"📧 Email: {target_email}\n"
+                f"📌 Type: {reason_label}\n\n"
+                f"🔗 Assign a new password here:\n{reset_link}"
+            )
+            telegram_sent = bool(send_telegram_message(tg_message))
+    except Exception:
+        pass
+
+    if not email_sent and not telegram_sent and last_error is not None:
         if isinstance(last_error, EmailNotConfiguredError):
             raise last_error
-        raise RuntimeError(f"Failed to send password reset link to {admin_email}: {last_error}") from last_error
+        raise RuntimeError(
+            f"Failed to send password reset link to {admin_email}: {last_error}"
+        ) from last_error
 
     return {
         "message": (
@@ -313,7 +332,8 @@ def request_password_reset_link(
         ),
         "admin_email": admin_email,
         "target_email": target_email,
-        "email_sent": True,
+        "email_sent": email_sent,
+        "telegram_sent": telegram_sent,
         "expires_in_hours": RESET_TOKEN_TTL_HOURS,
     }
 

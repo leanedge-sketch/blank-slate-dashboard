@@ -5,6 +5,7 @@ Supports optional PDF/file attachments for executive briefings.
 from __future__ import annotations
 
 import base64
+import os
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -30,6 +31,16 @@ class EmailAttachment:
 DEFAULT_RESEND_FROM = "LeanChem Connect <onboarding@resend.dev>"
 
 
+def _smtp_password() -> str:
+    """Return SMTP password, supporting the legacy Vercel env var typo `SMTP_PASSWOR`."""
+    return (
+        settings.SMTP_PASSWORD
+        or getattr(settings, "SMTP_PASSWOR", "")
+        or os.getenv("SMTP_PASSWORD", "")
+        or os.getenv("SMTP_PASSWOR", "")
+    ).strip()
+
+
 def email_is_configured() -> bool:
     return _email_configured()
 
@@ -40,7 +51,7 @@ def _email_configured() -> bool:
     return bool(
         settings.SMTP_HOST
         and settings.SMTP_USER
-        and settings.SMTP_PASSWORD
+        and _smtp_password()
     )
 
 
@@ -184,8 +195,21 @@ def _send_via_smtp(
         msg.attach(part)
 
     port = settings.SMTP_PORT or 587
-    with smtplib.SMTP(settings.SMTP_HOST, port, timeout=30) as server:
-        if settings.SMTP_USE_TLS:
-            server.starttls()
-        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.sendmail(sender, [to], msg.as_string())
+    smtp_user = (settings.SMTP_USER or "").strip()
+    raw_pw = _smtp_password()
+    compact_pw = raw_pw.replace(" ", "")
+    passwords_to_try = [compact_pw] if compact_pw == raw_pw else [compact_pw, raw_pw]
+
+    last_exc: Exception | None = None
+    for candidate_pw in passwords_to_try:
+        try:
+            with smtplib.SMTP(settings.SMTP_HOST, port, timeout=30) as server:
+                if settings.SMTP_USE_TLS:
+                    server.starttls()
+                server.login(smtp_user, candidate_pw)
+                server.sendmail(sender, [to], msg.as_string())
+            return
+        except Exception as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
