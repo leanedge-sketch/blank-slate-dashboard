@@ -54,14 +54,8 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
-          <Route
-            path="/auth/set-password"
-            element={
-              <ProtectedRoute requireEmployee={false}>
-                <SetPasswordPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/auth/set-password" element={<SetPasswordPage />} />
+          <Route path="/auth/reset-password" element={<SetPasswordPage />} />
 
           {/* Protected routes */}
           <Route

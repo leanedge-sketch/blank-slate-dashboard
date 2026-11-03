@@ -56,6 +56,17 @@ export function AuthCallbackPage() {
       finished = true;
       setLoading(false);
 
+      const resetToken =
+        searchParams.get("token") ||
+        searchParams.get("reset_token") ||
+        new URLSearchParams(window.location.hash.substring(1)).get("token");
+      if (resetToken) {
+        navigate(`/auth/set-password?token=${encodeURIComponent(resetToken)}`, {
+          replace: true,
+        });
+        return;
+      }
+
       const user = session?.user;
       if (!user) {
         navigate("/login", { replace: true });

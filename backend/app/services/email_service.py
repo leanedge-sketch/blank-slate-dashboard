@@ -27,18 +27,20 @@ class EmailAttachment:
         self.content_type = content_type
 
 
+DEFAULT_RESEND_FROM = "LeanChem Connect <onboarding@resend.dev>"
+
+
 def email_is_configured() -> bool:
     return _email_configured()
 
 
 def _email_configured() -> bool:
-    if settings.RESEND_API_KEY and settings.EMAIL_FROM:
+    if settings.RESEND_API_KEY:
         return True
     return bool(
         settings.SMTP_HOST
         and settings.SMTP_USER
         and settings.SMTP_PASSWORD
-        and settings.EMAIL_FROM
     )
 
 
@@ -107,8 +109,9 @@ def _send_via_resend(
     reply_to: str | None = None,
     attachments: Sequence[EmailAttachment] | None = None,
 ) -> None:
+    sender = (settings.EMAIL_FROM or "").strip() or DEFAULT_RESEND_FROM
     payload: dict = {
-        "from": settings.EMAIL_FROM,
+        "from": sender,
         "to": to,
         "subject": subject,
         "html": html,
@@ -129,15 +132,26 @@ def _send_via_resend(
             for item in attachments
         ]
 
+    headers = {
+        "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+        "Content-Type": "application/json",
+    }
     with httpx.Client(timeout=60.0) as client:
         response = client.post(
             "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             json=payload,
         )
+        if response.status_code >= 400 and sender != DEFAULT_RESEND_FROM:
+            # Fallback to Resend onboarding sender if custom domain is not yet verified
+            fallback_payload = {**payload, "from": DEFAULT_RESEND_FROM}
+            retry_resp = client.post(
+                "https://api.resend.com/emails",
+                headers=headers,
+                json=fallback_payload,
+            )
+            if retry_resp.status_code < 400:
+                return
     if response.status_code >= 400:
         raise RuntimeError(f"Resend API error ({response.status_code}): {response.text}")
 
@@ -150,9 +164,10 @@ def _send_via_smtp(
     text: str | None,
     attachments: Sequence[EmailAttachment] | None = None,
 ) -> None:
+    sender = (settings.EMAIL_FROM or "").strip() or settings.SMTP_USER
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
-    msg["From"] = settings.EMAIL_FROM
+    msg["From"] = sender
     msg["To"] = to
 
     alt = MIMEMultipart("alternative")
@@ -173,4 +188,4 @@ def _send_via_smtp(
         if settings.SMTP_USE_TLS:
             server.starttls()
         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.sendmail(settings.EMAIL_FROM, [to], msg.as_string())
+        server.sendmail(sender, [to], msg.as_string())

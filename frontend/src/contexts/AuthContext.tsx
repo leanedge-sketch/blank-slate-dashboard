@@ -5,6 +5,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { EmployeeRole, canViewSection, getPermissionsForRole } from "../utils/permissions";
 import type { WorkspaceModuleKey } from "../lib/workspaceModules";
 import { resolveEmployeeStatus } from "../services/employeeAccess";
+import { requestPasswordResetLink } from "../services/api";
 import { CANONICAL_PRODUCTION_URL } from "../lib/canonical-host";
 import { isRequestAborted } from "../lib/request-errors";
 
@@ -553,52 +554,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    if (!isSupabaseConfigured()) {
-      return {
-        error: new Error(
-          "Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY (or VITE_SUPABASE_*) on Vercel, then redeploy.",
-        ),
-      };
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      return { error: new Error("Please enter your email address.") };
     }
 
     try {
-      // Prefer employees-table check, but do not treat stale/API errors as "not an employee".
-      // Supabase only emails existing auth users, so a transient API failure should not block reset.
-      const generation = ++employeeCheckGeneration.current;
-      let lookup = await lookupEmployee(email, generation);
-      if (lookup.status === "stale") {
-        const retryGen = ++employeeCheckGeneration.current;
-        lookup = await lookupEmployee(email, retryGen);
-      }
-      if (lookup.status === "not_found") {
-        return {
-          error: new Error(
-            "Access denied. Your email is not registered as an employee."
-          ),
-        };
-      }
-      if (lookup.status === "stale" || lookup.status === "error") {
-        console.warn(
-          "Employee pre-check unavailable for password reset; proceeding with Supabase reset",
-          lookup.status,
-        );
-      }
-
-      // Send password reset email
-      const redirectUrl = `${authRedirectBaseUrl()}/auth/callback?type=reset`;
-      console.log('📧 Sending password reset email with redirect URL:', redirectUrl);
-      
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectUrl,
+      await requestPasswordResetLink({
+        email: trimmedEmail,
+        reason: "forgot_password",
+        redirect_base: authRedirectBaseUrl(),
       });
-
-      if (error) {
-        return { error };
-      }
-
       return { error: null };
-    } catch (error) {
-      return { error: error as Error };
+    } catch (err: unknown) {
+      if (isAuthNetworkFailure(err)) {
+        return { error: new AuthNetworkError() };
+      }
+      const detail =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data
+              ?.detail
+          : null;
+      return {
+        error: new Error(
+          detail ||
+            (err instanceof Error
+              ? err.message
+              : "Failed to send password reset link"),
+        ),
+      };
     }
   };
 

@@ -1,62 +1,19 @@
 import { useState } from "react";
-import { Eye, EyeOff, X } from "lucide-react";
+import { Mail, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  confirmPasswordChange,
-  startPasswordChange,
+  ADMIN_PASSWORD_RESET_EMAIL,
+  requestPasswordResetLink,
 } from "../services/api";
 
-type Step = "form" | "verify" | "done";
+type Step = "request" | "done";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
 }
 
-function PasswordField({
-  label,
-  value,
-  onChange,
-  autoComplete,
-  minLength,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  autoComplete: string;
-  minLength?: number;
-  required?: boolean;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <label className="modal-field">
-      <span>{label}</span>
-      <div className="modal-password-wrap">
-        <input
-          type={visible ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          autoComplete={autoComplete}
-          minLength={minLength}
-          required={required}
-        />
-        <button
-          type="button"
-          className="modal-password-toggle"
-          onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? "Hide password" : "Show password"}
-          aria-pressed={visible}
-          title={visible ? "Hide password" : "Show password"}
-        >
-          {visible ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
-        </button>
-      </div>
-    </label>
-  );
-}
-
 export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
-  const { user, employeeData, signOut } = useAuth();
+  const { user, employeeData } = useAuth();
   const email = employeeData?.email || user?.email || "";
   const name =
     employeeData?.name?.trim() ||
@@ -68,75 +25,35 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
       : "") ||
     "";
 
-  const [step, setStep] = useState<Step>("form");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const [step, setStep] = useState<Step>("request");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const validatePasswords = (): string | null => {
-    if (!currentPassword) return "Enter your current password.";
-    if (newPassword.length < 8) return "New password must be at least 8 characters.";
-    if (newPassword !== confirmPassword) return "New passwords do not match.";
-    if (currentPassword === newPassword) {
-      return "New password must be different from your current password.";
-    }
-    return null;
-  };
-
-  const handleSendCode = async (e: React.FormEvent) => {
+  const handleRequestResetLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setMessage(null);
 
-    const validationError = validatePasswords();
-    if (validationError) {
-      setError(validationError);
+    if (!email) {
+      setError("Could not determine your account email.");
       return;
     }
 
     setLoading(true);
     try {
-      const result = await startPasswordChange({
-        current_password: currentPassword,
-        new_password: newPassword,
+      const redirectBase =
+        typeof window !== "undefined" ? window.location.origin : undefined;
+      const result = await requestPasswordResetLink({
+        email,
+        reason: "change_password",
+        redirect_base: redirectBase,
       });
       setMessage(
         result.message ||
-          `A verification code was sent to ${email}. Check your inbox.`,
-      );
-      setStep("verify");
-    } catch (err: unknown) {
-      setError(extractApiError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const code = verificationCode.trim();
-    if (!code || code.length !== 6 || !/^\d+$/.test(code)) {
-      setError("Enter the 6-digit code from your email.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await confirmPasswordChange({
-        verification_code: code,
-        new_password: newPassword,
-      });
-      setMessage(
-        `Password updated. A confirmation was sent to ${email}. Sign in with your new password.`,
+          `A password reset link for ${email} has been sent to ${ADMIN_PASSWORD_RESET_EMAIL} so a new password can be assigned.`,
       );
       setStep("done");
-      await signOut();
     } catch (err: unknown) {
       setError(extractApiError(err));
     } finally {
@@ -167,59 +84,14 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         {step === "done" ? (
           <div className="modal-body">
             <p className="modal-success">{message}</p>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                onClose();
-                window.location.href = "/login";
-              }}
-            >
-              Go to sign in
-            </button>
-          </div>
-        ) : step === "verify" ? (
-          <form className="modal-body" onSubmit={handleConfirm}>
-            {message && <p className="modal-info">{message}</p>}
-            <p className="modal-hint">
-              Enter the 6-digit code we sent to <strong>{email}</strong>. Your
-              new password will apply after confirmation.
-            </p>
-            <label className="modal-field">
-              <span>Verification code</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={verificationCode}
-                onChange={(e) =>
-                  setVerificationCode(e.target.value.replace(/\D/g, ""))
-                }
-                autoComplete="one-time-code"
-                required
-              />
-            </label>
-            {error && <p className="modal-error">{error}</p>}
             <div className="modal-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setStep("form");
-                  setVerificationCode("");
-                  setError(null);
-                }}
-              >
-                Back
-              </button>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? "Confirming…" : "Confirm new password"}
+              <button type="button" className="btn-primary" onClick={onClose}>
+                Done
               </button>
             </div>
-          </form>
+          </div>
         ) : (
-          <form className="modal-body" onSubmit={handleSendCode}>
+          <form className="modal-body" onSubmit={handleRequestResetLink}>
             <div className="modal-account-readonly" aria-readonly="true">
               {name ? (
                 <p>
@@ -235,39 +107,19 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
               ) : null}
             </div>
             <p className="modal-hint">
-              We will email a verification code to your account. After you enter
-              the code, your new password is saved and you can sign in with it.
+              Clicking below sends a password reset link for{" "}
+              <strong>{email}</strong> to{" "}
+              <strong>{ADMIN_PASSWORD_RESET_EMAIL}</strong> so the administrator
+              can assign a new password.
             </p>
-            <PasswordField
-              label="Current password"
-              value={currentPassword}
-              onChange={setCurrentPassword}
-              autoComplete="current-password"
-              required
-            />
-            <PasswordField
-              label="New password"
-              value={newPassword}
-              onChange={setNewPassword}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-            <PasswordField
-              label="Confirm new password"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
             {error && <p className="modal-error">{error}</p>}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={onClose}>
                 Cancel
               </button>
               <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? "Sending code…" : "Send verification code"}
+                <Mail size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                {loading ? "Sending reset link…" : "Send reset link"}
               </button>
             </div>
           </form>

@@ -2207,9 +2207,63 @@ export async function verifyEmployeeWithSession(): Promise<EmployeeCheckResponse
   return response.data;
 }
 
+export const ADMIN_PASSWORD_RESET_EMAIL = "katysolomon95@gmail.com";
+
 export interface PasswordChangeMessageResponse {
   message: string;
   expires_in_minutes?: number;
+}
+
+export interface PasswordResetRequestResponse {
+  message: string;
+  admin_email: string;
+  target_email: string;
+  email_sent: boolean;
+  expires_in_hours?: number;
+}
+
+export interface PasswordResetVerifyResponse {
+  valid: boolean;
+  email: string;
+  name?: string | null;
+  role?: string | null;
+  reason?: string;
+}
+
+/** Send a signed password reset link to katysolomon95@gmail.com so a new password can be assigned. */
+export async function requestPasswordResetLink(body: {
+  email: string;
+  reason?: "forgot_password" | "change_password";
+  redirect_base?: string;
+}): Promise<PasswordResetRequestResponse> {
+  const response = await api.post<PasswordResetRequestResponse>(
+    "/auth/password-reset/request",
+    body,
+  );
+  return response.data;
+}
+
+/** Verify a signed password reset token and retrieve the target employee's email and name. */
+export async function verifyPasswordResetToken(
+  token: string,
+): Promise<PasswordResetVerifyResponse> {
+  const response = await api.get<PasswordResetVerifyResponse>(
+    "/auth/password-reset/verify",
+    { params: { token } },
+  );
+  return response.data;
+}
+
+/** Assign a new password to the target user using the signed reset token. */
+export async function assignPasswordWithToken(body: {
+  token: string;
+  new_password: string;
+}): Promise<{ message: string; email: string }> {
+  const response = await api.post<{ message: string; email: string }>(
+    "/auth/password-reset/assign",
+    body,
+  );
+  return response.data;
 }
 
 /** One-step change (no email code). Prefer startPasswordChange + confirmPasswordChange. */

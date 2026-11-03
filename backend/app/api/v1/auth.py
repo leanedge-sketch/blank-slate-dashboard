@@ -18,10 +18,15 @@ from app.dependencies import get_current_user
 from app.config import settings
 from app.services.email_service import EmailNotConfiguredError
 from app.services.password_change_service import (
+    _admin_reset_email,
+    _find_auth_user_by_email,
+    assign_password_with_token,
     change_password_with_current,
     confirm_password_change,
     request_password_change_verification,
     request_password_change_with_current,
+    request_password_reset_link,
+    verify_password_reset_token,
 )
 
 router = APIRouter()
@@ -193,6 +198,17 @@ class PasswordChangeBody(BaseModel):
 
 class PasswordChangeConfirmBody(BaseModel):
     verification_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class PasswordResetRequestBody(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+    reason: str = Field(default="forgot_password", max_length=64)
+    redirect_base: str | None = Field(default=None, max_length=512)
+
+
+class PasswordResetAssignBody(BaseModel):
+    token: str = Field(..., min_length=10, max_length=2048)
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
@@ -444,6 +460,107 @@ async def confirm_change_password(
             supabase=supabase,
             user=user,
             verification_code=body.verification_code,
+            new_password=body.new_password,
+            display_name=display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/auth/password-reset/request")
+async def request_admin_password_reset(
+    body: PasswordResetRequestBody,
+    supabase: Client = Depends(get_supabase_service_client),
+    anon_supabase: Client = Depends(get_supabase_client),
+):
+    """
+    When a user forgets their password or wants to change it, send a signed
+    reset link to katysolomon95@gmail.com so a new password can be assigned.
+    """
+    lookup = _normalize_email(body.email)
+    if not lookup:
+        raise HTTPException(status_code=400, detail="Email address is required.")
+
+    employee = _find_employee_row(supabase, lookup)
+    is_admin_email = lookup == _normalize_email(_admin_reset_email())
+    auth_user = None
+    if not employee and not is_admin_email:
+        try:
+            auth_user = _find_auth_user_by_email(supabase, lookup)
+        except Exception:
+            auth_user = None
+
+    if not employee and not is_admin_email and auth_user is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. Your email is not registered as an employee.",
+        )
+
+    display_name = (employee or {}).get("name") or _employee_display_name(supabase, lookup)
+
+    try:
+        return request_password_reset_link(
+            supabase=supabase,
+            anon_supabase=anon_supabase,
+            email=lookup,
+            display_name=display_name,
+            reason=body.reason or "forgot_password",
+            redirect_base=body.redirect_base,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmailNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/auth/password-reset/verify")
+async def verify_admin_password_reset_token(
+    token: str = Query(..., description="Signed password reset token"),
+    supabase: Client = Depends(get_supabase_admin_client),
+):
+    """
+    Verify a signed password reset token and return the target employee info.
+    """
+    try:
+        payload = verify_password_reset_token(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    target_email = _normalize_email(payload.get("email"))
+    employee = _find_employee_row(supabase, target_email)
+    display_name = (
+        (employee or {}).get("name")
+        or payload.get("name")
+        or _employee_display_name(supabase, target_email)
+    )
+    return {
+        "valid": True,
+        "email": target_email,
+        "name": display_name,
+        "role": (employee or {}).get("role"),
+        "reason": payload.get("reason") or "forgot_password",
+    }
+
+
+@router.post("/auth/password-reset/assign")
+async def assign_password_from_reset_token(
+    body: PasswordResetAssignBody,
+    supabase: Client = Depends(get_supabase_service_client),
+):
+    """
+    Assign a new password to the target user using the signed reset token sent to katysolomon95@gmail.com.
+    """
+    try:
+        payload = verify_password_reset_token(body.token)
+        target_email = _normalize_email(payload.get("email"))
+        display_name = _employee_display_name(supabase, target_email) or payload.get("name")
+        return assign_password_with_token(
+            supabase=supabase,
+            token=body.token,
             new_password=body.new_password,
             display_name=display_name,
         )

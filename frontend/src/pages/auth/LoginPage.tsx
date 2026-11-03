@@ -171,7 +171,8 @@ export function LoginPage() {
               <div className="flex-1">
                 <p className="text-sm font-semibold">Password reset link sent!</p>
                 <p className="text-xs mt-1 text-green-300">
-                  Check your email and click the link to reset your password.
+                  A reset link for <strong>{email}</strong> has been emailed to{" "}
+                  <strong>katysolomon95@gmail.com</strong> so a new password can be assigned.
                 </p>
               </div>
             </div>

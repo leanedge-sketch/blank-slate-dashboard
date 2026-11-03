@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10  # Number of concurrent DB connections
     
     # Email (password change verification & notifications)
+    PASSWORD_RESET_ADMIN_EMAIL: str = "katysolomon95@gmail.com"
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = ""  # e.g. "LeanChem Connect <noreply@yourdomain.com>"
     RESEND_REPLY_TO: str = ""
